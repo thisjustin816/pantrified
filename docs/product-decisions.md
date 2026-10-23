@@ -114,6 +114,7 @@ Accepted product scope:
 - External destinations are not Pantrified’s shopping-list source of truth. Export logic is separated from feature screens so recipe and list flows do not each implement their own destination-specific behavior.
 - For Apple Reminders export, Pantrified remembers a chosen writable Reminders list **per Pantrified space and per app user**. If that remembered EventKit calendar can no longer be resolved, Pantrified asks the user to select a destination again rather than silently falling back to another list.
 - Before exporting to Apple Reminders, Pantrified checks the chosen list for **incomplete exact duplicates** using a normalized item name. Exact matches are shown as **Already on list** and skipped by default; the user can explicitly add one anyway. Pantrified does not fuzzy-merge merely similar grocery items.
+- Generic shopping export is **newline-separated plain text**. Quantities are preserved when present, and the same text can be copied directly or sent through the iOS system Share Sheet.
 
 Specific destination behavior is still open below.
 
@@ -121,7 +122,7 @@ Specific destination behavior is still open below.
 
 These items are intentionally **not** recorded as accepted yet:
 
-1. Remaining external shopping destination details: generic newline-text export behavior and whether any third-party list integrations ship in v1.
+1. Whether any third-party shopping-list integrations ship natively in v1 beyond Apple Reminders and generic text/Share Sheet export.
 2. Exact FoodKeeper dataset update/versioning mechanism.
 3. Product lookup fallback providers beyond FoodData Central.
 4. Monetization and entitlement boundaries.
