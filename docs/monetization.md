@@ -28,11 +28,11 @@ The first v1 Plus insight is **waste insights**. Pantrified can summarize what t
 
 Plus v1 is a **one-time non-consumable in-app purchase**, not a subscription. The launch feature set does not currently create enough Plus-specific recurring operating cost to justify recurring billing.
 
+The **U.S. launch price is $0.99**. This intentionally low early price reflects the small initial premium feature set. The one-time purchase price can increase for new purchasers as meaningful included Plus functionality is added.
+
 The purchase permanently unlocks the Plus functionality sold with that purchase. Pantrified should not market this as “lifetime Plus” or promise that every future service will be included forever. If future functionality introduces tangible recurring costs or ongoing service value that warrants a subscription, a subscription can be introduced later without removing the features existing purchasers already bought.
 
-Plus should launch **cheap while the premium feature set is small**, then the one-time purchase price can increase for new purchasers as meaningful included Plus functionality is added. Existing purchasers keep the functionality they purchased; the exact policy for whether later non-recurring Plus features are included automatically or sold separately can be decided when those features exist.
-
-The exact launch one-time price remains an open decision. Subscription pricing, trials, and grandfathering are not v1 decisions unless the monetization model changes before launch.
+Existing purchasers keep the functionality they purchased; the exact policy for whether later non-recurring Plus features are included automatically or sold separately can be decided when those features exist. Subscription pricing, trials, and grandfathering are not v1 decisions unless the monetization model changes before launch.
 
 If Plus is unlocked at the `Space` level, the previously accepted household entitlement rule remains: one purchaser with the Plus entitlement unlocks Plus for the shared Space; a private Space uses its sole member's entitlement. Apple Family Sharing of the non-consumable purchase, if enabled, is separate from this Pantrified Space rule.
 
