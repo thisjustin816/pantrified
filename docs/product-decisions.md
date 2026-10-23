@@ -130,6 +130,10 @@ Accepted product scope:
 - User-controlled deletion follows the `Space` ownership model. A user can delete a private space; an owner can delete a shared space and its Pantrified-managed shared CloudKit data.
 - Leaving a shared space owned by someone else removes that participant's access/participation and local copy; it does not delete the household's shared data.
 - Pantrified also provides a separate **Delete All My Local Data** action that clears app-owned local data on that device without implicitly deleting shared spaces owned by other people.
+- User data export is available per `Space` as a ZIP containing both **human-readable CSV files** for useful tabular data and a **machine-readable JSON archive** that preserves richer relationships, metadata, lifecycle history, and provenance.
+- The export can include inventory, lifecycle/history data, shopping-list data, consumer profiles/preferences, and other data belonging to that Space as appropriate.
+- Temporary capture images are excluded. Existing Pantrified-generated evidence crops may be included when they still belong to the exported Space.
+- Export formats are app-owned stable representations rather than a dump of the internal SwiftData/CloudKit persistence schema.
 
 ## Monetization
 
@@ -143,9 +147,8 @@ Accepted product scope:
 
 These items are intentionally **not** recorded as accepted yet:
 
-1. User-facing data export behavior and format.
-2. Exact Pantrified Plus pricing, usage limits/trials, and final advanced-insights entitlement boundary.
-3. Visual design, branding, and app icon.
+1. Exact Pantrified Plus pricing, usage limits/trials, and final advanced-insights entitlement boundary.
+2. Visual design, branding, and app icon.
 
 ## Decision discipline
 
