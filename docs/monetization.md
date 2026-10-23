@@ -14,7 +14,7 @@ Make Something prefers Apple's Private Cloud Compute model when available and fa
 
 **Pantrified Plus remains in the v1 launch plan, but only for features that provide compelling premium value.** The free core must not be artificially weakened or have ordinary household utility moved behind a paywall merely to justify a subscription.
 
-The primary Plus value is **advanced household insights and automation**. Free users retain basic usage/waste history and the ordinary inventory, shopping, and meal-planning experience. Plus may turn accumulated household history into higher-level intelligence such as waste trends, frequently discarded foods, repeated run-out patterns, predicted restock needs, smarter stale-item checks, longer-term household patterns, and proactive suggestions.
+The primary Plus value is **advanced household insights and automation**. Free users retain basic usage/waste history and the ordinary inventory, shopping, and meal-planning experience.
 
 Plus automation is **user-approved rather than autonomous by default**. Pantrified may identify a useful recurring behavior or automation and offer it, but the user explicitly enables that behavior before Pantrified begins acting on it. This allows meaningful automation without silently changing shared household state based only on inferred patterns.
 
@@ -22,9 +22,13 @@ The first v1 Plus automation is **smart restocking**. Pantrified can learn recur
 
 The first v1 Plus insight is **waste insights**. Pantrified can summarize what the household explicitly records as discarded, including frequently discarded foods/categories, discard frequency and trends, and changes over time. Waste insights must be based on explicit lifecycle events and optional discard reasons; missing inventory updates, stale records, or inferred disappearance must never be counted as waste.
 
-Advanced meal planning is not the primary Plus boundary. The remaining advanced-insights/automation features that make the v1 launch cut still need to be scoped before pricing.
+**The v1 Plus feature set intentionally launches with these two premium features: Smart Restocking and Waste Insights.** Consumption Insights and Smart Stale Checks are not required for the initial Plus launch and can be evaluated as later additions.
 
-The exact Plus pricing, purchase structure, and trial terms remain open decisions.
+### Pricing strategy
+
+Plus should launch **cheap while the premium feature set is small**, then increase in price as meaningful Plus functionality is added. The launch price should reflect the actual launch value rather than charging today for a future roadmap.
+
+Price changes should use App Store subscription pricing capabilities deliberately. The exact introductory price, later price points, treatment of existing subscribers when prices increase, and trial terms remain open decisions.
 
 If Plus is sold at the `Space` level, the previously accepted household entitlement rule remains: one active Plus subscriber unlocks Plus for the shared Space; a private Space uses its sole member's entitlement. Apple subscription Family Sharing is separate from this Pantrified Space rule.
 
