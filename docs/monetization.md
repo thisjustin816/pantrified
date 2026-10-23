@@ -16,6 +16,8 @@ Make Something prefers Apple's Private Cloud Compute model when available and fa
 
 The primary Plus value is **advanced household insights and automation**. Free users retain basic usage/waste history and the ordinary inventory, shopping, and meal-planning experience. Plus may turn accumulated household history into higher-level intelligence such as waste trends, frequently discarded foods, repeated run-out patterns, predicted restock needs, smarter stale-item checks, longer-term household patterns, and proactive suggestions.
 
+Plus automation is **user-approved rather than autonomous by default**. Pantrified may identify a useful recurring behavior or automation and offer it, but the user explicitly enables that behavior before Pantrified begins acting on it. This allows meaningful automation without silently changing shared household state based only on inferred patterns.
+
 Advanced meal planning is not the primary Plus boundary. The exact advanced-insights/automation features that make the v1 launch cut still need to be scoped before pricing.
 
 The exact Plus pricing, purchase structure, and trial terms remain open decisions.
