@@ -51,6 +51,8 @@ Pantrified helps a household know what food it has, what should be used soon, an
 ## Storage guidance and provenance
 
 - USDA FoodKeeper is the preferred sourced storage-guidance dataset and should be normalized for local use rather than required as a live runtime service.
+- The v1 FoodKeeper dataset is a **normalized, versioned snapshot bundled with the app**. Dataset updates ship through normal app releases after review, normalization, and tests rather than through a runtime updater.
+- The bundled snapshot records provenance sufficient to reproduce and audit it, including the USDA source, source version/modified date when available, Pantrified normalization version, and a content checksum.
 - Storage guidance is advice, not a hard safety/expiration rule.
 - Guidance retains source/provenance and enough version information to explain where it came from.
 - A model may help match an inventory item to an existing guidance record, but it must not invent a storage duration.
@@ -121,11 +123,10 @@ Accepted product scope:
 
 These items are intentionally **not** recorded as accepted yet:
 
-1. Exact FoodKeeper dataset update/versioning mechanism.
-2. Product lookup fallback providers beyond FoodData Central.
-3. Monetization and entitlement boundaries.
-4. Privacy/account deletion/export behavior beyond the storage/sync choices already listed.
-5. Visual design, branding, and app icon.
+1. Product lookup fallback providers beyond FoodData Central.
+2. Monetization and entitlement boundaries.
+3. Privacy/account deletion/export behavior beyond the storage/sync choices already listed.
+4. Visual design, branding, and app icon.
 
 ## Decision discipline
 
