@@ -96,9 +96,10 @@ Pantrified helps a household know what food it has, what should be used soon, an
 - Recognition state and synchronization state are separate concerns.
 - Retryable processing/sync work must be idempotent.
 
-## Presentation
+## Presentation and platform baseline
 
 - Pantrified is **SwiftUI-first**, with UIKit bridges where Apple frameworks or system controllers are better exposed through UIKit. The architecture should not force camera, CloudKit sharing UI, or similar integrations into pure SwiftUI when a bridge is more appropriate.
+- The minimum deployment target is **iOS 26**. Newer OS capabilities can be adopted behind availability checks without making iOS 27 a launch requirement.
 
 ## Shopping list
 
@@ -116,13 +117,12 @@ Specific external-export architecture is still open below.
 
 These items are intentionally **not** recorded as accepted yet:
 
-1. Minimum iOS deployment target.
-2. External shopping export details: internal `ShoppingSelection` abstraction, Apple Reminders destination persistence/recovery, duplicate handling, generic newline-text export, and whether any third-party list integrations ship in v1.
-3. Exact FoodKeeper dataset update/versioning mechanism.
-4. Product lookup fallback providers beyond FoodData Central.
-5. Monetization and entitlement boundaries.
-6. Privacy/account deletion/export behavior beyond the storage/sync choices already listed.
-7. Visual design, branding, and app icon.
+1. External shopping export details: internal `ShoppingSelection` abstraction, Apple Reminders destination persistence/recovery, duplicate handling, generic newline-text export, and whether any third-party list integrations ship in v1.
+2. Exact FoodKeeper dataset update/versioning mechanism.
+3. Product lookup fallback providers beyond FoodData Central.
+4. Monetization and entitlement boundaries.
+5. Privacy/account deletion/export behavior beyond the storage/sync choices already listed.
+6. Visual design, branding, and app icon.
 
 ## Decision discipline
 
