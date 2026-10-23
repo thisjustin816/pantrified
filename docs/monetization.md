@@ -20,6 +20,8 @@ Plus automation is **user-approved rather than autonomous by default**. Pantrifi
 
 The first v1 Plus automation is **smart restocking**. Pantrified can learn recurring consumption/run-out patterns for products and suggest an item-specific automation, such as adding milk to the shared shopping list when the household is likely running low. The user must explicitly enable smart restocking for that item before Pantrified may add it automatically. Predictions are household convenience signals, not authoritative inventory facts, and an automated shopping-list addition does not create or alter an inventory package.
 
+The first v1 Plus insight is **waste insights**. Pantrified can summarize what the household explicitly records as discarded, including frequently discarded foods/categories, discard frequency and trends, and changes over time. Waste insights must be based on explicit lifecycle events and optional discard reasons; missing inventory updates, stale records, or inferred disappearance must never be counted as waste.
+
 Advanced meal planning is not the primary Plus boundary. The remaining advanced-insights/automation features that make the v1 launch cut still need to be scoped before pricing.
 
 The exact Plus pricing, purchase structure, and trial terms remain open decisions.
