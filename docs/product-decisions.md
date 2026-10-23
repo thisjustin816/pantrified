@@ -121,12 +121,20 @@ Accepted product scope:
 - Generic shopping export is **newline-separated plain text**. Quantities are preserved when present, and the same text can be copied directly or sent through the iOS system Share Sheet.
 - **No native third-party shopping-list integrations ship in v1.** Apple Reminders plus Copy/Share Sheet are the launch external destinations; dedicated AnyList, OurGroceries, Bring!, or similar integrations can be added later only if they provide enough value beyond the generic export path.
 
+## Monetization
+
+- Pantrified uses a **free core + optional Pantrified Plus subscription** model.
+- Core household utility remains free, including inventory, household sharing, grocery capture, use-soon/storage guidance, the shared shopping list, FoodKeeper-backed guidance, and basic sourced-recipe discovery.
+- Plus is for higher-cost or higher-value intelligence features, especially cloud-generated **Make Something** recipes and AI recipe substitutions; advanced insights may also be a Plus feature.
+- Household sharing and basic food/use-soon functionality are not subscription gates.
+- Exact pricing, usage limits, trials, and the final advanced-insights entitlement boundary remain implementation/business decisions to finalize before release.
+
 ## Open decisions
 
 These items are intentionally **not** recorded as accepted yet:
 
-1. Monetization and entitlement boundaries.
-2. Privacy/account deletion/export behavior beyond the storage/sync choices already listed.
+1. Privacy/account deletion/export behavior beyond the storage/sync choices already listed.
+2. Exact Pantrified Plus pricing, usage limits/trials, and final advanced-insights entitlement boundary.
 3. Visual design, branding, and app icon.
 
 ## Decision discipline
