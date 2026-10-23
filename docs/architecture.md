@@ -1,91 +1,67 @@
 # Pantrified Architecture
 
-This is the current architecture baseline for implementation planning. It records constraints implied by accepted product decisions and the project’s iOS/Clean Architecture guidance. It is not a substitute for future detailed implementation plans.
+Current implementation baseline. Product behavior is canonical in `product-decisions.md`; Apple model details are in `ai-runtime.md`; monetization is in `monetization.md`.
 
-## Goals
+## Architecture goals
 
-- Keep core inventory, attention, meal-ranking, reconciliation, and preference behavior testable without SwiftUI, SwiftData, CloudKit, Vision, AVFoundation, EventKit, or a network connection.
-- Make external providers replaceable: recognition, product lookup, storage guidance, recipe discovery, recipe generation, notification scheduling, and shopping export are capabilities, not domain dependencies.
-- Preserve user corrections and user data across asynchronous processing, sync conflicts, app restarts, cancellation, and temporary service failure.
-- Let the app remain useful offline and with incomplete data.
+- Domain/application behavior remains testable without SwiftUI, SwiftData, CloudKit, Vision, AVFoundation, EventKit, StoreKit, Foundation Models, or network access.
+- Apple frameworks and remote services sit behind app-owned capability protocols/adapters.
+- Preserve user corrections through delayed recognition, sync conflicts, app restarts, cancellation, and service failure.
+- Remain useful offline and with incomplete data.
+- Repository/module structure should reflect product/domain concepts rather than framework buckets.
 
-## High-level composition
+## Composition
 
 ```text
 Pantrified App
 │
 ├─ Presentation
-│  ├─ Today
-│  ├─ Food
-│  ├─ Meals
-│  ├─ List
-│  └─ Capture / Review
+│  ├─ Today / Food / Meals / List
+│  ├─ Capture / Review / Put Away
+│  └─ Space / Settings / Sharing
 │
-├─ Application / Use Cases
-│  ├─ Capture groceries
-│  ├─ Review & put away packages
-│  ├─ Update package lifecycle
+├─ Application
+│  ├─ Capture & review groceries
+│  ├─ Maintain inventory/lifecycle
 │  ├─ Compute attention/use-soon state
-│  ├─ Check stale inventory
-│  ├─ Suggest meals
-│  ├─ Generate recipe
-│  ├─ Mark meal cooked & reconcile inventory
-│  ├─ Maintain shopping list
-│  └─ Synchronize space
+│  ├─ Suggest/discover/generate meals
+│  ├─ Mark cooked & reconcile
+│  ├─ Maintain/export shopping selection
+│  ├─ Insights / opt-in automation
+│  └─ Synchronize Space
 │
 ├─ Domain
-│  ├─ Spaces & membership
-│  ├─ Products & packages
-│  ├─ Locations
-│  ├─ Dates / lifecycle / evidence
-│  ├─ Storage guidance
-│  ├─ Meals / recipes / diners
-│  ├─ Preferences & restrictions
-│  └─ Shopping
+│  ├─ Spaces / members / consumer profiles
+│  ├─ Products / physical packages / locations
+│  ├─ Evidence / dates / lifecycle / quantity
+│  ├─ Storage guidance / provenance / attention
+│  ├─ Meals / recipes / diners / restrictions
+│  ├─ Shopping / restocking / waste events
+│  └─ Entitlement-independent Plus policies
 │
-└─ Infrastructure Adapters
+└─ Infrastructure
    ├─ SwiftData
    ├─ CloudKit + CKShare
-   ├─ AVFoundation camera
-   ├─ Vision OCR / barcode
-   ├─ Model provider(s)
-   ├─ FoodKeeper dataset
-   ├─ FoodData Central / product providers
-   ├─ Recipe providers
-   ├─ Notification APIs
-   └─ External shopping exporters
+   ├─ AVFoundation + Vision
+   ├─ Foundation Models (PCC / SystemLanguageModel)
+   ├─ bundled FoodKeeper
+   ├─ FoodData Central
+   ├─ Edamam
+   ├─ EventKit / notifications / Share Sheet
+   └─ StoreKit
 ```
 
-Dependencies point inward. The domain does not import Apple frameworks or provider SDKs.
+Dependencies point inward. Domain code imports none of the infrastructure frameworks above.
 
-## Suggested module boundaries
-
-Exact Swift package/project layout is still subject to implementation planning, but the code should make these boundaries explicit:
+## Suggested boundaries
 
 ### `PantrifiedDomain`
 
-Pure Swift domain concepts and deterministic policy.
-
-Examples:
-
-- `Space`, `Member`, `ConsumerProfile`
-- `Product`, `Package`, `StorageLocation`
-- package quantity and lifecycle events
-- printed-date semantics and evidence provenance
-- attention/use-soon policy inputs and outputs
-- hard dietary restrictions vs soft preferences
-- meal-ranking inputs
-- recipe ingredient representation
-- inventory reconciliation rules
-- shopping-list domain state
-
-No SwiftUI, SwiftData, CloudKit, Vision, AVFoundation, EventKit, or provider DTOs.
+Pure Swift deterministic concepts/policy: `Space`, membership, consumer profiles, `Product`, physical `Package`, `StorageLocation`, quantity/lifecycle, evidence provenance, printed-date semantics, attention policy, restrictions/preferences, normalized recipe ingredients, reconciliation, shopping state, discard events, and smart-restock policy inputs/outputs.
 
 ### `PantrifiedApplication`
 
-Use cases and capability protocols. This layer orchestrates domain behavior and defines the interfaces required from infrastructure.
-
-Likely capabilities include:
+Use cases and capability protocols. Likely interfaces include:
 
 - `InventoryRepository`
 - `SpaceRepository`
@@ -100,154 +76,177 @@ Likely capabilities include:
 - `NotificationScheduler`
 - `SyncEngine`
 - `ShoppingExporter`
+- `EntitlementProvider`
 
-Application request/response types should not expose provider-native or Apple-framework-native objects.
+Application types must not leak provider DTOs or Apple-framework-native objects.
 
-### App / Infrastructure targets
+## Persistence and files
 
-The shipping app composes live adapters for Apple frameworks and network providers. These adapters translate between infrastructure formats and application/domain types.
+SwiftData is local persistence behind repositories.
 
-## Persistence
+- Use stable app-owned identifiers; framework/cloud IDs are mappings, not domain identity.
+- Separate durable user state from rebuildable caches/temp state.
+- App-owned durable files live in Application Support; temp/rebuildable data is separate.
+- Treat database + filesystem changes as one failure domain where both participate.
+- Persist recognition proposals/evidence separately from confirmed package state so delayed work cannot overwrite user decisions.
 
-SwiftData is the local persistence mechanism, but it is an implementation detail behind repositories.
-
-Important rules:
-
-- Persist stable app-owned identifiers. Do not make CloudKit record IDs, framework object IDs, display names, or filenames the domain identity.
-- Keep rebuildable cache data distinct from irreplaceable user state.
-- App-owned internal files belong under Application Support, with temporary/rebuildable data separated from durable data.
-- Database + filesystem operations must be designed as one failure domain where both are involved. A database rollback cannot undo an already-written file.
-- Recognition proposals should be persisted separately from confirmed package state where useful so delayed enrichment cannot overwrite user corrections.
-
-## Capture file lifecycle
-
-Capture photos are temporary app-owned resources.
-
-Conceptual lifecycle:
+### Capture lifecycle
 
 ```text
-Camera capture
-  -> app-owned staging/full capture
-  -> recognition / review
-  -> package committed and usable
-  -> optional short recovery retention (~1 day)
-  -> full capture deleted
+continuous camera / photo import
+  → app-owned staging assets
+  → Vision OCR/barcodes + normalized evidence
+  → optional enrichment
+  → package candidates
+  → review / merge / split / correct / bulk put-away
+  → authoritative package state usable immediately
+  → ~1 day recovery window
+  → full capture deleted
 
-Useful region
-  -> app-generated evidence crop
-  -> associated with active package
-  -> optionally synced if allowed
-  -> deleted when package leaves active inventory
+useful region → generated evidence crop → active package → optional CloudKit sync → delete when package leaves active inventory
 ```
 
-A capture/import operation must clean up files it owns on success, cancellation, and error while never deleting an original image owned by Photos/a file provider.
+Never delete an original asset owned by Photos/file providers.
 
 ## Recognition pipeline
 
-Recognition must produce **evidence/proposals**, not directly mutate authoritative package fields.
-
-A practical boundary is:
+Recognition produces proposals, never direct authoritative mutations.
 
 ```text
 Capture assets
-  -> deterministic Vision OCR/barcodes
-  -> normalized evidence
-  -> deterministic parsing where possible
-  -> optional cloud/on-device enrichment
-  -> candidate package fields + provenance
-  -> review / user confirmation
-  -> authoritative package state
+  → Vision OCR / barcode
+  → normalized evidence + deterministic parsing
+  → FoodData Central lookup when useful
+  → optional Apple-model enrichment
+  → candidate fields + provenance/uncertainty
+  → user review
+  → authoritative package state
 ```
 
-Important constraints:
+Rules:
 
-- Same barcode/GTIN is product evidence, not proof that two photos belong to the same physical package.
-- User-confirmed/corrected fields win over delayed recognition results.
-- Processing work is durable/idempotent and can resume after restart/network loss.
-- Recognition progress and synchronization progress are separate state machines.
-- Model-generated confidence must not be treated as a calibrated probability without an independent basis.
+- Barcode/GTIN identifies product evidence, not physical package identity.
+- User-confirmed fields win over delayed results.
+- Unknown quantity/date is valid.
+- Durable work resumes after restart/network loss and is idempotent.
+- Recognition and synchronization are independent state machines.
+- Model confidence is not calibrated probability by default.
 
-## Attention / use-soon engine
+## Storage / attention engine
 
-The attention engine should be deterministic domain policy over separate inputs, for example:
+Deterministic domain policy consumes separate facts:
 
-- printed package date + label semantics
+- printed date + label semantics
 - package instructions
 - opened/prepared/frozen/thawed timestamps
-- current storage type
-- matched FoodKeeper guidance + provenance
-- uncertainty/missing information
+- storage type
+- matched FoodKeeper record + provenance
+- uncertainty/missing data
 
-Output should explain *why* an item is being surfaced. It should not rewrite these inputs into a fictitious canonical expiration date.
+It emits an explainable attention state/date without rewriting those facts into a fictitious expiration date. FoodKeeper is a bundled normalized/versioned snapshot. Models may assist matching but may not create storage windows.
+
+## Product lookup
+
+`ProductLookupService` is provider-neutral. v1 live adapter is FoodData Central only. A miss preserves the barcode and continues with OCR/user review; it is not an error requiring another provider.
 
 ## Recipe architecture
 
-Recipe sources share an app-owned internal representation but retain provider/source metadata and rights constraints.
-
 ```text
-Recipe discovery provider(s) ─┐
-                              ├─> normalized recipe candidate -> ranking/filtering
-Cloud generation provider ────┘
+Edamam discovery ───────────────┐
+                               ├→ normalized recipe candidate → ranking/filtering → deterministic dietary validation
+Apple Foundation Models ───────┘
 ```
 
-Generated “Make Something” requests send minimum structured context only. Package photos/evidence imagery and household identities stay out of the generation request.
+- Edamam remains behind `RecipeDiscoveryService` with rights/provenance metadata.
+- `RecipeGenerationService` is an app-owned capability.
+- Generated requests contain only minimum structured meal context.
+- Deterministic hard-restriction validation is downstream of generated output.
+- Sourced recipe safety depends on ingredient completeness; ambiguous results are Needs review.
 
-Cloud generation should be provider-neutral. A future provider switch must not require rewriting meal-domain behavior.
+### Apple model adapter
 
-Generated recipes cross a deterministic dietary-validation boundary before they can be presented as satisfying hard restrictions. Sourced recipes require their own policy based on data completeness; that decision is still open.
+Minimum target is iOS 26.
 
-## Preference learning
+- `SystemLanguageModel` is the on-device fallback when available.
+- On iOS 27+, prefer `PrivateCloudComputeLanguageModel` when Pantrified is eligible and it is available.
+- PCC and `SystemLanguageModel` both conform to Apple's `LanguageModel` abstraction, but their capability/availability differs.
+- If PCC fails/unavailable, attempt on-device; if neither is available, return a typed unavailable result and leave sourced/core functionality intact.
+- Never silently route to a third-party server model in v1.
+- Availability/error handling belongs in the adapter/application boundary, not meal-domain logic.
 
-Keep event collection separate from derived preference state.
+Verified against Apple developer documentation October 23, 2026: Apple documents `PrivateCloudComputeLanguageModel` for third-party apps on iOS 27+, a unified Foundation Models API, 32K PCC context with stronger reasoning, network requirement/daily user limits, and on-device `SystemLanguageModel` with 4K context/offline use. PCC access has developer eligibility/managed-entitlement requirements; Apple's iOS 27 materials state no cloud API cost for qualifying Small Business Program apps below the stated first-time-download threshold. Reverify eligibility before release rather than encoding it as permanent business logic.
 
-- Strong positive events: chosen, cooked, favorited.
-- Weak negative evidence: a single skip/dismissal.
-- Repeated negative patterns may lower ranking.
-- Derived personal signals remain private to that person.
-- Shared household preference data is aggregate rather than exposing another person’s raw interaction stream.
-- A reset operation must be able to clear learned meal preferences without damaging unrelated inventory/history.
+## Preferences and reconciliation
+
+Event collection is separate from derived preference state. Strong positives include chosen/cooked/favorited; one skip is weak evidence. Personal derived signals remain private; household preference state is aggregate. Resetting meal preferences must not damage inventory/history.
+
+`Mark Cooked` is the only trigger for expected-ingredient reconciliation. Present Used some / Used up / No change; never infer exact consumption from recipe quantities.
+
+## Shopping and EventKit
+
+Pantrified owns the shared shopping-list state and a provider-neutral shopping selection. External exporters consume that selection.
+
+- EventKit adapter remembers a writable reminder calendar per Space/app user.
+- Missing destination → reconnect prompt, never silent fallback.
+- Exact normalized-name duplicate check is limited to incomplete reminders in the selected list.
+- Generic exporter emits newline-separated text for Copy/Share Sheet.
+- No third-party shopping adapters in v1.
 
 ## CloudKit synchronization
 
-SwiftData automatic CloudKit sync is intentionally not the sharing model.
-
-Pantrified owns a synchronization boundary that maps local records to direct CloudKit records/custom zones and `CKShare`.
+SwiftData automatic CloudKit sync is intentionally not the sharing model. Pantrified maps local state to direct CloudKit records/custom zones + `CKShare`.
 
 Required properties:
 
 - local-first operation
-- resumable synchronization
-- idempotent retries
+- resumable/idempotent synchronization
 - field-level merge
-- explicit handling of destructive lifecycle events
-- tombstone/history strategy sufficient for recovery and convergence
-- user corrections survive delayed recognition and sync
-- full grocery captures remain device-local
-- only approved generated evidence crops are eligible for image sync
+- explicit destructive lifecycle precedence/tombstone history
+- user corrections survive delayed recognition/sync
+- full captures never sync
+- only approved generated evidence crops may sync
 
-The sync engine should be testable with an in-memory/fake transport before CloudKit integration tests.
+Build/test the sync engine against an in-memory/fake transport before CloudKit integration tests.
+
+## Plus and StoreKit boundary
+
+StoreKit entitlement is separate from household membership.
+
+- v1 Plus product: $0.99 U.S. non-consumable, Apple Family Sharing enabled.
+- An entitled participant unlocks Plus for the shared Space; private Space uses sole member entitlement.
+- Free core includes Make Something and AI substitutions.
+- Plus v1 contains Smart Restocking and Waste Insights.
+- Smart Restocking requires explicit per-item opt-in; predictions may add to the shopping list but never mutate inventory facts.
+- Waste Insights consumes explicit discard events only.
+
+Do not place StoreKit checks inside inventory/meal domain rules. Entitlement controls presentation/application access to premium use cases.
+
+## First implementation / validation slice
+
+The first milestone is deliberately vertical rather than feature-complete:
+
+1. Capture a grocery batch.
+2. Review/correct/put away incomplete package records quickly.
+3. Persist locally/offline and survive restart/delayed enrichment.
+4. Surface explainable use-soon value and an inventory-aware meal/Make Something path.
+5. Support Opened / Used up / Move / Discard + undo.
+6. Mark Cooked and reconcile Used some / Used up / No change.
+7. Exercise shared-Space convergence on real devices.
+8. Repeat the loop in a real household and measure maintenance friction/inventory drift.
+
+See GitHub issue #1 for pilot completion criteria. Advanced retailer integrations, additional AI surfaces, and broader analytics are intentionally sequenced after this loop is validated.
 
 ## Verification strategy
 
-Implementation plans should follow red → green → refactor for domain/application behavior.
+Use red → green → refactor for domain/application behavior.
 
-Different verification levels prove different things:
+- Pure Swift tests: deterministic domain/application policy.
+- Apple SDK compile: framework integration compiles.
+- Simulator: subset of UI/runtime behavior.
+- Physical devices: camera, real iCloud/CKShare, Photos/file-provider behavior, notifications, and device/model availability.
 
-- Pure Swift package tests prove deterministic domain/application behavior.
-- Apple SDK compilation proves Apple-framework integration compiles.
-- Simulator tests prove a subset of runtime/UI behavior.
-- Physical-device checks are required for claims that depend on camera, real iCloud sharing, Photos/file-provider behavior, notifications, or device-specific model capability.
+Never claim a higher verification level than was actually exercised.
 
-Do not describe a feature as verified beyond the level actually exercised.
+## Remaining intentionally open architecture choices
 
-## Decisions intentionally deferred
-
-The architecture should keep these choices cheap to change until product decisions lock them:
-
-- minimum iOS deployment target
-- final presentation framework details
-- cloud model vendor
-- recipe provider(s)
-- additional product lookup provider(s)
-- external shopping-list integrations
-- monetization/StoreKit design
+Implementation planning may still choose exact target/package layout, concrete persistence schema, synchronization record schema, observation-grouping heuristics, and UI composition details as long as they preserve the accepted behavior above. Visual design/branding remains a product decision.
