@@ -12,7 +12,7 @@ PCC is available only on eligible Apple Intelligence devices/regions and require
 
 The app's minimum deployment target remains iOS 26. `PrivateCloudComputeLanguageModel` is an iOS 27+ capability and must be availability-gated.
 
-The behavior when PCC is unavailable — for example, whether to fall back to the on-device `SystemLanguageModel` or disable cloud-quality generation — remains a product decision.
+When PCC is unavailable — including because of OS version, network state, Apple Intelligence/model availability, or PCC allowance — Pantrified falls back to Apple's on-device `SystemLanguageModel` when that model is available. The app should make the capability difference understandable where it materially affects results rather than pretending the runtimes are identical. If neither Apple model is available, generative features become unavailable while the free/core and sourced-recipe paths continue to work.
 
 ## Privacy boundary
 
@@ -20,7 +20,7 @@ The previously accepted minimum-data rule still applies. Generative recipe reque
 
 ## Architecture
 
-Keep generative recipe behavior behind an application capability so domain/application logic remains independently testable. The Apple Foundation Models adapter owns availability checks and selection between supported Apple model runtimes. Do not introduce a Pantrified server-side LLM provider merely to meter or proxy PCC.
+Keep generative recipe behavior behind an application capability so domain/application logic remains independently testable. The Apple Foundation Models adapter owns availability checks and selection between supported Apple model runtimes. Prefer PCC when available and fall back to `SystemLanguageModel`; do not introduce a Pantrified server-side LLM provider merely to meter or proxy PCC.
 
 ## Source basis
 
