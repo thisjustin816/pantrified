@@ -34,7 +34,7 @@ The purchase permanently unlocks the Plus functionality sold with that purchase.
 
 Existing purchasers keep the functionality they purchased; the exact policy for whether later non-recurring Plus features are included automatically or sold separately can be decided when those features exist. Subscription pricing, trials, and grandfathering are not v1 decisions unless the monetization model changes before launch.
 
-If Plus is unlocked at the `Space` level, the previously accepted household entitlement rule remains: one purchaser with the Plus entitlement unlocks Plus for the shared Space; a private Space uses its sole member's entitlement. Apple Family Sharing of the non-consumable purchase, if enabled, is separate from this Pantrified Space rule.
+**Apple Family Sharing is enabled for the Plus non-consumable purchase.** Eligible members of the purchaser's Apple Family Sharing group can share the purchase through Apple's mechanism. This is separate from Pantrified's Space-level entitlement rule: one person with a valid Plus entitlement unlocks Plus for the shared Space, while a private Space uses its sole member's entitlement.
 
 ## Superseded decisions
 
