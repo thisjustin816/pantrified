@@ -14,7 +14,9 @@ Make Something prefers Apple's Private Cloud Compute model when available and fa
 
 **Pantrified Plus remains in the v1 launch plan, but only for features that provide compelling premium value.** The free core must not be artificially weakened or have ordinary household utility moved behind a paywall merely to justify a subscription.
 
-Candidate Plus value includes richer long-term household insights/trends, deeper automation, personalization, history, and other advanced features that are not required for the core pantry/meal-planning experience. The exact launch feature set still needs to be chosen before pricing.
+The primary Plus value is **advanced household insights and automation**. Free users retain basic usage/waste history and the ordinary inventory, shopping, and meal-planning experience. Plus may turn accumulated household history into higher-level intelligence such as waste trends, frequently discarded foods, repeated run-out patterns, predicted restock needs, smarter stale-item checks, longer-term household patterns, and proactive suggestions.
+
+Advanced meal planning is not the primary Plus boundary. The exact advanced-insights/automation features that make the v1 launch cut still need to be scoped before pricing.
 
 The exact Plus pricing, purchase structure, and trial terms remain open decisions.
 
