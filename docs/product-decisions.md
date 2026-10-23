@@ -56,7 +56,9 @@ Pantrified helps a household know what food it has, what should be used soon, an
 - Storage guidance is advice, not a hard safety/expiration rule.
 - Guidance retains source/provenance and enough version information to explain where it came from.
 - A model may help match an inventory item to an existing guidance record, but it must not invent a storage duration.
-- USDA FoodData Central is an appropriate product-information source for GTIN/UPC, branded-food data, ingredients, serving information, and nutrients behind a provider-neutral lookup capability.
+- USDA FoodData Central is the **only remote product-information provider in v1**, behind a provider-neutral lookup capability. It can supply GTIN/UPC, branded-food data, ingredients, serving information, and nutrients when available.
+- A FoodData Central miss is a normal supported state. Pantrified retains the scanned barcode and falls back to package OCR/recognition plus user review to create an incomplete product record rather than requiring a second remote provider.
+- Pantrified does not fabricate nutrition or other product metadata when the provider does not return it. Additional lookup providers may be considered later based on measured v1 miss rates and their licensing/commercial terms.
 
 ## Inventory maintenance
 
@@ -123,10 +125,9 @@ Accepted product scope:
 
 These items are intentionally **not** recorded as accepted yet:
 
-1. Product lookup fallback providers beyond FoodData Central.
-2. Monetization and entitlement boundaries.
-3. Privacy/account deletion/export behavior beyond the storage/sync choices already listed.
-4. Visual design, branding, and app icon.
+1. Monetization and entitlement boundaries.
+2. Privacy/account deletion/export behavior beyond the storage/sync choices already listed.
+3. Visual design, branding, and app icon.
 
 ## Decision discipline
 
