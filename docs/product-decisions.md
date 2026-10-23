@@ -110,14 +110,16 @@ Accepted product scope:
 - Checking off a shopping item does **not** automatically create inventory.
 - The list must work offline and synchronize with its space.
 - Price comparison, coupons, and aisle mapping are out of scope for the baseline product.
+- Pantrified owns a provider-neutral **shopping selection** used when exporting missing recipe ingredients or selected list items. The user reviews that selection in Pantrified, then sends the same selection to an external destination such as Apple Reminders, plain text/clipboard, or a future integration.
+- External destinations are not Pantrified’s shopping-list source of truth. Export logic is separated from feature screens so recipe and list flows do not each implement their own destination-specific behavior.
 
-Specific external-export architecture is still open below.
+Specific destination behavior is still open below.
 
 ## Open decisions
 
 These items are intentionally **not** recorded as accepted yet:
 
-1. External shopping export details: internal `ShoppingSelection` abstraction, Apple Reminders destination persistence/recovery, duplicate handling, generic newline-text export, and whether any third-party list integrations ship in v1.
+1. External shopping destination details: Apple Reminders destination persistence/recovery, duplicate handling, generic newline-text export behavior, and whether any third-party list integrations ship in v1.
 2. Exact FoodKeeper dataset update/versioning mechanism.
 3. Product lookup fallback providers beyond FoodData Central.
 4. Monetization and entitlement boundaries.
