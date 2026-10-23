@@ -115,19 +115,17 @@ Accepted product scope:
 - For Apple Reminders export, Pantrified remembers a chosen writable Reminders list **per Pantrified space and per app user**. If that remembered EventKit calendar can no longer be resolved, Pantrified asks the user to select a destination again rather than silently falling back to another list.
 - Before exporting to Apple Reminders, Pantrified checks the chosen list for **incomplete exact duplicates** using a normalized item name. Exact matches are shown as **Already on list** and skipped by default; the user can explicitly add one anyway. Pantrified does not fuzzy-merge merely similar grocery items.
 - Generic shopping export is **newline-separated plain text**. Quantities are preserved when present, and the same text can be copied directly or sent through the iOS system Share Sheet.
-
-Specific destination behavior is still open below.
+- **No native third-party shopping-list integrations ship in v1.** Apple Reminders plus Copy/Share Sheet are the launch external destinations; dedicated AnyList, OurGroceries, Bring!, or similar integrations can be added later only if they provide enough value beyond the generic export path.
 
 ## Open decisions
 
 These items are intentionally **not** recorded as accepted yet:
 
-1. Whether any third-party shopping-list integrations ship natively in v1 beyond Apple Reminders and generic text/Share Sheet export.
-2. Exact FoodKeeper dataset update/versioning mechanism.
-3. Product lookup fallback providers beyond FoodData Central.
-4. Monetization and entitlement boundaries.
-5. Privacy/account deletion/export behavior beyond the storage/sync choices already listed.
-6. Visual design, branding, and app icon.
+1. Exact FoodKeeper dataset update/versioning mechanism.
+2. Product lookup fallback providers beyond FoodData Central.
+3. Monetization and entitlement boundaries.
+4. Privacy/account deletion/export behavior beyond the storage/sync choices already listed.
+5. Visual design, branding, and app icon.
 
 ## Decision discipline
 
