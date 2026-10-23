@@ -77,6 +77,7 @@ Pantrified helps a household know what food it has, what should be used soon, an
 - Cloud recipe generation receives only the minimum structured context needed for the request: selected inventory, use-soon information, selected diners, and directly relevant preference/restriction context. It does not receive package photos, evidence crops, household identities, or unrelated inventory/history.
 - Hard dietary restrictions and soft food preferences are separate. Hard restrictions must be enforced; likes/dislikes and spice tolerance affect ranking rather than act as hard blocks.
 - Generated recipes must pass deterministic dietary/allergen validation before being shown. If output conflicts with a hard restriction or cannot be validated confidently, Pantrified rejects or flags it instead of trusting the model alone.
+- Sourced recipes are labeled **safe** only when Pantrified has a sufficiently complete ingredient list and its deterministic restriction checks pass. Incomplete or ambiguous recipes may still appear, but are labeled **Needs review** rather than safe. Provider/publisher dietary labels may inform the UI but are not treated as sufficient proof on their own.
 - Pantrified learns both personal and household recipe preferences.
 - Meal learning is primarily positive-signal driven. Choosing, cooking, or favoriting is strong evidence; a single skip is weak evidence, while repeated skips can gradually reduce similar suggestions.
 - Lightweight derived preference signals can be retained long-term while unnecessary raw interaction history ages out. Users receive a clear **Reset meal preferences** control.
@@ -109,16 +110,15 @@ Specific external-export architecture is still open below.
 
 These items are intentionally **not** recorded as accepted yet:
 
-1. **Decision 46:** how hard dietary restrictions are represented for sourced recipes when provider ingredient data is complete, incomplete, or ambiguous.
-2. Which recipe provider(s) ship in v1 and their commercial/licensing plan.
-3. SwiftUI as the presentation framework (currently the expected direction but not explicitly locked).
-4. Minimum iOS deployment target.
-5. External shopping export details: internal `ShoppingSelection` abstraction, Apple Reminders destination persistence/recovery, duplicate handling, generic newline-text export, and whether any third-party list integrations ship in v1.
-6. Exact FoodKeeper dataset update/versioning mechanism.
-7. Product lookup fallback providers beyond FoodData Central.
-8. Monetization and entitlement boundaries.
-9. Privacy/account deletion/export behavior beyond the storage/sync choices already listed.
-10. Visual design, branding, and app icon.
+1. Which recipe provider(s) ship in v1 and their commercial/licensing plan.
+2. SwiftUI as the presentation framework (currently the expected direction but not explicitly locked).
+3. Minimum iOS deployment target.
+4. External shopping export details: internal `ShoppingSelection` abstraction, Apple Reminders destination persistence/recovery, duplicate handling, generic newline-text export, and whether any third-party list integrations ship in v1.
+5. Exact FoodKeeper dataset update/versioning mechanism.
+6. Product lookup fallback providers beyond FoodData Central.
+7. Monetization and entitlement boundaries.
+8. Privacy/account deletion/export behavior beyond the storage/sync choices already listed.
+9. Visual design, branding, and app icon.
 
 ## Decision discipline
 
