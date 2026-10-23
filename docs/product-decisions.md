@@ -140,6 +140,8 @@ Accepted product scope:
 - Pantrified uses a **free core + optional Pantrified Plus subscription** model.
 - Core household utility remains free, including inventory, household sharing, grocery capture/OCR/barcodes, use-soon/storage guidance, the shared shopping list, FoodKeeper-backed guidance, sourced-recipe discovery, normal meal ranking, and basic usage/waste history.
 - **Pantrified Plus** is reserved for cloud AI and advanced analytics: cloud-generated **Make Something** recipes, AI recipe substitutions/adaptations, and richer long-term household insights/trends.
+- **One active Plus subscriber unlocks Plus features for the entire shared `Space`.** Household members in that Space do not each need separate subscriptions. A private Space uses its sole member's entitlement.
+- Space-level entitlement is a Pantrified product rule; Apple subscription Family Sharing may be supported separately and is not the mechanism that defines which members of a Pantrified Space receive Plus.
 - Household sharing and basic food/use-soon functionality are not subscription gates.
 - Exact pricing, cloud-AI usage limits, and trial terms remain implementation/business decisions to finalize before release.
 
