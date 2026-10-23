@@ -12,7 +12,7 @@ Make Something prefers Apple's Private Cloud Compute model when available and fa
 
 ### Pantrified Plus
 
-**Pantrified Plus remains in the v1 launch plan, but only for features that provide compelling premium value.** The free core must not be artificially weakened or have ordinary household utility moved behind a paywall merely to justify a subscription.
+**Pantrified Plus remains in the v1 launch plan, but only for features that provide compelling premium value.** The free core must not be artificially weakened or have ordinary household utility moved behind a paywall merely to justify a purchase.
 
 The primary Plus value is **advanced household insights and automation**. Free users retain basic usage/waste history and the ordinary inventory, shopping, and meal-planning experience.
 
@@ -24,16 +24,22 @@ The first v1 Plus insight is **waste insights**. Pantrified can summarize what t
 
 **The v1 Plus feature set intentionally launches with these two premium features: Smart Restocking and Waste Insights.** Consumption Insights and Smart Stale Checks are not required for the initial Plus launch and can be evaluated as later additions.
 
-### Pricing strategy
+### Purchase and pricing strategy
 
-Plus should launch **cheap while the premium feature set is small**, then increase in price as meaningful Plus functionality is added. The launch price should reflect the actual launch value rather than charging today for a future roadmap.
+Plus v1 is a **one-time non-consumable in-app purchase**, not a subscription. The launch feature set does not currently create enough Plus-specific recurring operating cost to justify recurring billing.
 
-Price changes should use App Store subscription pricing capabilities deliberately. The exact introductory price, later price points, treatment of existing subscribers when prices increase, and trial terms remain open decisions.
+The purchase permanently unlocks the Plus functionality sold with that purchase. Pantrified should not market this as “lifetime Plus” or promise that every future service will be included forever. If future functionality introduces tangible recurring costs or ongoing service value that warrants a subscription, a subscription can be introduced later without removing the features existing purchasers already bought.
 
-If Plus is sold at the `Space` level, the previously accepted household entitlement rule remains: one active Plus subscriber unlocks Plus for the shared Space; a private Space uses its sole member's entitlement. Apple subscription Family Sharing is separate from this Pantrified Space rule.
+Plus should launch **cheap while the premium feature set is small**, then the one-time purchase price can increase for new purchasers as meaningful included Plus functionality is added. Existing purchasers keep the functionality they purchased; the exact policy for whether later non-recurring Plus features are included automatically or sold separately can be decided when those features exist.
+
+The exact launch one-time price remains an open decision. Subscription pricing, trials, and grandfathering are not v1 decisions unless the monetization model changes before launch.
+
+If Plus is unlocked at the `Space` level, the previously accepted household entitlement rule remains: one purchaser with the Plus entitlement unlocks Plus for the shared Space; a private Space uses its sole member's entitlement. Apple Family Sharing of the non-consumable purchase, if enabled, is separate from this Pantrified Space rule.
 
 ## Superseded decisions
 
 Earlier planning treated Make Something and AI substitutions as Plus features because cloud inference was assumed to create an ongoing Pantrified API cost. That assumption no longer applies after choosing Apple's Foundation Models / Private Cloud Compute architecture. The later explicit decision to make Apple-powered recipe generation part of the free core supersedes that earlier Plus boundary.
 
 An earlier proposal to defer Plus until after launch was rejected in favor of keeping Plus in v1 when the premium feature set is genuinely compelling.
+
+The earlier subscription-at-launch direction is superseded by the decision to sell v1 Plus as a one-time non-consumable purchase until tangible recurring costs or ongoing service value justify recurring billing.
