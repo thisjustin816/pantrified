@@ -14,6 +14,12 @@ The app's minimum deployment target remains iOS 26. `PrivateCloudComputeLanguage
 
 When PCC is unavailable — including because of OS version, network state, Apple Intelligence/model availability, or PCC allowance — Pantrified falls back to Apple's on-device `SystemLanguageModel` when that model is available. The app should make the capability difference understandable where it materially affects results rather than pretending the runtimes are identical. If neither Apple model is available, generative features become unavailable while the free/core and sourced-recipe paths continue to work.
 
+## Plus entitlement
+
+`Make Something` and Pantrified's AI recipe substitutions/adaptations are **Pantrified Plus features regardless of which Apple model runtime serves the request**. Plus unlocks the product capability; PCC versus on-device `SystemLanguageModel` is an availability/runtime choice, not a free-versus-paid boundary.
+
+A fallback from PCC to the on-device model therefore does not remove the Plus requirement. Likewise, a free user does not gain `Make Something` merely because an on-device Apple model is available.
+
 ## Privacy boundary
 
 The previously accepted minimum-data rule still applies. Generative recipe requests receive only the structured meal context needed for the request: selected inventory/use-soon information, selected diners, and directly relevant restrictions/preferences. Package photos, evidence crops, household identities, unrelated inventory, and unrelated history are excluded.
@@ -21,6 +27,8 @@ The previously accepted minimum-data rule still applies. Generative recipe reque
 ## Architecture
 
 Keep generative recipe behavior behind an application capability so domain/application logic remains independently testable. The Apple Foundation Models adapter owns availability checks and selection between supported Apple model runtimes. Prefer PCC when available and fall back to `SystemLanguageModel`; do not introduce a Pantrified server-side LLM provider merely to meter or proxy PCC.
+
+Entitlement checks sit above the runtime adapter: authorization to use a Plus capability is decided before choosing the available Apple model runtime.
 
 ## Source basis
 
