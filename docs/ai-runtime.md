@@ -1,33 +1,87 @@
 # Pantrified AI Runtime
 
-## Accepted direction
+Verified against primary Apple developer documentation on **October 23, 2026**.
 
-Pantrified uses Apple's Foundation Models framework for generative intelligence rather than operating its own metered LLM backend.
+## Accepted product direction
 
-For cloud-quality generation on iOS 27+, the primary runtime is Apple's `PrivateCloudComputeLanguageModel` (Private Cloud Compute / PCC). Pantrified does not require a user to supply an API key, sign into a third-party AI account, or consume a Pantrified-owned token allowance for this path.
+Pantrified uses Apple's Foundation Models framework for generative intelligence rather than operating a metered LLM backend.
 
-Apple documents PCC as using the person's Apple Intelligence access: requests have a per-person daily limit, and additional access can be available through iCloud+. Pantrified therefore does not create its own monthly AI-credit system for PCC.
+- On iOS 27+, prefer Apple's `PrivateCloudComputeLanguageModel` (PCC) when Pantrified is eligible and the model is available.
+- If PCC is unavailable, fall back to on-device `SystemLanguageModel` when available.
+- If neither Apple model is available, Make Something/substitution generation is unavailable while inventory, sourced recipes, shopping, storage guidance, and other core features continue working.
+- No third-party model fallback is part of v1.
+- Minimum deployment target remains iOS 26; PCC is availability-gated to iOS 27+.
 
-PCC is available only on eligible Apple Intelligence devices/regions and requires network access. Pantrified must check model availability at runtime and treat unavailability as a normal supported state.
+## What Apple currently documents
 
-The app's minimum deployment target remains iOS 26. `PrivateCloudComputeLanguageModel` is an iOS 27+ capability and must be availability-gated.
+Apple's Foundation Models documentation exposes `PrivateCloudComputeLanguageModel` to qualifying third-party apps. It conforms to the same `LanguageModel` abstraction as `SystemLanguageModel`, so both can back a `LanguageModelSession` without changing downstream guided-generation/tool APIs.
 
-When PCC is unavailable — including because of OS version, network state, Apple Intelligence/model availability, or PCC allowance — Pantrified falls back to Apple's on-device `SystemLanguageModel` when that model is available. The app should make the capability difference understandable where it materially affects results rather than pretending the runtimes are identical. If neither Apple model is available, generative features become unavailable while the rest of the core and sourced-recipe paths continue to work.
+Apple documents these material differences:
+
+| Capability | On-device `SystemLanguageModel` | `PrivateCloudComputeLanguageModel` |
+|---|---|---|
+| Network | Works offline | Requires network |
+| Context | 4K | 32K |
+| Reasoning | Not supported in the same PCC sense | Multiple reasoning levels |
+| Usage | Unlimited normal use per Apple's comparison | Per-person daily limit |
+| Availability | Requires eligible Apple Intelligence device/settings/model readiness | iOS 27+ plus Apple Intelligence/device/region/service eligibility and PCC access |
+
+Apple states PCC does not require the app developer to manage PCC API keys/authentication; the person uses their Apple Intelligence access and receives a daily request allowance, with additional access available through iCloud+.
+
+Apple's iOS 27 developer materials state that apps enrolled in the App Store Small Business Program with fewer than **2 million total first-time App Store downloads** can access Apple Foundation Models on PCC at **no cloud API cost**. PCC development also has eligibility/managed-entitlement requirements. These are current platform/program conditions, not permanent product assumptions; reverify before release and whenever economics depend on them.
+
+## Availability and errors
+
+Never assume either model exists merely because the OS version supports the framework.
+
+For the on-device model, use `SystemLanguageModel.availability`/`isAvailable`. Apple currently documents unavailable reasons including Apple Intelligence disabled, device not eligible, and model not ready.
+
+PCC must likewise be treated as optional at runtime. Network loss, service/model availability, OS version, Apple Intelligence eligibility, developer entitlement/eligibility, or user allowance may prevent a PCC request.
+
+Application behavior should expose typed outcomes such as:
+
+```text
+preferred PCC available → use PCC
+PCC unavailable/fails in a fallback-eligible way + on-device available → use SystemLanguageModel
+neither available → generativeUnavailable(reason)
+```
+
+Do not hide a hard product/validation error by silently switching to an unapproved third-party model.
 
 ## Product entitlement
 
-Apple-powered **Make Something** recipe generation is part of Pantrified's free core, whether a request runs through PCC or the on-device model. AI recipe substitutions/adaptations that help consume use-soon inventory are also part of the free core. Apple's own availability and PCC usage limits still apply.
+Apple-powered **Make Something** and AI recipe substitutions/adaptations are free core regardless of whether PCC or the on-device model executes them. Pantrified has no AI-credit system.
 
-This supersedes the earlier decision that Make Something and AI substitutions were Pantrified Plus features. The selected Apple runtime does not impose a per-generation API/token charge on Pantrified, so inference cost is not used as a reason to gate recipe generation behind Plus.
+This supersedes the earlier proposal that cloud generation belonged to Plus. Plus v1 is Smart Restocking + Waste Insights; see `monetization.md`.
 
 ## Privacy boundary
 
-The previously accepted minimum-data rule still applies. Generative recipe requests receive only the structured meal context needed for the request: selected inventory/use-soon information, selected diners, and directly relevant restrictions/preferences. Package photos, evidence crops, household identities, unrelated inventory, and unrelated history are excluded.
+Generative requests receive only minimum structured meal context: selected inventory/use-soon facts, selected diners, and directly relevant restrictions/preferences. Exclude package photos/evidence crops, household identities, unrelated inventory, and unrelated history unless a future explicitly accepted feature changes that boundary.
 
-## Architecture
+Apple describes both its on-device and PCC Foundation Models paths as privacy-preserving, but that does **not** justify claiming all Pantrified data stays on-device: shared inventory uses CloudKit and product/recipe lookup uses their accepted providers.
 
-Keep generative recipe behavior behind an application capability so domain/application logic remains independently testable. The Apple Foundation Models adapter owns availability checks and selection between supported Apple model runtimes. Prefer PCC when available and fall back to `SystemLanguageModel`; do not introduce a Pantrified server-side LLM provider merely to meter or proxy PCC.
+## Architecture and testing
 
-## Source basis
+Keep generation behind `RecipeGenerationService` (or equivalent app-owned capability). The Apple adapter owns model availability, routing, error mapping, and framework-specific types.
 
-Verified against Apple's current Foundation Models documentation in October 2026. Apple documents `PrivateCloudComputeLanguageModel` as an iOS 27+ server-based Apple Intelligence model with stronger reasoning and a 32K context window, no developer-managed authentication/API keys for the PCC call path, and per-person daily request limits.
+Maintain an evaluation corpus for both Apple runtimes covering:
+
+- inventory grounding and omission errors
+- use-soon prioritization
+- quantity reasoning
+- substitutions
+- structured-output validity
+- hard dietary restriction handling
+
+Model behavior may change with OS updates, so evaluate supported runtimes separately rather than assuming identical quality.
+
+## Primary Apple sources
+
+- Foundation Models updates: https://developer.apple.com/documentation/Updates/FoundationModels
+- Adding server-side intelligence with Private Cloud Compute: https://developer.apple.com/documentation/FoundationModels/adding-server-side-intelligence-with-private-cloud-compute
+- `PrivateCloudComputeLanguageModel`: https://developer.apple.com/documentation/foundationmodels/privatecloudcomputelanguagemodel
+- `SystemLanguageModel.availability`: https://developer.apple.com/documentation/foundationmodels/systemlanguagemodel/availability-swift.property
+- iOS 27 developer overview / PCC program condition: https://developer.apple.com/ios/whats-new/
+- WWDC26 Foundation Models update: https://developer.apple.com/videos/play/wwdc2026/241/
+
+If these sources and this document diverge at implementation/release time, the current Apple documentation wins and the product decision should be revisited if behavior/economics materially change.
