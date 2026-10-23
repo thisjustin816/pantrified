@@ -121,6 +121,13 @@ Accepted product scope:
 - Generic shopping export is **newline-separated plain text**. Quantities are preserved when present, and the same text can be copied directly or sent through the iOS system Share Sheet.
 - **No native third-party shopping-list integrations ship in v1.** Apple Reminders plus Copy/Share Sheet are the launch external destinations; dedicated AnyList, OurGroceries, Bring!, or similar integrations can be added later only if they provide enough value beyond the generic export path.
 
+## Identity and accounts
+
+- Pantrified has **no separate user-facing account system in v1**. Local/private use does not require signup or an email/password identity.
+- iCloud/CloudKit supplies identity and participant mechanics for shared spaces, while StoreKit supplies Pantrified Plus entitlement state.
+- Pantrified does not require Sign in with Apple solely to duplicate those platform capabilities.
+- Any backend needed for Plus/cloud intelligence should authenticate/authorize app requests without requiring a separate Pantrified account unless a future product requirement justifies one.
+
 ## Monetization
 
 - Pantrified uses a **free core + optional Pantrified Plus subscription** model.
@@ -133,7 +140,7 @@ Accepted product scope:
 
 These items are intentionally **not** recorded as accepted yet:
 
-1. Privacy/account deletion/export behavior beyond the storage/sync choices already listed.
+1. Privacy/data deletion/export behavior beyond the storage/sync choices already listed.
 2. Exact Pantrified Plus pricing, usage limits/trials, and final advanced-insights entitlement boundary.
 3. Visual design, branding, and app icon.
 
