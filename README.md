@@ -21,6 +21,7 @@ The app is being designed around imperfect real-world inventory: approximate qua
 - Inventory guidance derived from separate evidence: printed package dates, lifecycle events, package instructions, and sourced storage guidance. Pantrified does not invent a single expiration date.
 - Meal suggestions prioritize food that should be used soon, then minimize missing ingredients.
 - Hybrid recipes: sourced recipe discovery plus cloud-generated “Make Something” recipes.
+- AI-assisted recipe substitutions can adapt sourced or generated recipes to use more food that needs attention soon, while preserving hard dietary restrictions.
 - Lightweight shared shopping list with external export planned separately.
 
 ## Documentation
