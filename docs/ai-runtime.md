@@ -12,13 +12,13 @@ PCC is available only on eligible Apple Intelligence devices/regions and require
 
 The app's minimum deployment target remains iOS 26. `PrivateCloudComputeLanguageModel` is an iOS 27+ capability and must be availability-gated.
 
-When PCC is unavailable — including because of OS version, network state, Apple Intelligence/model availability, or PCC allowance — Pantrified falls back to Apple's on-device `SystemLanguageModel` when that model is available. The app should make the capability difference understandable where it materially affects results rather than pretending the runtimes are identical. If neither Apple model is available, generative features become unavailable while the free/core and sourced-recipe paths continue to work.
+When PCC is unavailable — including because of OS version, network state, Apple Intelligence/model availability, or PCC allowance — Pantrified falls back to Apple's on-device `SystemLanguageModel` when that model is available. The app should make the capability difference understandable where it materially affects results rather than pretending the runtimes are identical. If neither Apple model is available, generative features become unavailable while the rest of the core and sourced-recipe paths continue to work.
 
-## Plus entitlement
+## Product entitlement
 
-`Make Something` and Pantrified's AI recipe substitutions/adaptations are **Pantrified Plus features regardless of which Apple model runtime serves the request**. Plus unlocks the product capability; PCC versus on-device `SystemLanguageModel` is an availability/runtime choice, not a free-versus-paid boundary.
+Apple-powered **Make Something** recipe generation is part of Pantrified's free core, whether a request runs through PCC or the on-device model. AI recipe substitutions/adaptations that help consume use-soon inventory are also part of the free core. Apple's own availability and PCC usage limits still apply.
 
-A fallback from PCC to the on-device model therefore does not remove the Plus requirement. Likewise, a free user does not gain `Make Something` merely because an on-device Apple model is available.
+This supersedes the earlier decision that Make Something and AI substitutions were Pantrified Plus features. The selected Apple runtime does not impose a per-generation API/token charge on Pantrified, so inference cost is not used as a reason to gate recipe generation behind Plus.
 
 ## Privacy boundary
 
@@ -27,8 +27,6 @@ The previously accepted minimum-data rule still applies. Generative recipe reque
 ## Architecture
 
 Keep generative recipe behavior behind an application capability so domain/application logic remains independently testable. The Apple Foundation Models adapter owns availability checks and selection between supported Apple model runtimes. Prefer PCC when available and fall back to `SystemLanguageModel`; do not introduce a Pantrified server-side LLM provider merely to meter or proxy PCC.
-
-Entitlement checks sit above the runtime adapter: authorization to use a Plus capability is decided before choosing the available Apple model runtime.
 
 ## Source basis
 
