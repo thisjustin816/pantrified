@@ -1,157 +1,189 @@
 # Pantrified Product Decisions
 
-This document records **accepted** product decisions. Proposals remain in the Open Decisions section until explicitly chosen.
+This document is the canonical record of **accepted** product decisions. Proposals are not accepted merely because they were discussed. Detailed AI-runtime and monetization rationale live in `docs/ai-runtime.md` and `docs/monetization.md`.
 
 ## Product promise
 
-Pantrified helps a household know what food it has, what should be used soon, and what meals can make good use of it. The product should remain useful when inventory is incomplete, quantities are approximate, and package dates are missing.
+Pantrified helps a household answer three questions with as little maintenance as possible:
+
+1. What food do we have?
+2. What should we use soon?
+3. What can we make with it?
+
+The product must remain useful when inventory is incomplete, quantities are approximate, package dates are missing, and household members do not maintain records perfectly.
+
+Competitive research reinforced the core execution hypothesis: Pantrified wins only if maintaining a trustworthy inventory is easier than the value the inventory creates. AI by itself is not the differentiator. The first implementation milestone therefore validates the closed loop `capture → correct/put away → use/cook → reconcile → return` before expanding feature breadth.
+
+## Platform and presentation
+
+- iOS only.
+- Minimum deployment target: **iOS 26**.
+- SwiftUI-first, with UIKit bridges where Apple frameworks/system controllers are better exposed through UIKit.
+- Working navigation: **Today / Food / Meals / List**, with Add groceries prominent, a Space switcher at the top, and settings elsewhere.
 
 ## Spaces, people, and sharing
 
-- Inventory belongs to a `Space` rather than directly to a user.
-- A household/shared space uses CloudKit sharing. All participating household members can edit shared content; the space owner manages invitations and membership.
+- Inventory belongs to a `Space`, not directly to a user.
+- Shared household spaces use direct CloudKit sharing with `CKShare`; all participants may edit shared content and the owner manages membership.
 - A private space is the same domain concept with one member and no active share.
-- Multiple spaces are supported in v1 through a simple space switcher.
-- Apple’s standard CloudKit sharing UI is used for invitations and participant management.
-- If iCloud is unavailable, Pantrified continues to work locally. Shared spaces resume synchronization when iCloud becomes available.
-- Family members who do not use the app can exist as lightweight **consumer profiles** and are not CloudKit participants.
-- Consumer profiles can store a nickname/name, age group, likes, dislikes, dietary restrictions, spice tolerance, and whether they usually eat household meals. Avoid exact birthdates unless a future requirement justifies them.
+- Multiple spaces ship in v1 with a simple switcher.
+- Use Apple's standard CloudKit sharing UI for invitations/participant management.
+- If iCloud is unavailable, local use continues and shared spaces resume synchronization later.
+- Non-app household members may exist as lightweight consumer profiles rather than CloudKit participants.
+- Consumer profiles may include name/nickname, age group, likes/dislikes, dietary restrictions, spice tolerance, and whether they usually eat household meals. Avoid exact birthdates without a future requirement.
 - Meal planning defaults to usual diners but allows quick per-meal diner selection.
 
 ## Inventory model
 
-- Product identity is separate from a physical package. Two identical products may have different package dates and lifecycle history.
-- Approximate quantity is the default; exact quantity is optional. Valid states include Unknown, Full, About half, Low, or an exact amount/count.
-- `openedAt`, `frozenAt`, and `thawedAt` are independent lifecycle events rather than one mutually exclusive status.
-- Printed date, printed date label/type, lifecycle dates, explicit package instructions, sourced storage guidance, and derived attention state remain separate facts.
-- Pantrified derives an explainable **attention date/state** rather than presenting an invented single expiration date.
-- Clearly applicable package storage/use instructions take priority over generic FoodKeeper guidance.
-- Ambiguous regional numeric dates use locale/package context but require confirmation when ambiguity remains.
-- Homemade food and leftovers are first-class inventory items with simpler capture. They may have `preparedAt`, location, approximate quantity, freeze/thaw events, and a storage-guidance match.
-- Default locations are Fridge, Freezer, and Pantry. Users can create named locations, each with a basic storage type such as refrigerated, frozen, or room-temperature/pantry.
-- Moving an item does not silently imply lifecycle. A move to a freezer may prompt “Frozen today?” and a frozen-to-fridge move may prompt “Thawed today?”; the move succeeds if the prompt is skipped.
-- “Used up” and “Discarded” remove a package from active inventory but retain structured lifecycle history for undo, synchronization recovery, and usage/waste insights.
+- Product identity is separate from physical package identity. Identical products may have different dates/history; a matching barcode alone never proves two observations are the same package.
+- Approximate quantity is the default; exact quantity is optional. Unknown, Full, About half, Low, and exact amounts/counts are valid.
+- Missing quantity/date never blocks saving a useful inventory record.
+- `openedAt`, `frozenAt`, and `thawedAt` are independent lifecycle facts.
+- Printed date, printed label/type, lifecycle dates, explicit package instructions, sourced storage guidance, and derived attention state remain separate facts.
+- Pantrified derives an explainable attention/use-soon state rather than inventing one canonical expiration date.
+- Clearly applicable package instructions outrank generic guidance.
+- Ambiguous regional numeric dates require confirmation when package/locale context cannot resolve them safely.
+- Homemade food and leftovers are first-class inventory with simpler capture, including `preparedAt`, location, approximate quantity, freeze/thaw events, and storage-guidance match when available.
+- Default locations are Fridge, Freezer, and Pantry. Users may create named locations with a storage type such as refrigerated, frozen, or room-temperature/pantry.
+- Moving an item does not silently imply lifecycle. Freezer/thaw prompts may be offered, but skipping them does not block the move.
+- Used up and Discarded remove a package from active inventory while retaining structured lifecycle history for undo, sync recovery, and insights.
 
-## Capture and recognition
+## Capture, recognition, and evidence
 
-- Primary grocery capture uses a custom AVFoundation camera flow.
-- Existing photos can be imported with the system Photos picker.
-- New grocery captures are stored as temporary app-owned files rather than being saved to Photos by default.
-- Full capture photos are deleted after processing plus a short recovery window of roughly one day.
-- After full captures are removed, Pantrified keeps only useful app-generated evidence crops, such as the crop containing a printed package date.
-- Evidence crops remain with a package while it is active and are removed when that package leaves inventory.
-- Evidence crops may sync with the shared package through CloudKit; full captures stay device-local.
-- Arbitrary/raw user images do not sync. Only Pantrified-generated evidence crops are eligible to sync.
-- Apple Sensitive Content Analysis may be used opportunistically as defense in depth. It is not treated as an illegal-content/CSAM detector or legal safety guarantee. If a crop is flagged, Pantrified syncs structured extracted data rather than the image.
-- Vision OCR and barcode recognition are the baseline recognition path. Model enrichment is optional and never the only path to a usable inventory record.
-- Recognition/enrichment must not overwrite a user-confirmed correction that happened while processing was in flight.
+- Primary grocery capture uses a custom continuous AVFoundation camera flow.
+- Vision OCR and barcode recognition are the deterministic baseline.
+- The capture stream may group front/barcode/date observations into package candidates, but uncertainty must remain visible and reviewable.
+- Review/put-away supports reassign, merge, split, field edits, and bulk location assignment.
+- Bulk location acceptance has undo, and useful location corrections may inform future defaults.
+- Existing photos may be imported with the system Photos picker.
+- New captures are temporary app-owned files, not saved to Photos by default.
+- Full captures are deleted after processing plus a short recovery window of roughly one day.
+- Only useful app-generated evidence crops, such as a printed-date crop, remain with an active package.
+- Evidence crops are removed when the package leaves active inventory. Eligible evidence crops may sync through CloudKit; full captures remain device-local.
+- Arbitrary/raw user images do not sync.
+- Sensitive Content Analysis may be used opportunistically as defense in depth. If a crop is flagged, sync structured extracted data rather than the image. Do not treat SCA as an illegal-content/CSAM detector or legal guarantee.
+- Recognition/model output is evidence/proposal, not authoritative package state. User-confirmed corrections win over delayed enrichment.
 - Inventory becomes usable immediately after review/put-away while enrichment may continue asynchronously.
-- Offline capture/save is supported; external lookups can queue for later.
+- Capture/save works offline; external lookups queue for later. Recognition state and synchronization state are separate.
+- Retryable processing and sync work must be idempotent.
+- Model self-reported confidence is not treated as a calibrated probability without an independent basis.
 
-## Storage guidance and provenance
+## Product and storage data
 
-- USDA FoodKeeper is the preferred sourced storage-guidance dataset and should be normalized for local use rather than required as a live runtime service.
-- The v1 FoodKeeper dataset is a **normalized, versioned snapshot bundled with the app**. Dataset updates ship through normal app releases after review, normalization, and tests rather than through a runtime updater.
-- The bundled snapshot records provenance sufficient to reproduce and audit it, including the USDA source, source version/modified date when available, Pantrified normalization version, and a content checksum.
-- Storage guidance is advice, not a hard safety/expiration rule.
-- Guidance retains source/provenance and enough version information to explain where it came from.
-- A model may help match an inventory item to an existing guidance record, but it must not invent a storage duration.
-- USDA FoodData Central is the **only remote product-information provider in v1**, behind a provider-neutral lookup capability. It can supply GTIN/UPC, branded-food data, ingredients, serving information, and nutrients when available.
-- A FoodData Central miss is a normal supported state. Pantrified retains the scanned barcode and falls back to package OCR/recognition plus user review to create an incomplete product record rather than requiring a second remote provider.
-- Pantrified does not fabricate nutrition or other product metadata when the provider does not return it. Additional lookup providers may be considered later based on measured v1 miss rates and their licensing/commercial terms.
+- USDA FoodKeeper is the preferred sourced storage-guidance dataset.
+- v1 bundles a normalized, versioned FoodKeeper snapshot; updates ship through reviewed app releases rather than a runtime updater.
+- Preserve USDA source, source modified/version when available, Pantrified normalization version, and checksum.
+- FoodKeeper values are guidance, not hard safety/expiration rules.
+- A model may help match an item to sourced guidance but must never invent storage windows.
+- USDA FoodData Central is the **only remote product-information provider in v1**, behind a provider-neutral capability.
+- A FoodData Central miss is normal: retain the barcode and use OCR/recognition + user review to create an incomplete/local product. Never fabricate missing product/nutrition metadata.
+- GS1 2D dates may be used when encoded, but ordinary UPC/EAN identifies a product, not a package-specific expiration.
 
-## Inventory maintenance
+## Inventory maintenance and notifications
 
-- Fast package actions include Opened today, Used up, Move, and Discard, with undo where appropriate.
-- Stale-inventory checks are small and adaptive rather than large cleanup sessions.
-- A stale check offers Still have it / Used up / Discarded. Ignoring the check means no change.
-- “Still have it” confirms presence; it does not reset a storage window.
-- One adaptive daily notification digest is the default, only when there is meaningful content. Default timing is early evening and is user-adjustable/disableable.
-- Shared-item actions resolve the shared state rather than generating independent conflicting prompts for each household member.
+- Fast package actions: **Opened today, Used up, Move, Discard**, with undo where appropriate.
+- Stale checks are small/adaptive and offer Still have it / Used up / Discarded. Ignoring means no state change.
+- Still have it confirms presence but does not reset storage windows.
+- Default notifications use one adaptive daily digest only when meaningful, initially early evening and adjustable/disableable.
+- Notifications are per person, but acting on a shared item resolves shared state. Support quiet hours/snooze and explain why an item is surfaced.
 
-## Meal planning and recipes
+## Meals, recipes, and preferences
 
-- Meal ranking prioritizes ingredients that should be used soon, then minimizes missing ingredients.
-- Missing-ingredient review is inline. A user can keep an ingredient missing, remove it from export selection, or choose **Have it already**.
-- “Have it already” immediately creates a minimal inventory record and asks only for lightweight location information. Quantity/date may remain unknown.
-- Recipe strategy is hybrid: sourced/licensed recipe discovery plus generated **Make Something** recipes.
-- Sourced recipe support is provider-neutral and license-aware. Each adapter defines what recipe content may legally be stored and displayed.
-- **Edamam is the primary sourced-recipe provider for v1.** It is implemented behind the provider-neutral recipe interface rather than treated as a permanent domain dependency. Production use must comply with the exact commercial plan, caching, attribution, and linking terms in force when the app ships.
-- In v1, generated recipes may live entirely inside Pantrified. Sourced recipes are discovery results that open the original publisher unless Pantrified has explicit rights to display the full recipe.
-- “Make Something” generation is **cloud-model first** because output quality is the priority. The model provider is abstracted behind an application capability rather than embedded in meal-domain logic.
-- Cloud recipe generation receives only the minimum structured context needed for the request: selected inventory, use-soon information, selected diners, and directly relevant preference/restriction context. It does not receive package photos, evidence crops, household identities, or unrelated inventory/history.
-- Hard dietary restrictions and soft food preferences are separate. Hard restrictions must be enforced; likes/dislikes and spice tolerance affect ranking rather than act as hard blocks.
-- Generated recipes must pass deterministic dietary/allergen validation before being shown. If output conflicts with a hard restriction or cannot be validated confidently, Pantrified rejects or flags it instead of trusting the model alone.
-- Sourced recipes are labeled **safe** only when Pantrified has a sufficiently complete ingredient list and its deterministic restriction checks pass. Incomplete or ambiguous recipes may still appear, but are labeled **Needs review** rather than safe. Provider/publisher dietary labels may inform the UI but are not treated as sufficient proof on their own.
-- Pantrified can use AI to suggest **recipe substitutions that consume more use-soon inventory**, for both sourced and generated recipes. The adaptation must be clearly identified as a Pantrified suggestion rather than attributed to the original publisher, and the adapted ingredient set must pass the same hard-restriction validation before presentation.
-- Pantrified learns both personal and household recipe preferences.
-- Meal learning is primarily positive-signal driven. Choosing, cooking, or favoriting is strong evidence; a single skip is weak evidence, while repeated skips can gradually reduce similar suggestions.
-- Lightweight derived preference signals can be retained long-term while unnecessary raw interaction history ages out. Users receive a clear **Reset meal preferences** control.
-- Personal taste signals remain private to the person; household-level preference data is aggregate/shared.
-- Post-cooking inventory reconciliation happens only after the user explicitly marks a meal **Cooked**.
-- The reconciliation is a lightweight batch over expected ingredients: Used some / Used up / No change. Pantrified never assumes the recipe quantity equals actual consumption.
+- Meal ranking prioritizes use-soon ingredients, then minimizes missing groceries.
+- Missing ingredients are reviewed inline before shopping export. **Have it already** creates a minimal inventory record with lightweight location; quantity/date may remain unknown.
+- Recipe strategy is hybrid: sourced/licensed discovery plus generated **Make Something** recipes.
+- Recipe providers are abstracted behind a provider-neutral, license-aware interface.
+- **Edamam is the primary sourced-recipe provider for v1.** Production commercial/caching/attribution/linking terms must be reverified before release.
+- Generated recipes may live inside Pantrified. Sourced recipes open the original publisher unless Pantrified has explicit rights to display the full recipe.
+- Apple-powered Make Something generation is **free core**.
+- AI substitutions/adaptations that consume use-soon inventory are also **free core** and clearly identified as Pantrified adaptations.
+- Generative requests receive only minimum structured meal context: selected inventory/use-soon facts, selected diners, and directly relevant preferences/restrictions. No package photos/evidence crops, household identities, or unrelated data/history.
+- Hard restrictions and soft preferences are separate. Generated recipes/adaptations pass deterministic hard-restriction validation before presentation.
+- Sourced recipes are labeled safe only with a sufficiently complete ingredient list and passing deterministic checks; incomplete/ambiguous results are **Needs review**. Provider dietary labels are not proof.
+- Personal and household preferences are learned primarily from positive signals. A single skip is weak evidence; repeated skips may gradually affect ranking.
+- Lightweight derived preference signals may persist while unnecessary raw interaction history ages out. Provide Reset meal preferences.
+- Personal taste signals remain private; household-level preference data is aggregate/shared.
+- Inventory reconciliation occurs only after an explicit **Mark Cooked** action, using a lightweight batch: Used some / Used up / No change. Never assume recipe quantities equal actual consumption.
 
-## Synchronization behavior
+## Apple generative runtime
 
-- SwiftData is the local persistence mechanism, but SwiftData automatic CloudKit synchronization is not the household-sharing architecture.
-- Shared spaces use direct CloudKit records/custom zones with `CKShare`, mediated by an explicit Pantrified synchronization layer.
-- Synchronization uses field-level merge rather than whole-record last-write-wins.
-- Destructive lifecycle actions such as Used up or Discarded take precedence over ordinary field edits while remaining recoverable through retained history/undo.
-- Recognition state and synchronization state are separate concerns.
-- Retryable processing/sync work must be idempotent.
+- Pantrified uses Apple's Foundation Models framework rather than a Pantrified-operated metered LLM backend.
+- On **iOS 27+**, prefer `PrivateCloudComputeLanguageModel` when Pantrified is eligible and the model is available.
+- Fall back automatically to on-device `SystemLanguageModel` when PCC is unavailable and the on-device model is available.
+- If neither Apple model is available, generative features are unavailable while inventory, sourced recipes, and other core features continue working.
+- Runtime capability differences may be explained where they materially affect results; do not pretend PCC and on-device models are identical.
+- No third-party model fallback is part of the accepted v1 design.
+- Availability must be checked at runtime; iOS 26 remains supported even though PCC is an iOS 27+ capability.
+- As verified against Apple developer documentation in October 2026, PCC is exposed to qualifying third-party apps through Foundation Models, requires managed eligibility/entitlement, uses the person's Apple Intelligence access and network connection, and does not require app-managed PCC API keys/authentication. See `docs/ai-runtime.md` for the verification boundary.
 
-## Presentation and platform baseline
+## Shopping list and export
 
-- Pantrified is **SwiftUI-first**, with UIKit bridges where Apple frameworks or system controllers are better exposed through UIKit. The architecture should not force camera, CloudKit sharing UI, or similar integrations into pure SwiftUI when a bridge is more appropriate.
-- The minimum deployment target is **iOS 26**. Newer OS capabilities can be adopted behind availability checks without making iOS 27 a launch requirement.
+- A lightweight shared shopping list is core: fast entry/autocomplete, optional categories, quantity, checkoff, undo/clear, and pasted/imported multiline text with review.
+- Duplicate detection is conservative; checking off an item never creates inventory automatically.
+- The list works offline and synchronizes with its Space.
+- Price comparison, coupons, and aisle mapping are out of scope for baseline v1.
+- Pantrified owns a provider-neutral shopping selection used by meal/list flows before external export.
+- Apple Reminders export remembers a chosen writable Reminders list per Space and app user. If it disappears, prompt to reconnect rather than silently choosing another list.
+- Before Reminders export, exact normalized-name matches among incomplete reminders are shown as Already on list and skipped by default; the user may explicitly add anyway. No fuzzy merge.
+- Generic export is newline-separated plain text with quantities when present, available through Copy and the system Share Sheet.
+- **No native third-party shopping integrations in v1.**
 
-## Shopping list
+## Synchronization
 
-Accepted product scope:
+- SwiftData is local persistence; SwiftData automatic CloudKit synchronization is **not** the household-sharing architecture.
+- Shared Spaces use direct CloudKit records/custom zones with `CKShare` through an app-owned synchronization layer.
+- Sync is local-first, resumable, idempotent, and field-level rather than whole-record last-write-wins.
+- Destructive lifecycle events such as Used up/Discarded beat ordinary edits while remaining recoverable through history/undo.
+- Full captures remain device-local; only approved generated evidence crops are eligible for image sync.
 
-- A lightweight shared shopping list is part of Pantrified.
-- It supports fast entry/autocomplete, optional categories, quantity, checkoff, undo/clear, and pasted/imported text with review.
-- Checking off a shopping item does **not** automatically create inventory.
-- The list must work offline and synchronize with its space.
-- Price comparison, coupons, and aisle mapping are out of scope for the baseline product.
-- Pantrified owns a provider-neutral **shopping selection** used when exporting missing recipe ingredients or selected list items. The user reviews that selection in Pantrified, then sends the same selection to an external destination such as Apple Reminders, plain text/clipboard, or a future integration.
-- External destinations are not Pantrified’s shopping-list source of truth. Export logic is separated from feature screens so recipe and list flows do not each implement their own destination-specific behavior.
-- For Apple Reminders export, Pantrified remembers a chosen writable Reminders list **per Pantrified space and per app user**. If that remembered EventKit calendar can no longer be resolved, Pantrified asks the user to select a destination again rather than silently falling back to another list.
-- Before exporting to Apple Reminders, Pantrified checks the chosen list for **incomplete exact duplicates** using a normalized item name. Exact matches are shown as **Already on list** and skipped by default; the user can explicitly add one anyway. Pantrified does not fuzzy-merge merely similar grocery items.
-- Generic shopping export is **newline-separated plain text**. Quantities are preserved when present, and the same text can be copied directly or sent through the iOS system Share Sheet.
-- **No native third-party shopping-list integrations ship in v1.** Apple Reminders plus Copy/Share Sheet are the launch external destinations; dedicated AnyList, OurGroceries, Bring!, or similar integrations can be added later only if they provide enough value beyond the generic export path.
+## Identity, privacy, deletion, and export
 
-## Identity, privacy, and data control
+- No separate Pantrified account in v1.
+- iCloud/CloudKit supplies shared-space identity/participants; StoreKit supplies Plus entitlement state.
+- Do not require Sign in with Apple merely to duplicate those capabilities.
+- Deletion follows Space ownership: private Space owner may delete it; shared Space owner may delete Pantrified-managed shared data; leaving another person's Space removes the participant/local copy but not household data.
+- Provide separate **Delete All My Local Data** without implicitly deleting other people's shared Spaces.
+- Per-Space export is a ZIP with human-readable CSV plus machine-readable JSON preserving richer relationships, history, metadata, and provenance.
+- Export may include active evidence crops but excludes temporary full captures.
+- Export formats are stable app-owned representations, not raw SwiftData/CloudKit dumps.
 
-- Pantrified has **no separate user-facing account system in v1**. Local/private use does not require signup or an email/password identity.
-- iCloud/CloudKit supplies identity and participant mechanics for shared spaces, while StoreKit supplies Pantrified Plus entitlement state.
-- Pantrified does not require Sign in with Apple solely to duplicate those platform capabilities.
-- Any backend needed for Plus/cloud intelligence should authenticate/authorize app requests without requiring a separate Pantrified account unless a future product requirement justifies one.
-- User-controlled deletion follows the `Space` ownership model. A user can delete a private space; an owner can delete a shared space and its Pantrified-managed shared CloudKit data.
-- Leaving a shared space owned by someone else removes that participant's access/participation and local copy; it does not delete the household's shared data.
-- Pantrified also provides a separate **Delete All My Local Data** action that clears app-owned local data on that device without implicitly deleting shared spaces owned by other people.
-- User data export is available per `Space` as a ZIP containing both **human-readable CSV files** for useful tabular data and a **machine-readable JSON archive** that preserves richer relationships, metadata, lifecycle history, and provenance.
-- The export can include inventory, lifecycle/history data, shopping-list data, consumer profiles/preferences, and other data belonging to that Space as appropriate.
-- Temporary capture images are excluded. Existing Pantrified-generated evidence crops may be included when they still belong to the exported Space.
-- Export formats are app-owned stable representations rather than a dump of the internal SwiftData/CloudKit persistence schema.
+## Insights and waste semantics
+
+- Basic usage/waste history is free core.
+- Waste is counted only from explicit discard lifecycle events and optional discard reasons. Missing updates, stale records, or inferred disappearance never count as waste.
+- Missing inventory updates are not interpreted as consumption either.
 
 ## Monetization
 
-- Pantrified uses a **free core + optional Pantrified Plus subscription** model.
-- Core household utility remains free, including inventory, household sharing, grocery capture/OCR/barcodes, use-soon/storage guidance, the shared shopping list, FoodKeeper-backed guidance, sourced-recipe discovery, normal meal ranking, and basic usage/waste history.
-- **Pantrified Plus** is reserved for cloud AI and advanced analytics: cloud-generated **Make Something** recipes, AI recipe substitutions/adaptations, and richer long-term household insights/trends.
-- **One active Plus subscriber unlocks Plus features for the entire shared `Space`.** Household members in that Space do not each need separate subscriptions. A private Space uses its sole member's entitlement.
-- Space-level entitlement is a Pantrified product rule; Apple subscription Family Sharing may be supported separately and is not the mechanism that defines which members of a Pantrified Space receive Plus.
-- Household sharing and basic food/use-soon functionality are not subscription gates.
-- Exact pricing, cloud-AI usage limits, and trial terms remain implementation/business decisions to finalize before release.
+- Pantrified uses **free core + optional Pantrified Plus**.
+- v1 Plus is a **$0.99 U.S. one-time non-consumable IAP**, not a subscription.
+- Apple Family Sharing is enabled for the Plus purchase.
+- One person with a valid Plus entitlement unlocks Plus for the shared Pantrified Space; a private Space uses its sole member's entitlement. Apple Family Sharing and Pantrified Space sharing are separate mechanisms.
+- Initial v1 Plus contains exactly two premium areas:
+  - **Smart Restocking** — learns recurring run-out/consumption patterns and may suggest item-specific automation. The user must explicitly enable automation per item. Automatic shopping-list additions are convenience predictions, not inventory facts, and never create/alter packages.
+  - **Waste Insights** — trends and summaries based only on explicit discard events/reasons.
+- Consumption Insights and Smart Stale Checks are deferred from the initial Plus feature set.
+- Make Something and AI substitutions are free core regardless of whether PCC or the on-device Apple model executes them.
+- Do not weaken ordinary free-core utility to manufacture a paywall.
+- The $0.99 launch price is intentionally an early-adopter/validation price. It may increase for **new purchasers** as meaningful premium functionality grows.
+- Existing purchasers keep the functionality sold with their purchase. Do not market this as “lifetime Plus” or promise every unknown future recurring-cost service forever.
+- Reconsider subscriptions only if future functionality creates tangible recurring costs or ongoing service value that warrants recurring billing.
+
+## v1 sequencing / validation priority
+
+Competitive research completed October 23, 2026 supports proceeding, but identifies inventory-maintenance friction as the highest-risk assumption. The first implementation milestone is therefore a real-household vertical slice that proves:
+
+`capture → fast correction/put-away → immediate use-soon/meal value → use/cook → easy reconciliation → repeat`
+
+Primary proposed product-health measure: **weekly closed-loop households** — households that add/capture inventory and subsequently cook/use, consume, discard, or restock within the same rolling week. Repeated-week retention matters more than raw scans or AI generations.
+
+Advanced retailer integrations, broader analytics, and additional AI surfaces should follow evidence that this loop works rather than precede it.
 
 ## Open decisions
 
-These items are intentionally **not** recorded as accepted yet:
-
-1. Exact Pantrified Plus pricing, cloud-AI usage limits, and trial terms.
-2. Visual design, branding, and app icon.
+1. Visual design, branding, and app icon.
+2. Future Plus additions/pricing beyond the accepted v1 $0.99 non-consumable offering.
 
 ## Decision discipline
 
-When a product choice is proposed in planning, it stays a proposal until explicitly accepted. Implementation details that are necessary consequences of an accepted decision can be documented as architecture constraints, but should not be presented as separate product decisions unless they materially affect behavior or scope.
+A proposed choice remains a proposal until explicitly accepted. Implementation details that necessarily follow an accepted decision may be documented as architecture constraints, but must not be presented as new product decisions when they materially change behavior or scope.
