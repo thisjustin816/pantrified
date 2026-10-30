@@ -21,7 +21,7 @@ public enum Materialized<Entity: Sendable>: Sendable {
 public enum PackageRecords {
     private enum Event {
         case known(PackageEvent)
-        /// Written by a newer version that declared it safe for older readers to skip.
+        /// Written by a newer version, and skipping it cannot change anything this version shows.
         case ignorable
     }
 
@@ -189,13 +189,26 @@ public enum PackageRecords {
         case "discarded":
             change = .discarded(reason: try map["reason"].required().optional(DomainCoding.discardReason.decode))
         case "corrected":
-            change = .corrected(try DomainCoding.packageFieldValue(field: map["field"], value: map["value"]))
+            guard let value = try knownFieldValue(in: map) else { return .ignorable }
+            change = .corrected(value)
         case "recognized":
-            change = .recognized(try DomainCoding.packageFieldValue(field: map["field"], value: map["value"]))
+            guard let value = try knownFieldValue(in: map) else { return .ignorable }
+            change = .recognized(value)
         default:
-            // Only reached when the record's minimum reader version admits this reader.
+            // Only reached when the record's minimum reader version admits this reader, which the
+            // writer leaves alone only for events that change nothing an older reader shows.
             return .ignorable
         }
         return .known(PackageEvent(id: id, at: at, kind: .change(change)))
+    }
+
+    /// Nil for a field this version does not know: it is not one this version shows or folds, so
+    /// skipping the event changes nothing here. A value this version cannot read in a field it
+    /// knows still throws.
+    private static func knownFieldValue(in change: [String: FieldValue]) throws -> PackageFieldValue? {
+        let field = try change["field"].required()
+        guard case .string = field else { throw RecordDecodingError() }
+        guard DomainCoding.packageField.decodeIfKnown(field) != nil else { return nil }
+        return try DomainCoding.packageFieldValue(field: field, value: change["value"])
     }
 }

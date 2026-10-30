@@ -228,6 +228,81 @@ struct PackageRecordsTests {
         #expect(replica.package(package.id)?.status == .active)
     }
 
+    @Test(
+        "a correction or recognition of a field this version does not know is skipped and the package stays readable",
+        arguments: ["corrected", "recognized"]
+    )
+    func unknownFieldIsSkipped(type: String) throws {
+        var replica = Replica()
+        var package = makePackage()
+        try package.record(.corrected(.name("Greek yogurt")), at: hours(1))
+        replica.stage(package, at: 1)
+        let unknown = SyncRecord(
+            id: RecordID(kind: .packageEvent, entity: UUID()),
+            writing: [
+                "package": .uuid(package.id.rawValue), "at": .date(hours(2)),
+                "change": .map(["type": .string(type), "field": .string("brand"), "value": .string("Acme")]),
+            ],
+            at: replica.clock.tick(now: hours(2))
+        )
+        replica.records.merge(unknown)
+
+        let restored = try #require(replica.package(package.id))
+        #expect(restored.events == package.events)
+        #expect(restored.name == "Greek yogurt")
+        #expect(restored.confirmedFields == [.name])
+        #expect(replica.records[unknown.id] == unknown)
+    }
+
+    @Test(
+        "a value this version cannot read in a field it shows or a lifecycle event withholds the whole package",
+        arguments: [
+            FieldValue.map([
+                "type": .string("corrected"), "field": .string("printedDate"),
+                "value": .map(["label": .string("expiresOn"), "date": .date(t0)]),
+            ]),
+            .map(["type": .string("corrected"), "field": .int(1), "value": .string("Skyr")]),
+            .map(["type": .string("discarded"), "reason": .string("composted")]),
+            .map(["type": .string("quantityChanged"), "quantity": .map(["level": .string("aFew")])]),
+        ]
+    )
+    func unreadableKnownChange(change: FieldValue) throws {
+        var replica = Replica()
+        let package = makePackage()
+        replica.stage(package, at: 0)
+        replica.records.merge(SyncRecord(
+            id: RecordID(kind: .packageEvent, entity: UUID()),
+            writing: ["package": .uuid(package.id.rawValue), "at": .date(hours(1)), "change": change],
+            at: replica.clock.tick(now: hours(1))
+        ))
+
+        guard case .unreadable = PackageRecords.materialize(package.id, from: replica.records) else {
+            Issue.record("expected the package to be withheld")
+            return
+        }
+    }
+
+    @Test("a header with a storage type this version does not know withholds the whole package")
+    func unreadableHeaderValue() throws {
+        var replica = Replica()
+        let package = Package(
+            spaceID: space, name: "Soup", location: fridge,
+            instruction: PackageInstruction(days: 3, anchor: .opened, storageType: .refrigerated), addedAt: t0
+        )
+        let header = try #require(replica.stage(package, at: 0).first)
+        replica.records.merge(SyncRecord(
+            id: header.id,
+            writing: ["instruction": .map(["days": .int(3), "anchor": .string("opened"), "storage": .string("cellar")])],
+            at: replica.clock.tick(now: hours(1)),
+            created: header.created
+        ))
+
+        guard case .unreadable = PackageRecords.materialize(package.id, from: replica.records) else {
+            Issue.record("expected the package to be withheld")
+            return
+        }
+    }
+
     @Test("a record that needs a newer reader withholds the whole package")
     func newerReaderRequired() throws {
         var replica = Replica()

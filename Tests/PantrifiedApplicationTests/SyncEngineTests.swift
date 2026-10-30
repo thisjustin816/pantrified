@@ -372,6 +372,45 @@ struct SyncEngineTests {
         #expect(kinds.filter { $0 == .evidenceCrop }.count == 1)
     }
 
+    @Test("a correction this version skips stays readable, survives local edits and reaches other devices unchanged")
+    func skippedCorrectionIsPassedOn() async throws {
+        let world = World()
+        let a = try world.device("A")
+        let b = try world.device("B")
+        let id = try await world.putAway("Milk", on: a)
+        try await world.settle([a, b])
+
+        let stamp = HybridTimestamp(physicalMillis: 1, counter: 0, replica: ReplicaID())
+        let brand = SyncRecord(
+            id: RecordID(kind: .packageEvent, entity: UUID()),
+            created: stamp,
+            fields: [
+                "package": FieldEntry(value: .uuid(id.rawValue), stamp: stamp),
+                "at": FieldEntry(value: .date(syncEpoch), stamp: stamp),
+                "change": FieldEntry(
+                    value: .map(["type": .string("corrected"), "field": .string("brand"), "value": .string("Acme")]),
+                    stamp: stamp
+                ),
+            ]
+        )
+        _ = await world.cloud.push(
+            [OutgoingRecord(record: brand, knownTag: nil)], zone: world.space, failing: [], unconfirmed: 0
+        )
+        try await b.sync()
+
+        #expect(await b.replica.unreadablePackages.isEmpty)
+        try await b.actions.apply(.opened, to: id)
+        try await b.actions.apply(.move(to: world.freezer.id), to: id)
+        let c = try world.device("C")
+        try await world.settle([a, b, c])
+
+        let state = try await expectConverged([a, b, c], in: world)
+        #expect(state.records[brand.id] == brand)
+        #expect(state.packages[id]?.name == "Milk")
+        #expect(state.packages[id]?.location == world.freezer.id)
+        #expect(state.packages[id]?.openedAt != nil)
+    }
+
     @Test("a package with a record from a newer version is withheld and reported, not misread")
     func newerVersionRecord() async throws {
         let world = World()
