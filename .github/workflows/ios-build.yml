@@ -84,6 +84,17 @@ jobs:
       - name: Check the Evaluation app has the Evaluation tab
         if: ${{ !cancelled() && steps.archive-evaluation.outcome == 'success' }}
         run: ./Scripts/verify-evaluation-gating.sh build/Pantrified-Evaluation.xcarchive/Products/Applications/Pantrified.app/Pantrified present
+      # The manifest in the source can be valid and still not ship, so each archived app is checked.
+      - name: Check the Release app carries the privacy manifest
+        if: ${{ !cancelled() && steps.archive.outcome == 'success' }}
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 -I Scripts/verify-privacy-manifest.py App/PrivacyInfo.xcprivacy build/Pantrified.xcarchive/Products/Applications/Pantrified.app
+      - name: Check the Evaluation app carries the privacy manifest
+        if: ${{ !cancelled() && steps.archive-evaluation.outcome == 'success' }}
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 -I Scripts/verify-privacy-manifest.py App/PrivacyInfo.xcprivacy build/Pantrified-Evaluation.xcarchive/Products/Applications/Pantrified.app
       # xcodebuild prints thousands of long command lines, so the failure is hard to find in the
       # raw log. Repeat only the diagnostics, once, at the end.
       - name: Summarize failures

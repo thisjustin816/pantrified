@@ -50,3 +50,11 @@ jobs:
           ./Scripts/tests/test_select_simulator.sh
           ./Scripts/tests/test_verify_repo_hygiene.sh
           ./Scripts/tests/test_verify_evaluation_gating.sh
+      - name: Test the privacy checks and check the manifest against the code
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          python3 -I Scripts/tests/test_verify_privacy_manifest.py
+          python3 -I Scripts/tests/test_verify_required_reason_apis.py
+          python3 -I Scripts/verify-privacy-manifest.py App/PrivacyInfo.xcprivacy
+          python3 -I Scripts/verify-required-reason-apis.py App/PrivacyInfo.xcprivacy App Sources
