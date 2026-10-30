@@ -43,6 +43,36 @@ public indirect enum FieldValue: Sendable, Hashable, Codable {
     case list([FieldValue])
     case map([String: FieldValue])
 
+    /// Equal when stored identically: strings by their UTF-8 bytes, doubles and dates by their bits.
+    /// Swift's own equality calls two encodings of one accented string equal, and 0 equal to -0,
+    /// so replicas could keep different stored forms of one write; and it calls NaN unequal to
+    /// itself, so an unchanged NaN would be written again by every local change.
+    public static func == (lhs: FieldValue, rhs: FieldValue) -> Bool {
+        lhs.compare(rhs) == 0
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(rank)
+        switch self {
+        case .null: break
+        case .bool(let value): hasher.combine(value)
+        case .int(let value): hasher.combine(value)
+        case .double(let value): hasher.combine(value.bitPattern)
+        case .string(let value): hasher.combine(bytesOf: value)
+        case .date(let value): hasher.combine(value.timeIntervalSinceReferenceDate.bitPattern)
+        case .uuid(let value): hasher.combine(value)
+        case .list(let values):
+            hasher.combine(values.count)
+            for value in values { value.hash(into: &hasher) }
+        case .map(let values):
+            hasher.combine(values.count)
+            for (key, value) in values.sortedByKey {
+                hasher.combine(bytesOf: key)
+                value.hash(into: &hasher)
+            }
+        }
+    }
+
     /// A total order used only to choose between different values written with the same stamp.
     /// Every version must choose the same winner, so this order is part of the record format.
     fileprivate func compare(_ other: FieldValue) -> Int {
@@ -83,6 +113,13 @@ public indirect enum FieldValue: Sendable, Hashable, Codable {
 private extension Dictionary where Key == String {
     var sortedByKey: [(key: String, value: Value)] {
         sorted { $0.key.utf8.lexicographicallyPrecedes($1.key.utf8) }
+    }
+}
+
+private extension Hasher {
+    mutating func combine(bytesOf string: String) {
+        combine(string.utf8.count)
+        for byte in string.utf8 { combine(byte) }
     }
 }
 

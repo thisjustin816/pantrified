@@ -411,6 +411,32 @@ struct SyncEngineTests {
         #expect(state.packages[id]?.openedAt != nil)
     }
 
+    @Test("an item holding a date that is not a number is uploaded once, not with every list change")
+    func notANumberDateSettles() async throws {
+        let world = World()
+        let a = try world.device("A")
+        let b = try world.device("B")
+        try await a.shopping.add(name: "Rice", in: world.space)
+        try await world.settle([a, b])
+        let rice = try #require(try await b.replica.list(in: world.space).items.first)
+        let id = RecordID(kind: .shoppingItem, entity: rice.id.rawValue)
+        var odd = try #require(await world.cloud.records(zone: world.space)[id])
+        let stamp = HybridTimestamp(physicalMillis: odd.latestStamp.physicalMillis + 1, counter: 0, replica: ReplicaID())
+        odd.fields["checkedAt"] = FieldEntry(value: .date(Date(timeIntervalSinceReferenceDate: .nan)), stamp: stamp)
+        _ = await world.cloud.push([OutgoingRecord(record: odd, knownTag: ServerTag("1"))], zone: world.space, failing: [], unconfirmed: 0)
+        try await b.sync()
+
+        for name in ["Eggs", "Bread", "Beans"] {
+            try await b.shopping.add(name: name, in: world.space)
+            #expect(await b.replica.pendingCount == 1)
+            try await b.sync()
+        }
+        let saves = b.store.saves
+        try await b.sync()
+        #expect(b.store.saves == saves)
+        #expect(await b.replica.pendingCount == 0)
+    }
+
     @Test("a package with a record from a newer version is withheld and reported, not misread")
     func newerVersionRecord() async throws {
         let world = World()

@@ -176,6 +176,26 @@ struct ShoppingRecordsTests {
         #expect(a.records[future.id] == future)
     }
 
+    @Test("an item holding a date that is not a number is not rewritten by an unrelated change")
+    func notANumberDateIsLeftAlone() throws {
+        var a = Replica()
+        let stamp = a.clock.tick(now: minutes(0))
+        let odd = SyncRecord(
+            id: RecordID(kind: .shoppingItem, entity: UUID()),
+            writing: [
+                "name": .string("Rice"), "category": .null, "quantity": .null, "addedAt": .date(minutes(0)),
+                "checkedAt": .date(Date(timeIntervalSinceReferenceDate: .nan)), "removed": .bool(false),
+            ],
+            at: stamp
+        )
+        a.receive([odd])
+
+        let changes = try a.change(at: 1) { try $0.add(name: "Eggs", at: minutes(1)) }
+
+        #expect(changes.count == 1)
+        #expect(!changes.contains { $0.id == odd.id })
+    }
+
     @Test("fields added by a newer version survive local edits")
     func unknownFieldsSurviveEdits() throws {
         var a = Replica()

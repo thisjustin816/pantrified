@@ -64,6 +64,26 @@ struct SyncRecordMergeTests {
         #expect(l.merged(with: r) == r.merged(with: l))
     }
 
+    @Test(
+        "values stored differently but equal as Swift values settle on one stored form in either order",
+        arguments: [
+            (FieldValue.string("caf\u{E9}"), FieldValue.string("cafe\u{301}")),
+            (.double(0), .double(-0.0)),
+            (.date(Date(timeIntervalSinceReferenceDate: 0)), .date(Date(timeIntervalSinceReferenceDate: -0.0))),
+        ]
+    )
+    func storedFormsSettle(left: FieldValue, right: FieldValue) throws {
+        var leftFirst = RecordSet()
+        leftFirst.merge(record(["name": (left, stamp(1))]))
+        leftFirst.merge(record(["name": (right, stamp(1))]))
+        var rightFirst = RecordSet()
+        rightFirst.merge(record(["name": (right, stamp(1))]))
+        rightFirst.merge(record(["name": (left, stamp(1))]))
+
+        let encoder = JSONEncoder()
+        #expect(try encoder.encode(leftFirst[itemID]?.value("name")) == encoder.encode(rightFirst[itemID]?.value("name")))
+    }
+
     @Test("the higher minimum reader version and the earliest creation stamp are kept")
     func recordMetadata() {
         var newer = record([:], created: stamp(4))
