@@ -15,8 +15,9 @@ public enum Materialized<Entity: Sendable>: Sendable {
 }
 
 /// A package is one immutable header record holding its creation facts plus one immutable record
-/// per event. Records never conflict: replicas converge on the union of events, folded in creation
-/// stamp order, and the domain fold supplies destructive precedence and correction precedence.
+/// per event. Records never conflict: replicas converge on the union of events, folded in the order
+/// `SyncRecord.precedes` gives, and the domain fold supplies destructive precedence and correction
+/// precedence.
 public enum PackageRecords {
     private enum Event {
         case known(PackageEvent)
@@ -87,7 +88,7 @@ public enum PackageRecords {
             return .unreadable
         }
         do {
-            let ordered = events.sorted { $0.created < $1.created }
+            let ordered = events.sorted { $0.precedes($1) }
             let history = try ordered.compactMap { record -> PackageEvent? in
                 if case .known(let event) = try decodeEvent(record) { return event }
                 return nil

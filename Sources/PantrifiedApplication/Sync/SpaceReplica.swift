@@ -72,6 +72,8 @@ public actor SpaceReplica: InventoryRepository, ShoppingListRepository {
         self.state = try store.load() ?? ReplicaState(replica: replica)
     }
 
+    /// The ID this replica stamps its writes with.
+    public var replicaID: ReplicaID { state.clock.replica }
     public var pendingCount: Int { state.outbox.count }
     public var records: RecordSet { state.records }
 
@@ -191,7 +193,7 @@ public actor SpaceReplica: InventoryRepository, ShoppingListRepository {
                         progressed = true
                     case .conflict(let current, let tag):
                         state.serverTags[id] = tag
-                        state.receive(current)
+                        state.receive([current])
                         if state.records[id] == current { state.outbox.remove(id) }
                         round.conflicts += 1
                         progressed = true
@@ -211,8 +213,8 @@ public actor SpaceReplica: InventoryRepository, ShoppingListRepository {
         for _ in 0..<maxPullPages {
             let page = try await transport.pull(zone: space, since: state.changeToken)
             try commit { state in
+                state.receive(page.records.map(\.record))
                 for pulled in page.records {
-                    state.receive(pulled.record)
                     state.serverTags[pulled.record.id] = pulled.tag
                 }
                 state.changeToken = page.token
@@ -248,8 +250,17 @@ private extension ReplicaState {
         }
     }
 
-    mutating func receive(_ record: SyncRecord) {
-        clock.observe(record.latestStamp)
-        records.merge(record)
+    /// Checks every incoming stamp before observing any, since observing one can move the clock
+    /// past another installation's stamp and hide it. Taking a new ID stops two installations that
+    /// share one from writing equal stamps from then on; stamps they already share are ordered by
+    /// the record ID tie-break.
+    mutating func receive(_ incoming: [SyncRecord]) {
+        if incoming.contains(where: { $0.stamps.contains(where: clock.wasIssuedElsewhere) }) {
+            clock.adopt(ReplicaID())
+        }
+        for record in incoming {
+            clock.observe(record.latestStamp)
+            records.merge(record)
+        }
     }
 }

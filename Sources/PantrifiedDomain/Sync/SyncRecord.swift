@@ -43,20 +43,69 @@ public indirect enum FieldValue: Sendable, Hashable, Codable {
     case list([FieldValue])
     case map([String: FieldValue])
 
-    /// A total order used only to break ties between different values written with the same stamp,
-    /// which a correctly persisted clock never produces.
-    fileprivate var canonical: String {
+    /// A total order used only to choose between different values written with the same stamp.
+    /// Every version must choose the same winner, so this order is part of the record format.
+    fileprivate func compare(_ other: FieldValue) -> Int {
+        switch (self, other) {
+        case (.null, .null): 0
+        case let (.bool(a), .bool(b)): order(a ? 1 : 0, b ? 1 : 0)
+        case let (.int(a), .int(b)): order(a, b)
+        case let (.double(a), .double(b)): order(a.bitPattern, b.bitPattern)
+        case let (.string(a), .string(b)): order(a.utf8, b.utf8)
+        case let (.date(a), .date(b)):
+            order(a.timeIntervalSinceReferenceDate.bitPattern, b.timeIntervalSinceReferenceDate.bitPattern)
+        case let (.uuid(a), .uuid(b)): order(a.uuidString.utf8, b.uuidString.utf8)
+        case let (.list(a), .list(b)): order(a, b) { $0.compare($1) }
+        case let (.map(a), .map(b)):
+            order(a.sortedByKey, b.sortedByKey) { left, right in
+                let key = order(left.key.utf8, right.key.utf8)
+                return key != 0 ? key : left.value.compare(right.value)
+            }
+        default: order(rank, other.rank)
+        }
+    }
+
+    private var rank: Int {
         switch self {
-        case .null: "n"
-        case .bool(let value): "b\(value)"
-        case .int(let value): "i\(value)"
-        case .double(let value): "d\(value)"
-        case .string(let value): "s\(value)"
-        case .date(let value): "t\(value.timeIntervalSinceReferenceDate)"
-        case .uuid(let value): "u\(value.uuidString)"
-        case .list(let values): "l[" + values.map(\.canonical).joined(separator: ",") + "]"
-        case .map(let values):
-            "m{" + values.keys.sorted().map { "\($0)=\(values[$0]!.canonical)" }.joined(separator: ",") + "}"
+        case .null: 0
+        case .bool: 1
+        case .int: 2
+        case .double: 3
+        case .string: 4
+        case .date: 5
+        case .uuid: 6
+        case .list: 7
+        case .map: 8
+        }
+    }
+}
+
+private extension Dictionary where Key == String {
+    var sortedByKey: [(key: String, value: Value)] {
+        sorted { $0.key.utf8.lexicographicallyPrecedes($1.key.utf8) }
+    }
+}
+
+private func order<T: Comparable>(_ a: T, _ b: T) -> Int {
+    a < b ? -1 : (a == b ? 0 : 1)
+}
+
+private func order<S: Sequence>(_ a: S, _ b: S) -> Int where S.Element: Comparable {
+    order(a, b) { order($0, $1) }
+}
+
+/// Lexicographic, with a shorter sequence ordered before any longer one it is a prefix of.
+private func order<S: Sequence>(_ a: S, _ b: S, by compare: (S.Element, S.Element) -> Int) -> Int {
+    var left = a.makeIterator()
+    var right = b.makeIterator()
+    while true {
+        switch (left.next(), right.next()) {
+        case (nil, nil): return 0
+        case (nil, _): return -1
+        case (_, nil): return 1
+        case let (l?, r?):
+            let result = compare(l, r)
+            if result != 0 { return result }
         }
     }
 }
@@ -72,7 +121,7 @@ public struct FieldEntry: Sendable, Hashable, Codable {
 
     fileprivate func wins(over other: FieldEntry) -> Bool {
         if stamp != other.stamp { return stamp > other.stamp }
-        return value.canonical > other.value.canonical
+        return value.compare(other.value) > 0
     }
 }
 
@@ -117,6 +166,11 @@ public struct SyncRecord: Sendable, Hashable, Codable {
         return result
     }
 
+    /// Every stamp in the record: its creation stamp and each field's.
+    public var stamps: [HybridTimestamp] {
+        [created] + fields.values.map(\.stamp)
+    }
+
     /// The latest stamp anywhere in the record, which a replica's clock must move past on receipt.
     public var latestStamp: HybridTimestamp {
         fields.values.map(\.stamp).reduce(created, max)
@@ -124,6 +178,16 @@ public struct SyncRecord: Sendable, Hashable, Codable {
 
     public func value(_ field: String) -> FieldValue? {
         fields[field]?.value
+    }
+
+    /// The order events are folded in and list items are shown in: creation stamp, then record ID.
+    /// Two installations that share a replica ID and clock can write different records with equal
+    /// creation stamps, and the record ID keeps the order the same on every replica.
+    func precedes(_ other: SyncRecord) -> Bool {
+        if created != other.created { return created < other.created }
+        let kind = order(id.kind.rawValue.utf8, other.id.kind.rawValue.utf8)
+        if kind != 0 { return kind < 0 }
+        return order(id.entity.uuidString.utf8, other.id.entity.uuidString.utf8) < 0
     }
 }
 

@@ -28,7 +28,7 @@ public struct HybridTimestamp: Sendable, Hashable, Codable, Comparable {
 /// observed, whatever the device's wall clock says. Wall-clock agreement between devices only
 /// affects which of two concurrent writes looks latest, never whether replicas converge.
 public struct HybridClock: Sendable, Hashable, Codable {
-    public let replica: ReplicaID
+    public private(set) var replica: ReplicaID
     private var physicalMillis: Int64 = .min
     private var counter = 0
 
@@ -45,6 +45,19 @@ public struct HybridClock: Sendable, Hashable, Codable {
             counter += 1
         }
         return HybridTimestamp(physicalMillis: physicalMillis, counter: counter, replica: replica)
+    }
+
+    /// True when `stamp` carries this clock's replica ID but is later than every reading this clock
+    /// has issued or observed. Another installation is then issuing readings under the same ID,
+    /// such as a device restored from this one's backup.
+    public func wasIssuedElsewhere(_ stamp: HybridTimestamp) -> Bool {
+        stamp.replica == replica
+            && (stamp.physicalMillis, stamp.counter) > (physicalMillis, counter)
+    }
+
+    /// Continues under `replica`. Later readings still follow every earlier one.
+    public mutating func adopt(_ replica: ReplicaID) {
+        self.replica = replica
     }
 
     public mutating func observe(_ remote: HybridTimestamp) {

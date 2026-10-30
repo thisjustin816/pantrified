@@ -50,6 +50,20 @@ struct SyncRecordMergeTests {
         #expect(left.merged(with: right) == right.merged(with: left))
     }
 
+    @Test(
+        "different structured values written with the same stamp merge to the same winner in either order",
+        arguments: [
+            (FieldValue.list([.string("a"), .string("b")]), FieldValue.list([.string("a,sb")])),
+            (.map(["a": .string("x"), "b": .string("y")]), .map(["a": .string("x,b=sy")])),
+        ]
+    )
+    func equalStampsWithStructuredValues(left: FieldValue, right: FieldValue) {
+        let l = record(["tags": (left, stamp(1))])
+        let r = record(["tags": (right, stamp(1))])
+
+        #expect(l.merged(with: r) == r.merged(with: l))
+    }
+
     @Test("the higher minimum reader version and the earliest creation stamp are kept")
     func recordMetadata() {
         var newer = record([:], created: stamp(4))

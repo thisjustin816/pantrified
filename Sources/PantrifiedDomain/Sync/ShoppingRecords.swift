@@ -16,7 +16,7 @@ public enum ShoppingRecords {
     ) -> ShoppingList {
         ShoppingList(items: stored(in: records, readerVersion: readerVersion)
             .filter { !$0.removed }
-            .sorted { $0.record.created < $1.record.created }
+            .sorted { $0.record.precedes($1.record) }
             .map(\.item))
     }
 
@@ -55,7 +55,7 @@ public enum ShoppingRecords {
         }
 
         let present = Set(list.items.map(\.id))
-        for entry in known.values.sorted(by: { $0.record.created < $1.record.created })
+        for entry in known.values.sorted(by: { $0.record.precedes($1.record) })
         where !entry.removed && !present.contains(entry.item.id) {
             changes.append(SyncRecord(
                 id: entry.record.id, writing: ["removed": .bool(true)], at: stamp(), created: entry.record.created

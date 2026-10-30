@@ -37,6 +37,18 @@ private func item(_ list: ShoppingList, _ name: String) throws -> ShoppingItem {
     try #require(list.items.first { $0.name == name })
 }
 
+/// Field writes for one item, all stamped `stamp`, as devices restored from one backup write them.
+private func write(_ item: ShoppingItemID, _ fields: [String: FieldValue], at stamp: HybridTimestamp, created: HybridTimestamp) -> SyncRecord {
+    SyncRecord(id: RecordID(kind: .shoppingItem, entity: item.rawValue), writing: fields, at: stamp, created: created)
+}
+
+private func newItem(_ name: String, at stamp: HybridTimestamp) -> SyncRecord {
+    write(ShoppingItemID(), [
+        "name": .string(name), "category": .null, "quantity": .null, "addedAt": .date(minutes(0)),
+        "checkedAt": .null, "removed": .bool(false),
+    ], at: stamp, created: stamp)
+}
+
 @Suite("Shopping item records")
 struct ShoppingRecordsTests {
     @Test("added items keep their list order on another replica")
@@ -210,5 +222,57 @@ struct ShoppingRecordsTests {
         #expect(shuffled.records == reference.records)
         #expect(shuffled.list.items == reference.list.items)
         #expect(shuffled.list.items.map(\.name) == ["Milk", "Bread"])
+    }
+
+    @Test("items created with equal stamps list in record ID order whatever order they arrive in")
+    func equalCreationStampsOrderByRecordID() {
+        var clock = HybridClock(replica: ReplicaID())
+        let tied = clock.tick(now: minutes(0))
+        let items = ["Milk", "Eggs", "Bread", "Rice", "Beans"].map { newItem($0, at: tied) }
+        let expected = items.sorted { $0.id.entity.uuidString < $1.id.entity.uuidString }.map(\.id.entity)
+
+        var orders: Set<[UUID]> = []
+        for (index, arrival) in items.permutations.enumerated() {
+            var records = RecordSet()
+            for _ in 0..<(index % 7) {
+                records.merge(SyncRecord(id: RecordID(kind: .packageEvent, entity: UUID()), created: tied, fields: [:]))
+            }
+            for record in arrival { records.merge(record) }
+            orders.insert(ShoppingRecords.materialize(from: records).items.map(\.id.rawValue))
+        }
+
+        #expect(orders == [expected])
+    }
+
+    @Test("field and removal writes with colliding stamps build the same list in every arrival order", arguments: 0..<30)
+    func collidingStampsConverge(seed: UInt64) {
+        var rng = SeededGenerator(seed: seed)
+        var clock = HybridClock(replica: ReplicaID())
+        let pool = [clock.tick(now: minutes(0)), clock.tick(now: minutes(0))]
+        let created = (0..<3).map { _ in newItem("Item", at: pool.randomElement(using: &rng)!) }
+        let edits: [[String: FieldValue]] = [
+            ["name": .string("Oat milk")], ["name": .string("Whole milk")], ["checkedAt": .date(minutes(1))],
+            ["checkedAt": .null], ["removed": .bool(true)], ["removed": .bool(false)], ["quantity": .string("2")],
+        ]
+        let writes = created + (0..<8).map { _ in
+            let target = created.randomElement(using: &rng)!
+            return write(
+                ShoppingItemID(target.id.entity), edits.randomElement(using: &rng)!,
+                at: pool.randomElement(using: &rng)!, created: target.created
+            )
+        }
+
+        var reference = RecordSet()
+        for record in writes { reference.merge(record) }
+        var shuffled = RecordSet()
+        for record in (writes + writes.prefix(3)).shuffled(using: &rng) { shuffled.merge(record) }
+
+        let shown = reference.records(of: .shoppingItem)
+            .filter { $0.value("removed") == .bool(false) }
+            .sorted { ($0.created, $0.id.entity.uuidString) < ($1.created, $1.id.entity.uuidString) }
+            .map(\.id.entity)
+        #expect(shuffled == reference)
+        #expect(ShoppingRecords.materialize(from: shuffled).items == ShoppingRecords.materialize(from: reference).items)
+        #expect(ShoppingRecords.materialize(from: shuffled).items.map(\.id.rawValue) == shown)
     }
 }

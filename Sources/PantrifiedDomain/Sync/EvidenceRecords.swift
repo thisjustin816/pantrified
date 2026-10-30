@@ -22,7 +22,7 @@ public enum EvidenceRecords {
     ) -> [EvidenceCrop] {
         records.records(of: .evidenceCrop)
             .filter { $0.minimumReaderVersion <= readerVersion }
-            .sorted { $0.created < $1.created }
+            .sorted { $0.precedes($1) }
             .compactMap { record in
                 try? EvidenceCrop(
                     id: EvidenceID(record.id.entity),

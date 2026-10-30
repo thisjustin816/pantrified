@@ -69,6 +69,14 @@ struct World {
         try attach(device.name, link: device.link, store: device.store, time: device.time, replicaID: ReplicaID())
     }
 
+    /// A second installation restored from `device`'s backup: the same stored state, replica ID and
+    /// clock, on a device whose wall clock reads the same.
+    func restore(_ device: Device, as name: String) throws -> Device {
+        let time = FixedTime(device.time.now())
+        let link = CloudLink(cloud)
+        return try attach(name, link: link, store: InMemoryReplicaStore(device.store.state), time: time, replicaID: ReplicaID())
+    }
+
     private func attach(
         _ name: String,
         link: CloudLink,

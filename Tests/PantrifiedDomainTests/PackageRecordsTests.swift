@@ -7,6 +7,7 @@ private let t0 = Date(timeIntervalSince1970: 1_800_000_000)
 private let space = SpaceID()
 private let fridge = LocationID()
 private let freezer = LocationID()
+private let pantry = LocationID()
 
 private func hours(_ n: Double) -> Date { t0.addingTimeInterval(n * 3600) }
 
@@ -40,6 +41,33 @@ private struct Replica {
 
 private func makePackage() -> Package {
     Package(spaceID: space, name: "Yoghrt", location: fridge, quantity: .full, addedAt: t0)
+}
+
+/// An unrelated record. Adding some before the records under test changes the set's internal
+/// layout, and with it the order a scan of the set visits records in.
+private func filler(_ stamp: HybridTimestamp) -> SyncRecord {
+    SyncRecord(id: RecordID(kind: .shoppingItem, entity: UUID()), created: stamp, fields: [:])
+}
+
+/// The record a device writes for `change` on its own copy of `package`, stamped `stamp`. Devices
+/// restored from one backup share a replica ID and clock, so their writes can carry equal stamps.
+private func eventRecords(
+    _ change: PackageChange,
+    id: PackageEventID = PackageEventID(),
+    on package: Package,
+    against records: RecordSet,
+    stamp: HybridTimestamp
+) throws -> [SyncRecord] {
+    var copy = package
+    try copy.record(change, at: hours(1), id: id)
+    return PackageRecords.changes(in: copy, against: records) { stamp }
+}
+
+/// Event IDs in the order the sync design folds them: creation stamp, then record ID.
+private func foldOrder(_ records: [SyncRecord]) -> [UUID] {
+    records
+        .sorted { ($0.created, $0.id.entity.uuidString) < ($1.created, $1.id.entity.uuidString) }
+        .map(\.id.entity)
 }
 
 @Suite("Package records")
@@ -261,5 +289,75 @@ struct PackageRecordsTests {
         #expect(package.status == .active)
         #expect(package.location == freezer)
         #expect(package.quantity == .aboutHalf)
+    }
+
+    @Test("events with equal creation stamps fold in record ID order whatever order they arrive in")
+    func equalStampsFoldByRecordID() throws {
+        var replica = Replica()
+        let original = makePackage()
+        replica.stage(original, at: 0)
+        let tied = replica.clock.tick(now: hours(1))
+        let changes: [PackageChange] = [
+            .usedUp, .discarded(reason: .spoiled), .moved(to: freezer), .moved(to: pantry), .opened,
+        ]
+        let events = try changes.flatMap { try eventRecords($0, on: original, against: replica.records, stamp: tied) }
+        #expect(events.count == changes.count)
+
+        var folds: Set<[UUID]> = []
+        for (index, order) in events.permutations.enumerated() {
+            var records = replica.records
+            for _ in 0..<(index % 7) { records.merge(filler(tied)) }
+            for record in order { records.merge(record) }
+            let package = try #require(PackageRecords.materialize(original.id, from: records).entity)
+            folds.insert(package.events.map(\.id.rawValue))
+        }
+
+        #expect(folds == [foldOrder(events)])
+    }
+
+    @Test("histories with colliding stamps build the same package in every arrival order", arguments: 0..<30)
+    func collidingStampsConverge(seed: UInt64) throws {
+        var rng = SeededGenerator(seed: seed)
+        var replica = Replica()
+        let original = makePackage()
+        replica.stage(original, at: 0)
+        let pool = [replica.clock.tick(now: hours(1)), replica.clock.tick(now: hours(1))]
+        let choices: [PackageChange] = [
+            .usedUp, .discarded(reason: .unwanted), .discarded(reason: nil), .moved(to: freezer), .moved(to: pantry),
+            .opened, .quantityChanged(.low), .corrected(.name("Skyr")), .recognized(.name("Yogurt")),
+        ]
+
+        var written: [(change: PackageChange, id: PackageEventID)] = []
+        var all = replica.records
+        var events: [SyncRecord] = []
+        for _ in 0..<Int.random(in: 2...7, using: &rng) {
+            let change = choices.randomElement(using: &rng)!
+            let id = PackageEventID()
+            let stamp = pool.randomElement(using: &rng)!
+            events += try eventRecords(change, id: id, on: original, against: replica.records, stamp: stamp)
+            written.append((change, id))
+        }
+        for record in events { all.merge(record) }
+        for _ in 0..<Int.random(in: 0...2, using: &rng) {
+            let target = written.randomElement(using: &rng)!
+            var copy = original
+            try copy.record(target.change, at: hours(1), id: target.id)
+            try copy.undo(target.id, at: hours(2))
+            let stamp = pool.randomElement(using: &rng)!
+            events += PackageRecords.changes(in: copy, against: all) { stamp }
+        }
+
+        var reference = replica.records
+        for record in events { reference.merge(record) }
+        var shuffled = replica.records
+        for _ in 0..<Int.random(in: 0..<20, using: &rng) { shuffled.merge(filler(pool[0])) }
+        for record in (events + events.prefix(2)).shuffled(using: &rng) { shuffled.merge(record) }
+
+        let expected = try #require(PackageRecords.materialize(original.id, from: reference).entity)
+        let package = try #require(PackageRecords.materialize(original.id, from: shuffled).entity)
+        #expect(expected.events.map(\.id.rawValue) == foldOrder(events))
+        #expect(package.events == expected.events)
+        #expect(package.status == expected.status)
+        #expect(package.location == expected.location)
     }
 }

@@ -213,6 +213,75 @@ struct SyncEngineTests {
         #expect(Set(stamps).count == 2)
     }
 
+    @Test("two devices restored from one backup write equal stamps and still converge")
+    func restoredDevicesConverge() async throws {
+        let world = World()
+        let a = try world.device("A")
+        var ids: [PackageID] = []
+        for name in ["Milk", "Eggs", "Rice", "Beans", "Bread", "Kale", "Tofu", "Feta"] {
+            ids.append(try await world.putAway(name, on: a))
+        }
+        try await a.sync()
+        let b = try world.restore(a, as: "B")
+
+        for id in ids {
+            try await a.actions.apply(.usedUp, to: id)
+            try await b.actions.apply(.discard(reason: .spoiled), to: id)
+        }
+        let tied = await Set(a.replica.records.records.values.map(\.created))
+            .intersection(b.replica.records.records.values.map(\.created))
+        #expect(tied.count > ids.count)
+
+        try await world.settle([a, b])
+        let state = try await expectConverged([a, b], in: world)
+        #expect(ids.allSatisfy { state.packages[$0]?.events.count == 2 })
+    }
+
+    @Test("a device that pulls writes made under its own replica ID that it never issued takes a new ID")
+    func restoredDeviceTakesNewReplicaID() async throws {
+        let world = World()
+        let a = try world.device("A")
+        try await a.shopping.add(name: "Milk", in: world.space)
+        try await a.sync()
+        let b = try world.restore(a, as: "B")
+        let shared = await a.replica.replicaID
+        #expect(await b.replica.replicaID == shared)
+
+        a.time.advance(hours: 1)
+        try await a.shopping.add(name: "Eggs", in: world.space)
+        try await a.sync()
+        try await b.sync()
+
+        let renamed = await b.replica.replicaID
+        #expect(renamed != shared)
+        try await b.shopping.add(name: "Bread", in: world.space)
+        try await world.settle([a, b])
+        #expect(await a.replica.replicaID == shared)
+        #expect(await b.replica.replicaID == renamed)
+        let bread = try #require(await b.replica.records.records.values.first { $0.value("name") == .string("Bread") })
+        #expect(bread.created.replica == renamed)
+        try await expectConverged([a, b], in: world)
+    }
+
+    @Test("a replica that only sees its own writes echoed back keeps its replica ID")
+    func ownEchoKeepsReplicaID() async throws {
+        let world = World()
+        let hostile = CloudLink.Faults(pageSize: 1, shuffleSeed: 3, duplicates: true, history: true)
+        var a = try world.device("A", faults: hostile)
+        let id = try await world.putAway("Milk", on: a)
+        try await a.actions.apply(.opened, to: id)
+        try await a.shopping.add(name: "Milk", in: world.space)
+        let replica = await a.replica.replicaID
+        try await a.sync()
+        a.time.advance(hours: -5)
+        a = try world.restart(a)
+        try await a.shopping.add(name: "Eggs", in: world.space)
+        try await a.sync()
+        try await a.sync()
+
+        #expect(await a.replica.replicaID == replica)
+    }
+
     @Test("duplicated, shuffled, stale and split deliveries converge", arguments: [UInt64(1), 7, 42])
     func hostileDelivery(seed: UInt64) async throws {
         let world = World()
