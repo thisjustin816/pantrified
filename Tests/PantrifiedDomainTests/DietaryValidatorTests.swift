@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import PantrifiedDomain
 
-private func recipe(_ lines: [String], instructions: [String] = []) -> RecipeUnderReview {
+private func recipe(_ lines: [String], instructions: [String] = ["Serve."]) -> RecipeUnderReview {
     RecipeUnderReview(title: "", ingredientLines: lines, instructions: instructions, completeness: .complete, origin: .sourced)
 }
 
@@ -119,6 +119,62 @@ struct InvisibleCharacterTests {
     func whitespaceKept() {
         #expect("rice\tand\nbeans".withoutInvisibleCharacters == "rice\tand\nbeans")
         #expect(IngredientName("black\tbeans") == IngredientName("black beans"))
+    }
+}
+
+@Suite("Earlier false safes")
+struct EarlierFalseSafeTests {
+    private static func avoided(_ name: String) -> DietaryRestriction { .excluded(IngredientName(name), severity: .justAvoid) }
+    private static func strictlyExcluded(_ name: String) -> DietaryRestriction {
+        .excluded(IngredientName(name), severity: .allergyOrIntolerance)
+    }
+
+    @Test("inputs that were once wrongly safe stay non-safe for sourced and generated recipes", arguments: [
+        (["1 cup rice (may contain milk and shrimp)"], [String](), Set([DietaryRestriction.allergen(.crustaceanShellfish)])),
+        (["1 cup rice (may contain wheat and almonds)"], [], [.allergen(.treeNut)]),
+        (["1 cup rice (may contain gluten)"], [], [.allergen(.wheat)]),
+        (["2 cups rice, processed in butter with egg"], [], [.allergen(.milk)]),
+        (["1 cup rice (may contain peanuts)"], [], [strictlyExcluded("peanut")]),
+        (["1 cup rice (may contain peanuts)"], [], [avoided("peanut")]),
+        (["1 cup rice", "1 tbsp olive oil"], ["Fold in the ricotta and serve."], [.allergen(.milk)]),
+        (["1 cup rice"], ["Top with toasted hazelnuts."], [.allergen(.treeNut)]),
+        (["1 tbsp gelatin"], [], [strictlyExcluded("pork")]),
+        (["1 tbsp gelatin"], [], [avoided("pork")]),
+        (["1/2 cup parmesan"], [], [strictlyExcluded("cheese")]),
+        (["1/2 cup parmesan"], [], [avoided("cheese")]),
+        (["2 tbsp butter"], [], [strictlyExcluded("milk")]),
+        (["2 tbsp butter"], [], [avoided("milk")]),
+        (["8 oz pasta"], [], [strictlyExcluded("egg")]),
+        (["2 tbsp tahini"], [], [strictlyExcluded("sesame seed")]),
+        (["2 tbsp tahini"], [], [avoided("sesame seed")]),
+        (["2 peppers, seeded and diced"], [], [strictlyExcluded("bell pepper")]),
+        (["1 bouillon cube"], [], [.allergen(.crustaceanShellfish)]),
+        (["2 cups broth"], [], [.allergen(.egg)]),
+        (["2 tbsp curry paste"], [], [.allergen(.treeNut)]),
+        (["2 slices bread"], [], [.allergen(.treeNut)]),
+        (["1 lb sausage"], [], [.allergen(.egg)]),
+        (["1 cup rice", "1 onion"], ["Pour in 2 cups of stock and simmer."], [.diet(.vegetarian)]),
+        (["1 cup rice"], ["Toss the rice with the sauce."], [.allergen(.peanut)]),
+    ] as [([String], [String], Set<DietaryRestriction>)])
+    func staysNonSafe(lines: [String], instructions: [String], restrictions: Set<DietaryRestriction>) {
+        for origin in [RecipeOrigin.sourced, .generated] {
+            let recipe = RecipeUnderReview(
+                title: "", ingredientLines: lines, instructions: instructions.isEmpty ? ["Serve."] : instructions,
+                completeness: .complete, origin: origin
+            )
+            #expect(DietaryValidator().assess(recipe, against: restrictions).verdict != .safe, "\(origin)")
+        }
+    }
+
+    @Test("a title naming an unlisted food is not safe for either origin")
+    func titleShrimp() {
+        for origin in [RecipeOrigin.sourced, .generated] {
+            let recipe = RecipeUnderReview(
+                title: "Garlic shrimp rice", ingredientLines: ["1 cup rice", "2 cloves garlic", "1 tbsp olive oil"],
+                instructions: ["Cook everything together and serve."], completeness: .complete, origin: origin
+            )
+            #expect(DietaryValidator().assess(recipe, against: [.allergen(.crustaceanShellfish)]).verdict != .safe, "\(origin)")
+        }
     }
 }
 

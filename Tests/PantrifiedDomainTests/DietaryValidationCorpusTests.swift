@@ -16,7 +16,8 @@ struct DietaryCase: Sendable, CustomTestStringConvertible {
     let name: String
     var title = ""
     let lines: [String]
-    var instructions: [String] = []
+    /// A step that names nothing, so cases about ingredients are not held up by missing steps.
+    var instructions = ["Serve."]
     var completeness: IngredientListCompleteness = .complete
     var origin: RecipeOrigin = .sourced
     var providerLabels: Set<String> = []
@@ -945,6 +946,21 @@ let dietaryCorpus: [DietaryCase] = [
         expected: .needsReview([.mentionedButNotListed])
     ),
     DietaryCase(
+        name: "a recipe without instructions needs review",
+        lines: ["2 cups cooked rice"],
+        instructions: [],
+        restrictions: [vegan],
+        expected: .needsReview([.instructionsMissing])
+    ),
+    DietaryCase(
+        name: "a recipe whose instructions are blank needs review",
+        lines: ["2 cups cooked rice"],
+        instructions: ["", "  "],
+        origin: .generated,
+        restrictions: [avoided("cilantro")],
+        expected: .needsReview([.instructionsMissing])
+    ),
+    DietaryCase(
         name: "a restriction whose traits the data was not reviewed for never passes",
         lines: ["1 cup rice"],
         data: ClassificationDataset(
@@ -954,6 +970,30 @@ let dietaryCorpus: [DietaryCase] = [
         ),
         restrictions: [.allergen(.sesame)],
         expected: .needsReview([.traitNotCovered])
+    ),
+
+    // Sourced titles and instructions are held to the same words as generated ones
+    DietaryCase(
+        name: "a sourced title naming a dish the data does not know needs review",
+        title: "Chicken Satay",
+        lines: ["1 lb chicken breast", "1 tbsp olive oil"],
+        instructions: ["Grill the chicken."],
+        restrictions: [.allergen(.peanut)],
+        expected: .needsReview([.unrecognizedWord])
+    ),
+    DietaryCase(
+        name: "sourced instructions that use a food the data does not know need review",
+        lines: ["1 cup rice", "1 tbsp olive oil"],
+        instructions: ["Fold in the ricotta and serve."],
+        restrictions: [.allergen(.milk)],
+        expected: .needsReview([.unrecognizedWord])
+    ),
+    DietaryCase(
+        name: "sourced instructions that top the dish with an unlisted nut need review",
+        lines: ["1 cup rice"],
+        instructions: ["Top with toasted hazelnuts."],
+        restrictions: [.allergen(.treeNut)],
+        expected: .needsReview([.unrecognizedWord])
     ),
 ]
 

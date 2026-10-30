@@ -126,6 +126,19 @@ struct MakeSomethingTests {
         #expect(reasons == [.unrecognizedWord("ricotta")])
     }
 
+    @Test("a recipe without instructions is withheld")
+    func missingInstructionsAreWithheld() async throws {
+        var stepless = saag
+        stepless.instructions = []
+        let outcome = try await makeSomething(ScriptedRuntime(returning: stepless)).run(.newRecipe(try context([.diet(.vegan)])))
+
+        guard case .withheld(let assessment, _) = outcome, case .needsReview(let reasons) = assessment.verdict else {
+            Issue.record("expected withheld for review, got \(outcome)")
+            return
+        }
+        #expect(reasons == [.instructionsMissing])
+    }
+
     @Test("adaptations are validated the same way")
     func adaptationIsValidated() async throws {
         var withFishSauce = saag

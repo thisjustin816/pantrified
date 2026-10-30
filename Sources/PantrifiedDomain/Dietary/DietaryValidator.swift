@@ -7,14 +7,12 @@ public enum IngredientListCompleteness: Sendable, Hashable {
     case unknown
 }
 
-/// Who wrote a recipe's title and instructions, which decides how far the validator trusts them
-/// to name only the listed foods.
+/// Who wrote a recipe. The validator checks both kinds the same way; the origin decides what the
+/// app does with a recipe that needs review.
 public enum RecipeOrigin: Sendable, Hashable {
-    /// A provider's recipe. Its title and instructions are scanned for known foods the list
-    /// leaves out.
+    /// A provider's recipe, shown with a Needs review label when it needs review.
     case sourced
-    /// A model's recipe. Every word of its title and instructions must also be a listed food, a
-    /// known food, or known cooking vocabulary, because a model can use a food without listing it.
+    /// A model's recipe or adaptation, withheld when it needs review.
     case generated
 }
 
@@ -23,7 +21,8 @@ public struct RecipeUnderReview: Sendable, Hashable {
     /// Scanned like the instructions, since a title can name a food the list leaves out.
     public var title: String
     public var ingredientLines: [String]
-    /// Scanned for foods the ingredient list leaves out.
+    /// Scanned word by word for foods the ingredient list leaves out. A recipe without them needs
+    /// review, since the steps the cook follows were never checked.
     public var instructions: [String]
     public var completeness: IngredientListCompleteness
     public var origin: RecipeOrigin
@@ -73,14 +72,17 @@ public enum ReviewReason: Sendable, Hashable {
     case mayBeExcluded(line: String, ingredient: IngredientName, excluded: IngredientName)
     /// The title or instructions use a relevant food the ingredient list leaves out.
     case mentionedButNotListed(IngredientName)
-    /// A generated title or instructions use a word that is not a listed food, a known food or
-    /// known cooking vocabulary, so it may name a food the list leaves out.
+    /// The title or instructions use a word that is not a listed food, a known food or cooking
+    /// vocabulary, so it may name a food the list leaves out.
     case unrecognizedWord(String)
+    /// The recipe came without instructions, so what the cook will be told to use was not checked.
+    case instructionsMissing
 
     public enum Kind: Sendable, Hashable, CaseIterable {
         case emptyIngredientList, incompleteIngredientList, unparsedLine, unknownIngredient, mayContain
         case advisoryStatement, unrecognizedNote, alternativesDisagree, traitNotCovered
         case exclusionUnverifiable, compositeMayHideExclusion, mayBeExcluded, mentionedButNotListed, unrecognizedWord
+        case instructionsMissing
     }
 
     public var kind: Kind {
@@ -99,6 +101,7 @@ public enum ReviewReason: Sendable, Hashable {
         case .mayBeExcluded: .mayBeExcluded
         case .mentionedButNotListed: .mentionedButNotListed
         case .unrecognizedWord: .unrecognizedWord
+        case .instructionsMissing: .instructionsMissing
         }
     }
 }
@@ -141,11 +144,12 @@ public struct DietaryValidator: Sendable {
         let classifying = ordered.contains(where: \.reliesOnClassification)
         // Every check reads the text as displayed, without characters that show as nothing.
         let lines = recipe.ingredientLines.map(\.withoutInvisibleCharacters).filter(Self.hasText)
-        let instructions = recipe.instructions.map(\.withoutInvisibleCharacters)
+        let instructions = recipe.instructions.map(\.withoutInvisibleCharacters).filter(Self.hasText)
 
         var finding = Finding()
         if lines.isEmpty { finding.reviews.append(.emptyIngredientList) }
         if recipe.completeness != .complete { finding.reviews.append(.incompleteIngredientList(recipe.completeness)) }
+        if instructions.isEmpty { finding.reviews.append(.instructionsMissing) }
         for restriction in ordered {
             for trait in restriction.forbiddenTraits.subtracting(data.coveredTraits).sorted(by: { "\($0)" < "\($1)" }) {
                 finding.reviews.append(.traitNotCovered(trait, restriction: restriction))
@@ -175,8 +179,7 @@ public struct DietaryValidator: Sendable {
             }
         }
         finding.reviews += unlisted(
-            in: [recipe.title.withoutInvisibleCharacters] + instructions, listed: listed, origin: recipe.origin,
-            restrictions: ordered
+            in: [recipe.title.withoutInvisibleCharacters] + instructions, listed: listed, restrictions: ordered
         )
 
         if !finding.violations.isEmpty { return .violation(finding.violations, alsoNeedsReview: finding.reviews) }
@@ -360,15 +363,14 @@ public struct DietaryValidator: Sendable {
 
     /// Foods the title and instructions use that the list leaves out, when they would change the
     /// verdict had they been listed. A generic word such as "sauce" counts only when no listed line
-    /// accounts for it. Generated text must also use only listed foods, known foods and cooking
-    /// vocabulary. A listed food may be called by its last word alone ("the beans"), but not by
+    /// accounts for it. When some restriction relies on classification, the text must also use only
+    /// listed foods, known foods and cooking vocabulary. A listed food may be called by its last word alone ("the beans"), but not by
     /// another of its words ("the kidneys"), and not after a cooking word that can make it a
     /// different food ("baked beans"). An excluded food is looked for anywhere in the text,
     /// whatever known food its words also begin.
     private func unlisted(
         in texts: [String],
         listed: [IngredientName],
-        origin: RecipeOrigin,
         restrictions: [DietaryRestriction]
     ) -> [ReviewReason] {
         let listedEntries = listed.compactMap { data.entry(for: $0) }
@@ -379,7 +381,7 @@ public struct DietaryValidator: Sendable {
             guard case .excluded(let name, _) = restriction else { return [] }
             return excludedNames(name)
         }
-        let checksWords = origin == .generated && restrictions.contains(where: \.reliesOnClassification)
+        let checksWords = restrictions.contains(where: \.reliesOnClassification)
         let candidates = data.entries.flatMap { entry in entry.names.map { ($0, entry) } }
             .sorted { $0.0.words.count > $1.0.words.count }
 
