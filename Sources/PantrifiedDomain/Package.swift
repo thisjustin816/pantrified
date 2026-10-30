@@ -25,6 +25,8 @@ public enum PackageChange: Sendable, Hashable, Codable {
     case frozen
     case thawed
     case quantityChanged(Quantity)
+    /// Part of the package was consumed; `resulting` is the quantity afterwards.
+    case usedSome(resulting: Quantity)
     case confirmedPresent
     case usedUp
     case discarded(reason: DiscardReason?)
@@ -141,8 +143,10 @@ public struct Package: Sendable, Identifiable {
 
     public var quantity: Quantity {
         effectiveChanges.reduce(initialQuantity) { current, entry in
-            if case .quantityChanged(let quantity) = entry.change { return quantity }
-            return current
+            switch entry.change {
+            case .quantityChanged(let quantity), .usedSome(let quantity): return quantity
+            default: return current
+            }
         }
     }
 

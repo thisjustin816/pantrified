@@ -190,3 +190,28 @@ struct PackageUndoTests {
         }
     }
 }
+
+@Suite("Package used some")
+struct PackageUsedSomeTests {
+    @Test("Used some sets the stepped-down quantity and records history")
+    func usedSome() throws {
+        var package = Package(
+            spaceID: SpaceID(), name: "Cream", location: fridge.id, quantity: .full, addedAt: t0
+        )
+        try package.record(.usedSome(resulting: .aboutHalf), at: hours(1))
+
+        #expect(package.quantity == .aboutHalf)
+        #expect(package.status == .active)
+    }
+
+    @Test("undoing Used some restores the earlier quantity")
+    func undoUsedSome() throws {
+        var package = Package(
+            spaceID: SpaceID(), name: "Cream", location: fridge.id, quantity: .full, addedAt: t0
+        )
+        let id = try package.record(.usedSome(resulting: .aboutHalf), at: hours(1))
+        try package.undo(id, at: hours(2))
+
+        #expect(package.quantity == .full)
+    }
+}
