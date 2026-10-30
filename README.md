@@ -42,6 +42,7 @@ See GitHub issue #1 for the pilot and completion criteria.
 - [`docs/branching-and-ci.md`](docs/branching-and-ci.md): how work is branched, merged and verified.
 - [`docs/ci.md`](docs/ci.md): the workflows, what each check establishes, and what is not built yet.
 - [`docs/evaluation.md`](docs/evaluation.md): the on-device model evaluation, what it measures and where it is compiled.
+- [`docs/storage-guidance.md`](docs/storage-guidance.md): the bundled USDA FoodKeeper snapshot, its conversion rules and how foods are matched to it.
 
 ## Implementation handoff
 

@@ -8,3 +8,4 @@ DerivedData/
 *.xcresult
 build/
 Config/Signing.local.xcconfig
+__pycache__/

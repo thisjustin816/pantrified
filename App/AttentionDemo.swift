@@ -1,6 +1,7 @@
 #if DEBUG
 import Foundation
 import PantrifiedDomain
+import PantrifiedGuidanceData
 
 /// Runs the domain attention policy on one fixed package, so a Debug build shows the packages
 /// linked and working on the Apple SDK. Compiled out of Release.
@@ -17,6 +18,11 @@ enum AttentionDemo {
             case .pastGuidance: "Past guidance"
             }
         }
+    }
+
+    /// The number of records in the bundled FoodKeeper snapshot, or nil when it cannot be loaded.
+    static func guidanceRecordCount() -> Int? {
+        try? BundledGuidance.dataset().records.count
     }
 
     static func sample(now: Date = Date()) -> Sample {

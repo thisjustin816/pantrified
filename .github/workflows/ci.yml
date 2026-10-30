@@ -50,3 +50,9 @@ jobs:
           ./Scripts/tests/test_select_simulator.sh
           ./Scripts/tests/test_verify_repo_hygiene.sh
           ./Scripts/tests/test_verify_evaluation_gating.sh
+      - name: Test the FoodKeeper converter and check the snapshot is current
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          python3 -I Scripts/tests/test_normalize_foodkeeper.py
+          python3 -I Scripts/normalize-foodkeeper.py --check Data/FoodKeeper/foodkeeper.json Sources/PantrifiedGuidanceData/Resources/foodkeeper.normalized.json
