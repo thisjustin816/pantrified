@@ -4,6 +4,10 @@ import PantrifiedDomain
 public struct AttentionItem: Sendable {
     public let package: Package
     public let assessment: AttentionAssessment
+
+    public var needsAttention: Bool {
+        assessment.state == .useSoon || assessment.state == .pastGuidance
+    }
 }
 
 /// Active packages that are past guidance or should be used soon, most urgent first.
@@ -29,6 +33,18 @@ public struct UseSoon: Sendable {
     }
 
     public func items(in space: SpaceID) async throws -> [AttentionItem] {
+        try await assessments(in: space)
+            .filter { $0.needsAttention }
+            .sorted { a, b in
+                if let ad = a.assessment.attentionDate, let bd = b.assessment.attentionDate, ad != bd {
+                    return ad < bd
+                }
+                return a.package.name < b.package.name
+            }
+    }
+
+    /// Every active package with its assessment, including those with no attention needed.
+    public func assessments(in space: SpaceID) async throws -> [AttentionItem] {
         let now = time.now()
         let storageTypes = Dictionary(
             uniqueKeysWithValues: try await locations.locations(in: space).map { ($0.id, $0.storageType) }
@@ -42,15 +58,8 @@ public struct UseSoon: Sendable {
                 guidance: try await guidance.guidance(for: package),
                 now: now
             )
-            guard assessment.state == .useSoon || assessment.state == .pastGuidance else { continue }
             items.append(AttentionItem(package: package, assessment: assessment))
         }
-
-        return items.sorted { a, b in
-            if let ad = a.assessment.attentionDate, let bd = b.assessment.attentionDate, ad != bd {
-                return ad < bd
-            }
-            return a.package.name < b.package.name
-        }
+        return items
     }
 }

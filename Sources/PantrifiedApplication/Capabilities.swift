@@ -24,3 +24,9 @@ public protocol StorageLocationRepository: Sendable {
 public protocol StorageGuidanceRepository: Sendable {
     func guidance(for package: Package) async throws -> StorageGuidance?
 }
+
+/// User-confirmed equivalences between recipe ingredients and inventory names, per Space.
+public protocol IngredientLinkRepository: Sendable {
+    func links(in space: SpaceID) async throws -> Set<IngredientLink>
+    func confirm(_ link: IngredientLink, in space: SpaceID) async throws
+}

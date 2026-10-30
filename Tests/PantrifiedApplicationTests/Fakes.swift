@@ -67,3 +67,21 @@ struct FakeGuidance: StorageGuidanceRepository {
         return result
     }
 }
+
+actor InMemoryLinks: IngredientLinkRepository {
+    private var stored: [SpaceID: Set<IngredientLink>] = [:]
+    var failOnRead = false
+
+    init(_ initial: [SpaceID: Set<IngredientLink>] = [:]) { stored = initial }
+
+    func setFailOnRead(_ value: Bool) { failOnRead = value }
+
+    func links(in space: SpaceID) async throws -> Set<IngredientLink> {
+        if failOnRead { throw FakeFailure() }
+        return stored[space] ?? []
+    }
+
+    func confirm(_ link: IngredientLink, in space: SpaceID) async throws {
+        stored[space, default: []].insert(link)
+    }
+}
