@@ -68,8 +68,8 @@ public enum ReviewReason: Sendable, Hashable {
     /// The excluded food is unknown to the data, so other foods cannot be shown not to be it.
     case exclusionUnverifiable(line: String, ingredient: IngredientName, excluded: IngredientName)
     case compositeMayHideExclusion(line: String, ingredient: IngredientName, excluded: IngredientName)
-    /// The food may be the excluded food, being a less specific name for it, or may contain a
-    /// trait the excluded food has.
+    /// The food may be the excluded food, being a less specific name for it, or has or may have a
+    /// trait the excluded food has or may have.
     case mayBeExcluded(line: String, ingredient: IngredientName, excluded: IngredientName)
     /// The title or instructions use a relevant food the ingredient list leaves out.
     case mentionedButNotListed(IngredientName)
@@ -241,10 +241,11 @@ public struct DietaryValidator: Sendable {
 
     /// A food is excluded when it, or a food it is made from, goes by a name that contains the
     /// excluded food or one of its synonyms, or when the excluded food names a class the food
-    /// belongs to. For an allergy or intolerance, a food that could be the excluded food also
-    /// needs review: one the data cannot tell apart from it, a less specific name for it, a class
-    /// it may belong to, one that may contain a trait it has, or a prepared food that could hide
-    /// it.
+    /// belongs to. For an allergy or intolerance, a food that could be the excluded food or set
+    /// off the same reaction also needs review: one the data cannot tell apart from it, a less
+    /// specific name for it, a class it may belong to, one that has or may have a trait the
+    /// excluded food has or may have (crab for an excluded shrimp, pasta for an excluded egg), or a
+    /// prepared food that could hide it.
     private func exclusion(
         _ excluded: IngredientName,
         severity: ExclusionSeverity,
@@ -267,15 +268,20 @@ public struct DietaryValidator: Sendable {
         guard let excludedEntry else {
             return Finding(reviews: [.exclusionUnverifiable(line: line, ingredient: ingredient, excluded: excluded)])
         }
+        var traits = entry.contains.union(entry.mayContain)
+        // Gelatin and animal rennet are made from an animal without being its meat.
+        if traits.contains(.slaughterByproduct) { traits.insert(.meat) }
+        let excludedTraits = excludedEntry.contains.union(excludedEntry.mayContain).union(excludedEntry.category)
+        var finding = Finding()
         if names.contains(where: { name in excludedNames.contains { $0.contains(name) } })
             || !entry.category.isDisjoint(with: excludedEntry.contains)
-            || !entry.mayContain.isDisjoint(with: excludedEntry.contains.union(excludedEntry.category)) {
-            return Finding(reviews: [.mayBeExcluded(line: line, ingredient: ingredient, excluded: excluded)])
+            || !traits.isDisjoint(with: excludedTraits) {
+            finding.reviews.append(.mayBeExcluded(line: line, ingredient: ingredient, excluded: excluded))
         }
         if entry.isComposite {
-            return Finding(reviews: [.compositeMayHideExclusion(line: line, ingredient: ingredient, excluded: excluded)])
+            finding.reviews.append(.compositeMayHideExclusion(line: line, ingredient: ingredient, excluded: excluded))
         }
-        return Finding()
+        return finding
     }
 
     // MARK: Advisories and instructions

@@ -70,7 +70,7 @@ let dietaryCorpus: [DietaryCase] = [
 
     DietaryCase(
         name: "a custom exclusion passes foods known to be something else",
-        lines: ["1 lb chicken thighs", "1 tbsp olive oil", "1/2 tsp paprika"],
+        lines: ["2 cups cooked rice", "1 tbsp olive oil", "1/2 tsp paprika"],
         restrictions: [strictlyExcluded("pork")],
         expected: .safe
     ),
@@ -162,6 +162,48 @@ let dietaryCorpus: [DietaryCase] = [
         lines: ["1 lb sausage"],
         restrictions: [strictlyExcluded("beef")],
         expected: .needsReview([.compositeMayHideExclusion])
+    ),
+    DietaryCase(
+        name: "a strict exclusion of shrimp needs review for other crustaceans",
+        lines: ["1 cup crab", "1 lobster"],
+        restrictions: [strictlyExcluded("shrimp")],
+        expected: .needsReview([.mayBeExcluded])
+    ),
+    DietaryCase(
+        name: "a strict exclusion of almond needs review for other tree nuts",
+        lines: ["1 cup walnuts"],
+        restrictions: [strictlyExcluded("almond")],
+        expected: .needsReview([.mayBeExcluded])
+    ),
+    DietaryCase(
+        name: "a strict exclusion of cod needs review for other fish",
+        lines: ["1 lb salmon"],
+        restrictions: [strictlyExcluded("cod")],
+        expected: .needsReview([.mayBeExcluded])
+    ),
+    DietaryCase(
+        name: "a strict exclusion of clam needs review for other molluscs",
+        lines: ["6 oysters"],
+        restrictions: [strictlyExcluded("clam")],
+        expected: .needsReview([.mayBeExcluded])
+    ),
+    DietaryCase(
+        name: "a strict exclusion of pork needs review for other meat",
+        lines: ["1 lb chicken thighs"],
+        restrictions: [strictlyExcluded("pork")],
+        expected: .needsReview([.mayBeExcluded])
+    ),
+    DietaryCase(
+        name: "a strict exclusion of beef needs review for cheese, which may use calf rennet",
+        lines: ["1 cup cheddar"],
+        restrictions: [strictlyExcluded("beef")],
+        expected: .needsReview([.mayBeExcluded])
+    ),
+    DietaryCase(
+        name: "a just-avoid exclusion of shrimp still passes other crustaceans",
+        lines: ["1 cup crab"],
+        restrictions: [avoided("shrimp")],
+        expected: .safe
     ),
 
     // Positive violations, including hidden ones
