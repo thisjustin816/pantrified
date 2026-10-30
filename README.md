@@ -37,6 +37,7 @@ See GitHub issue #1 for the pilot and completion criteria.
 - [`docs/architecture.md`](docs/architecture.md) — implementation architecture constraints and the first vertical slice.
 - [`docs/ai-runtime.md`](docs/ai-runtime.md) — Apple Foundation Models/PCC runtime and fallback boundary.
 - [`docs/monetization.md`](docs/monetization.md) — free/Plus boundary and purchase strategy.
+- [`docs/sync-design.md`](docs/sync-design.md): shared-Space record schema, clock, merge rules, and resume behavior.
 
 ## Implementation handoff
 
