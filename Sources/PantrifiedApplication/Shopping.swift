@@ -55,14 +55,11 @@ public struct ShoppingListActions: Sendable {
             .map { ShoppingExportItem(name: $0.name, quantity: $0.quantity) }
     }
 
-    private func mutate<Result>(
+    private func mutate<Result: Sendable>(
         _ space: SpaceID,
-        _ change: (inout ShoppingList) throws -> Result
+        _ change: @Sendable (inout ShoppingList) throws -> Result
     ) async throws -> Result {
-        var list = try await repository.list(in: space)
-        let result = try change(&list)
-        try await repository.save(list, in: space)
-        return result
+        try await repository.update(in: space, change)
     }
 }
 

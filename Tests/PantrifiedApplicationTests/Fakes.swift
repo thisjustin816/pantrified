@@ -94,9 +94,15 @@ actor InMemoryShopping: ShoppingListRepository {
 
     func list(in space: SpaceID) async throws -> ShoppingList { lists[space] ?? ShoppingList() }
 
-    func save(_ list: ShoppingList, in space: SpaceID) async throws {
+    func update<Result: Sendable>(
+        in space: SpaceID,
+        _ change: @Sendable (inout ShoppingList) throws -> Result
+    ) async throws -> Result {
+        var list = lists[space] ?? ShoppingList()
+        let result = try change(&list)
         if failOnSave { throw FakeFailure() }
         lists[space] = list
+        return result
     }
 }
 

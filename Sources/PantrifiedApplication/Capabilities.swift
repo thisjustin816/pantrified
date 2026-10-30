@@ -33,7 +33,12 @@ public protocol IngredientLinkRepository: Sendable {
 
 public protocol ShoppingListRepository: Sendable {
     func list(in space: SpaceID) async throws -> ShoppingList
-    func save(_ list: ShoppingList, in space: SpaceID) async throws
+    /// Reads, changes and stores the list as one step, so concurrent changes cannot overwrite each
+    /// other. Nothing is stored when `change` throws or the store fails.
+    func update<Result: Sendable>(
+        in space: SpaceID,
+        _ change: @Sendable (inout ShoppingList) throws -> Result
+    ) async throws -> Result
 }
 
 public enum ShoppingExportError: Error, Sendable, Equatable {

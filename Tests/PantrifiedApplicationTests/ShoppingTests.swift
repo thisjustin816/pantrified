@@ -48,6 +48,19 @@ struct ShoppingListActionsTests {
         #expect(try await repository.list(in: space).items.isEmpty)
     }
 
+    @Test("concurrent additions are all kept")
+    func concurrentAdditions() async throws {
+        let (actions, repository) = makeActions()
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for n in 0..<20 {
+                group.addTask { try await actions.add(name: "Item \(n)", in: space) }
+            }
+            try await group.waitForAll()
+        }
+
+        #expect(try await repository.list(in: space).items.count == 20)
+    }
+
     @Test("checking off and clearing can be undone")
     func clearAndUndo() async throws {
         let (actions, repository) = makeActions()
