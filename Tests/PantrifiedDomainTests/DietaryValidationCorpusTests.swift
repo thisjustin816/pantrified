@@ -257,6 +257,18 @@ let dietaryCorpus: [DietaryCase] = [
         expected: .violation(["paprika"])
     ),
     DietaryCase(
+        name: "excluding a class of foods excludes its members",
+        lines: ["2 tbsp butter", "1 cup almonds", "1/2 cup peanut butter", "1 lb cod", "1 cup barley"],
+        restrictions: [strictlyExcluded("dairy"), strictlyExcluded("nuts"), strictlyExcluded("seafood"), strictlyExcluded("gluten")],
+        expected: .violation(["butter", "almond", "peanut butter", "cod", "barley"])
+    ),
+    DietaryCase(
+        name: "a just-avoid exclusion of a class of foods excludes its members",
+        lines: ["1 lb salmon", "1 cup cheddar", "1 lb ground beef"],
+        restrictions: [avoided("fish"), avoided("dairy"), avoided("meat")],
+        expected: .violation(["salmon", "cheddar", "ground beef"])
+    ),
+    DietaryCase(
         name: "shrimp breaks a shellfish allergy",
         lines: ["1 lb shrimp, peeled", "2 cloves garlic", "2 tbsp olive oil"],
         restrictions: [.allergen(.crustaceanShellfish)],
@@ -529,6 +541,12 @@ let dietaryCorpus: [DietaryCase] = [
         name: "a food that may contain a trait of the excluded food needs review",
         lines: ["8 oz pasta"],
         restrictions: [strictlyExcluded("egg")],
+        expected: .needsReview([.mayBeExcluded])
+    ),
+    DietaryCase(
+        name: "a name for a class of foods may be the excluded member",
+        lines: ["1 lb white fish"],
+        restrictions: [strictlyExcluded("cod")],
         expected: .needsReview([.mayBeExcluded])
     ),
     DietaryCase(

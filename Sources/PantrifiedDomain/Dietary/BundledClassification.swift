@@ -56,8 +56,13 @@ private let bundledEntries: [ClassificationEntry] = [
     ClassificationEntry("lentil", mayContain: [.gluten, .wheat]),
     ClassificationEntry("soybean", synonyms: ["soy bean", "soya bean", "edamame"], contains: [.soy], mayContain: [.gluten, .wheat]),
     // Alone, "soy" may mean soy sauce.
-    ClassificationEntry("soy", synonyms: ["soya"], contains: [.soy], mayContain: [.gluten, .wheat], madeFrom: ["soybean"]),
-    ClassificationEntry("wheat", synonyms: ["wheat berry"], contains: [.wheat, .gluten]),
+    ClassificationEntry(
+        "soy", synonyms: ["soya"], contains: [.soy], mayContain: [.gluten, .wheat], madeFrom: ["soybean"], category: [.soy]
+    ),
+    ClassificationEntry("wheat", synonyms: ["wheat berry"], contains: [.wheat, .gluten], category: [.wheat]),
+    ClassificationEntry(
+        "gluten", synonyms: ["vital wheat gluten"], contains: [.wheat, .gluten], madeFrom: ["wheat"], category: [.gluten]
+    ),
     ClassificationEntry("cornstarch"),
     ClassificationEntry("flour", synonyms: ["all purpose flour", "wheat flour"], contains: [.wheat, .gluten], madeFrom: ["wheat"]),
     ClassificationEntry("barley", contains: [.gluten], mayContain: [.wheat]),
@@ -103,7 +108,8 @@ private let bundledEntries: [ClassificationEntry] = [
         "sausage", contains: [.meat], mayContain: [.milk, .egg, .wheat, .gluten, .soy, .treeNut, .slaughterByproduct],
         composite: true, madeFrom: ["pork"]
     ),
-    ClassificationEntry("fish", synonyms: ["white fish", "whitefish"], contains: [.fish]),
+    ClassificationEntry("meat", contains: [.meat], category: [.meat]),
+    ClassificationEntry("fish", synonyms: ["white fish", "whitefish"], contains: [.fish], category: [.fish]),
     ClassificationEntry("salmon", contains: [.fish]),
     // Canned tuna is often packed in vegetable broth that contains soy.
     ClassificationEntry("tuna", contains: [.fish], mayContain: [.soy]),
@@ -118,13 +124,18 @@ private let bundledEntries: [ClassificationEntry] = [
     ClassificationEntry("scallop", contains: [.mollusc]),
     ClassificationEntry("squid", contains: [.mollusc]),
     // Either kind, or both; which one is unknown.
-    ClassificationEntry("shellfish", mayContain: [.crustaceanShellfish, .mollusc], composite: true),
-    ClassificationEntry("seafood", mayContain: [.fish, .crustaceanShellfish, .mollusc], composite: true),
+    ClassificationEntry(
+        "shellfish", mayContain: [.crustaceanShellfish, .mollusc], composite: true, category: [.crustaceanShellfish, .mollusc]
+    ),
+    ClassificationEntry(
+        "seafood", mayContain: [.fish, .crustaceanShellfish, .mollusc], composite: true,
+        category: [.fish, .crustaceanShellfish, .mollusc]
+    ),
 
     // Dairy and eggs. Cheese and cultured dairy may use animal rennet or gelatin, and some cheeses
     // use egg-white lysozyme.
-    ClassificationEntry("milk", synonyms: ["whole milk", "skim milk"], contains: [.milk]),
-    ClassificationEntry("dairy", contains: [.milk], composite: true, madeFrom: ["milk"]),
+    ClassificationEntry("milk", synonyms: ["whole milk", "skim milk"], contains: [.milk], category: [.milk]),
+    ClassificationEntry("dairy", contains: [.milk], composite: true, madeFrom: ["milk"], category: [.milk]),
     ClassificationEntry("buttermilk", contains: [.milk], madeFrom: ["milk"]),
     ClassificationEntry("butter", synonyms: ["unsalted butter", "salted butter"], contains: [.milk], madeFrom: ["cream"]),
     ClassificationEntry("ghee", contains: [.milk], madeFrom: ["butter"]),
@@ -147,7 +158,7 @@ private let bundledEntries: [ClassificationEntry] = [
         "parmesan", synonyms: ["parmesan cheese"], contains: [.milk], mayContain: [.egg, .slaughterByproduct],
         madeFrom: ["milk"]
     ),
-    ClassificationEntry("egg", synonyms: ["egg yolk", "egg white"], contains: [.egg]),
+    ClassificationEntry("egg", synonyms: ["egg yolk", "egg white"], contains: [.egg], category: [.egg]),
 
     // Nuts and seeds. Tree nuts and peanuts are commonly processed on shared equipment.
     ClassificationEntry("almond", contains: [.treeNut], mayContain: [.peanut]),
@@ -156,11 +167,15 @@ private let bundledEntries: [ClassificationEntry] = [
     ClassificationEntry("cashew", contains: [.treeNut], mayContain: [.peanut]),
     ClassificationEntry("pecan", contains: [.treeNut], mayContain: [.peanut]),
     ClassificationEntry("pine nut", contains: [.treeNut], mayContain: [.peanut]),
-    // Unqualified nuts are usually a mix of tree nuts, often with peanuts.
-    ClassificationEntry("nut", synonyms: ["mixed nut"], contains: [.treeNut], mayContain: [.peanut], composite: true),
-    ClassificationEntry("peanut", contains: [.peanut], mayContain: [.treeNut]),
+    // Unqualified nuts are usually a mix of tree nuts, often with peanuts; as a class, people mean
+    // both.
+    ClassificationEntry(
+        "nut", synonyms: ["mixed nut"], contains: [.treeNut], mayContain: [.peanut], composite: true,
+        category: [.treeNut, .peanut]
+    ),
+    ClassificationEntry("peanut", contains: [.peanut], mayContain: [.treeNut], category: [.peanut]),
     ClassificationEntry("peanut butter", contains: [.peanut], mayContain: [.treeNut], madeFrom: ["peanut"]),
-    ClassificationEntry("sesame seed", synonyms: ["sesame"], contains: [.sesame]),
+    ClassificationEntry("sesame seed", synonyms: ["sesame"], contains: [.sesame], category: [.sesame]),
     ClassificationEntry("tahini", contains: [.sesame], madeFrom: ["sesame seed"]),
     ClassificationEntry("sesame oil", contains: [.sesame], madeFrom: ["sesame seed"]),
 

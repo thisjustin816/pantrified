@@ -231,10 +231,11 @@ public struct DietaryValidator: Sendable {
     }
 
     /// A food is excluded when it, or a food it is made from, goes by a name that contains the
-    /// excluded food or one of its synonyms. For an allergy or intolerance, a food that could be
-    /// the excluded food also needs review: one the data cannot tell apart from it, a less
-    /// specific name for it, one that may contain a trait it has, or a prepared food that could
-    /// hide it.
+    /// excluded food or one of its synonyms, or when the excluded food names a class the food
+    /// belongs to. For an allergy or intolerance, a food that could be the excluded food also
+    /// needs review: one the data cannot tell apart from it, a less specific name for it, a class
+    /// it may belong to, one that may contain a trait it has, or a prepared food that could hide
+    /// it.
     private func exclusion(
         _ excluded: IngredientName,
         severity: ExclusionSeverity,
@@ -247,7 +248,8 @@ public struct DietaryValidator: Sendable {
         let excludedNames = excludedNames(excluded)
         let sources = entry.map { [$0] + data.ingredients(of: $0) } ?? []
         let names = [ingredient] + sources.flatMap(\.names)
-        if names.contains(where: { name in excludedNames.contains(where: name.contains) }) {
+        if names.contains(where: { name in excludedNames.contains(where: name.contains) })
+            || !(entry?.contains ?? []).isDisjoint(with: excludedEntry?.category ?? []) {
             return Finding(violations: [
                 DietaryViolation(line: line, ingredient: ingredient, restriction: restriction, trait: nil),
             ])
@@ -257,7 +259,8 @@ public struct DietaryValidator: Sendable {
             return Finding(reviews: [.exclusionUnverifiable(line: line, ingredient: ingredient, excluded: excluded)])
         }
         if names.contains(where: { name in excludedNames.contains { $0.contains(name) } })
-            || !entry.mayContain.isDisjoint(with: excludedEntry.contains) {
+            || !entry.category.isDisjoint(with: excludedEntry.contains)
+            || !entry.mayContain.isDisjoint(with: excludedEntry.contains.union(excludedEntry.category)) {
             return Finding(reviews: [.mayBeExcluded(line: line, ingredient: ingredient, excluded: excluded)])
         }
         if entry.isComposite {
@@ -326,7 +329,7 @@ public struct DietaryValidator: Sendable {
         }
         guard let entry = data.entry(for: excluded) else { return true }
         return excludedNames(excluded).contains(where: text.contains)
-            || !entry.contains.union(entry.mayContain).isDisjoint(with: named)
+            || !entry.contains.union(entry.mayContain).union(entry.category).isDisjoint(with: named)
     }
 
     /// True for a just-avoid exclusion whose food the text names.

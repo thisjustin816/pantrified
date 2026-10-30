@@ -16,6 +16,9 @@ public struct ClassificationEntry: Sendable, Hashable {
     /// Generic words such as "sauce" that, in recipe instructions, usually name the dish's own
     /// component rather than an unlisted ingredient.
     public let isGenericTerm: Bool
+    /// For a name that also names a class of foods, such as fish or dairy, the traits that make a
+    /// food one of them. Excluding the name excludes every food with one of these traits.
+    public let category: Set<DietaryTrait>
 
     public init(
         _ name: String,
@@ -24,7 +27,8 @@ public struct ClassificationEntry: Sendable, Hashable {
         mayContain: Set<DietaryTrait> = [],
         composite: Bool = false,
         madeFrom: [String] = [],
-        genericTerm: Bool = false
+        genericTerm: Bool = false,
+        category: Set<DietaryTrait> = []
     ) {
         self.name = IngredientName(name)
         self.synonyms = synonyms.map(IngredientName.init)
@@ -33,6 +37,7 @@ public struct ClassificationEntry: Sendable, Hashable {
         self.isComposite = composite
         self.madeFrom = madeFrom.map(IngredientName.init)
         self.isGenericTerm = genericTerm
+        self.category = category
     }
 
     var names: [IngredientName] { [name] + synonyms }
