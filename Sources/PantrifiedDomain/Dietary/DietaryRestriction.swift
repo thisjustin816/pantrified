@@ -110,17 +110,25 @@ public struct DietaryPreferences: Sendable, Hashable, Codable {
 public enum ConsumerProfileTag: Sendable {}
 public typealias ConsumerProfileID = Identifier<ConsumerProfileTag>
 
+/// What this device knows of a person's hard restrictions.
+public enum ProfileRestrictions: Sendable, Hashable {
+    /// The person's restrictions as recorded. An empty set means they have none.
+    case known(Set<DietaryRestriction>)
+    /// This device does not have the person's restrictions. Never read as none.
+    case unknown
+}
+
 /// Someone who eats household meals, whether or not they use the app.
 public struct ConsumerProfile: Sendable, Hashable, Identifiable {
     public let id: ConsumerProfileID
     public var name: String
-    public var restrictions: Set<DietaryRestriction>
+    public var restrictions: ProfileRestrictions
     public var preferences: DietaryPreferences
 
     public init(
         id: ConsumerProfileID = ConsumerProfileID(),
         name: String,
-        restrictions: Set<DietaryRestriction> = [],
+        restrictions: ProfileRestrictions,
         preferences: DietaryPreferences = DietaryPreferences()
     ) {
         self.id = id

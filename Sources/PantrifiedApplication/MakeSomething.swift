@@ -84,6 +84,6 @@ public struct PrepareMakeSomething: Sendable {
             .filter { packages.contains($0.package.id) }
             .sorted { $0.needsAttention != $1.needsAttention ? $0.needsAttention : $0.package.name < $1.package.name }
             .map { MealContextIngredient(name: $0.package.name, useSoon: $0.needsAttention, quantity: $0.package.quantity) }
-        return MakeSomethingContext(ingredients: ingredients, diners: diners)
+        return try MakeSomethingContext(ingredients: ingredients, diners: diners)
     }
 }

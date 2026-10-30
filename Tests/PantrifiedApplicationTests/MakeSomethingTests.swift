@@ -32,10 +32,10 @@ private func makeSomething(_ runtime: ScriptedRuntime) -> MakeSomething {
     MakeSomething(router: GenerationRouter(runtimes: [runtime]))
 }
 
-private func context(_ restrictions: Set<DietaryRestriction>) -> MakeSomethingContext {
-    MakeSomethingContext(
+private func context(_ restrictions: Set<DietaryRestriction>) throws -> MakeSomethingContext {
+    try MakeSomethingContext(
         ingredients: [MealContextIngredient(name: "Spinach", useSoon: true, quantity: .aboutHalf)],
-        diners: [ConsumerProfile(name: "Diner", restrictions: restrictions)]
+        diners: [ConsumerProfile(name: "Diner", restrictions: .known(restrictions))]
     )
 }
 
@@ -49,7 +49,7 @@ private let saag = GeneratedRecipe(
 struct MakeSomethingTests {
     @Test("a recipe that passes validation is ready with its assessment")
     func safeRecipeIsReady() async throws {
-        let outcome = try await makeSomething(ScriptedRuntime(returning: saag)).run(.newRecipe(context([.diet(.vegan)])))
+        let outcome = try await makeSomething(ScriptedRuntime(returning: saag)).run(.newRecipe(try context([.diet(.vegan)])))
 
         guard case .ready(let recipe, let assessment, .onDevice) = outcome else {
             Issue.record("expected ready, got \(outcome)")
@@ -63,7 +63,7 @@ struct MakeSomethingTests {
     func violationIsWithheld() async throws {
         var buttery = saag
         buttery.ingredientLines.append("2 tbsp butter")
-        let outcome = try await makeSomething(ScriptedRuntime(returning: buttery)).run(.newRecipe(context([.diet(.dairyFree)])))
+        let outcome = try await makeSomething(ScriptedRuntime(returning: buttery)).run(.newRecipe(try context([.diet(.dairyFree)])))
 
         guard case .withheld(let assessment, _) = outcome, case .violation = assessment.verdict else {
             Issue.record("expected a withheld violation, got \(outcome)")
@@ -75,7 +75,7 @@ struct MakeSomethingTests {
     func needsReviewIsWithheld() async throws {
         var unknown = saag
         unknown.ingredientLines.append("1 tbsp gochujang")
-        let outcome = try await makeSomething(ScriptedRuntime(returning: unknown)).run(.newRecipe(context([.diet(.vegan)])))
+        let outcome = try await makeSomething(ScriptedRuntime(returning: unknown)).run(.newRecipe(try context([.diet(.vegan)])))
 
         guard case .withheld(let assessment, _) = outcome, case .needsReview = assessment.verdict else {
             Issue.record("expected withheld for review, got \(outcome)")
@@ -87,7 +87,7 @@ struct MakeSomethingTests {
     func unlistedFoodIsCaught() async throws {
         var sneaky = saag
         sneaky.instructions.append("Finish with a knob of butter.")
-        let outcome = try await makeSomething(ScriptedRuntime(returning: sneaky)).run(.newRecipe(context([.diet(.vegan)])))
+        let outcome = try await makeSomething(ScriptedRuntime(returning: sneaky)).run(.newRecipe(try context([.diet(.vegan)])))
 
         guard case .withheld(let assessment, _) = outcome, case .needsReview(let reasons) = assessment.verdict else {
             Issue.record("expected withheld for review, got \(outcome)")
@@ -104,7 +104,7 @@ struct MakeSomethingTests {
             instructions: ["Cook everything together and serve."]
         )
         let outcome = try await makeSomething(ScriptedRuntime(returning: shrimpRice))
-            .run(.newRecipe(context([.allergen(.crustaceanShellfish)])))
+            .run(.newRecipe(try context([.allergen(.crustaceanShellfish)])))
 
         guard case .withheld(let assessment, _) = outcome, case .needsReview(let reasons) = assessment.verdict else {
             Issue.record("expected withheld for review, got \(outcome)")
@@ -117,7 +117,7 @@ struct MakeSomethingTests {
     func unknownUnlistedFoodIsWithheld() async throws {
         var withRicotta = saag
         withRicotta.instructions.append("Fold in the ricotta and serve.")
-        let outcome = try await makeSomething(ScriptedRuntime(returning: withRicotta)).run(.newRecipe(context([.allergen(.milk)])))
+        let outcome = try await makeSomething(ScriptedRuntime(returning: withRicotta)).run(.newRecipe(try context([.allergen(.milk)])))
 
         guard case .withheld(let assessment, _) = outcome, case .needsReview(let reasons) = assessment.verdict else {
             Issue.record("expected withheld for review, got \(outcome)")
@@ -132,7 +132,7 @@ struct MakeSomethingTests {
         withFishSauce.ingredientLines.append("1 tbsp fish sauce")
         let original = RecipeToAdapt(title: "Fried rice", ingredientLines: ["2 cups cooked rice", "2 eggs"])
         let outcome = try await makeSomething(ScriptedRuntime(returning: withFishSauce))
-            .run(.adaptation(original, context([.diet(.vegetarian)])))
+            .run(.adaptation(original, try context([.diet(.vegetarian)])))
 
         guard case .withheld(let assessment, _) = outcome, case .violation = assessment.verdict else {
             Issue.record("expected a withheld violation, got \(outcome)")
@@ -142,7 +142,7 @@ struct MakeSomethingTests {
 
     @Test("with no hard restrictions the recipe is ready without a safety label")
     func noRestrictions() async throws {
-        let outcome = try await makeSomething(ScriptedRuntime(returning: saag)).run(.newRecipe(context([])))
+        let outcome = try await makeSomething(ScriptedRuntime(returning: saag)).run(.newRecipe(try context([])))
 
         guard case .ready(_, let assessment, _) = outcome else {
             Issue.record("expected ready, got \(outcome)")
@@ -153,7 +153,7 @@ struct MakeSomethingTests {
 
     @Test("no available runtime is reported as unavailable")
     func unavailable() async throws {
-        let outcome = try await makeSomething(ScriptedRuntime(returning: nil)).run(.newRecipe(context([])))
+        let outcome = try await makeSomething(ScriptedRuntime(returning: nil)).run(.newRecipe(try context([])))
 
         #expect(outcome == .unavailable([SkippedRuntime(kind: .onDevice, reason: .modelNotReady)]))
     }
@@ -175,7 +175,7 @@ struct PrepareMakeSomethingTests {
             guidance: FakeGuidance(result: nil),
             time: FixedTime(t0)
         )
-        let ana = ConsumerProfile(name: "Ana", restrictions: [.allergen(.peanut)])
+        let ana = ConsumerProfile(name: "Ana", restrictions: .known([.allergen(.peanut)]))
 
         let context = try await PrepareMakeSomething(useSoon: useSoon)
             .context(selecting: [rice.id, spinach.id], diners: [ana], in: space)
@@ -185,6 +185,9 @@ struct PrepareMakeSomethingTests {
             MealContextIngredient(name: "Rice", useSoon: false, quantity: .full),
         ])
         #expect(context.restrictions == [.allergen(.peanut)])
+        await #expect(throws: MakeSomethingContextError.noDiners) {
+            try await PrepareMakeSomething(useSoon: useSoon).context(selecting: [rice.id], diners: [], in: space)
+        }
         let json = String(decoding: try JSONEncoder().encode(context), as: UTF8.self)
         #expect(!json.contains("Ana"))
         #expect(!json.contains("cake"))

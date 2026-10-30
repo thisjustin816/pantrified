@@ -30,6 +30,9 @@ public struct CombinedPreferences: Sendable, Hashable, Codable {
 /// preferences combined so nothing says which person has which need. It has no field for
 /// identifiers, people's names, dates, locations, photos, evidence crops or history, so a request
 /// built from it cannot carry them.
+///
+/// Validation reads an empty `restrictions` as "nobody here has one", so a context exists only for
+/// at least one diner, each with restrictions this device knows.
 public struct MakeSomethingContext: Sendable, Hashable, Codable {
     public let ingredients: [MealContextIngredient]
     public let dinerCount: Int
@@ -37,10 +40,16 @@ public struct MakeSomethingContext: Sendable, Hashable, Codable {
     public let restrictions: Set<DietaryRestriction>
     public let preferences: CombinedPreferences
 
-    public init(ingredients: [MealContextIngredient], diners: [ConsumerProfile]) {
+    public init(ingredients: [MealContextIngredient], diners: [ConsumerProfile]) throws(MakeSomethingContextError) {
+        guard !diners.isEmpty else { throw .noDiners }
+        var restrictions: Set<DietaryRestriction> = []
+        for diner in diners {
+            guard case .known(let known) = diner.restrictions else { throw .restrictionsUnknown }
+            restrictions.formUnion(known)
+        }
         self.ingredients = ingredients
         self.dinerCount = diners.count
-        self.restrictions = diners.reduce(into: []) { $0.formUnion($1.restrictions) }
+        self.restrictions = restrictions
         let dislikes = diners.reduce(into: Set<IngredientName>()) { $0.formUnion($1.preferences.dislikes) }
         let likes = diners.reduce(into: Set<IngredientName>()) { $0.formUnion($1.preferences.likes) }
         self.preferences = CombinedPreferences(
@@ -49,6 +58,26 @@ public struct MakeSomethingContext: Sendable, Hashable, Codable {
             spiceTolerance: diners.compactMap(\.preferences.spiceTolerance).min()
         )
     }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        dinerCount = try container.decode(Int.self, forKey: .dinerCount)
+        guard dinerCount > 0 else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .dinerCount, in: container, debugDescription: "A request needs at least one diner"
+            )
+        }
+        ingredients = try container.decode([MealContextIngredient].self, forKey: .ingredients)
+        restrictions = try container.decode(Set<DietaryRestriction>.self, forKey: .restrictions)
+        preferences = try container.decode(CombinedPreferences.self, forKey: .preferences)
+    }
+}
+
+public enum MakeSomethingContextError: Error, Sendable, Hashable {
+    /// Nobody was selected, so there is no one whose restrictions could be checked.
+    case noDiners
+    /// A selected diner's restrictions are not on this device.
+    case restrictionsUnknown
 }
 
 /// A recipe the person asked Pantrified to adapt, as text only.
