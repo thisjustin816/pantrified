@@ -24,8 +24,8 @@ public struct HybridTimestamp: Sendable, Hashable, Codable, Comparable {
     }
 }
 
-/// Issues readings that never decrease locally and always follow every reading this replica has
-/// observed, whatever the device's wall clock says. Wall-clock agreement between devices only
+/// Issues readings that never decrease locally and, below the largest possible reading, always
+/// follow every reading this replica has issued or observed, whatever the device's wall clock says. Wall-clock agreement between devices only
 /// affects which of two concurrent writes looks latest, never whether replicas converge.
 public struct HybridClock: Sendable, Hashable, Codable {
     public private(set) var replica: ReplicaID

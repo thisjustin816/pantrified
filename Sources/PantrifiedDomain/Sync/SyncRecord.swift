@@ -73,8 +73,9 @@ public indirect enum FieldValue: Sendable, Hashable, Codable {
         }
     }
 
-    /// A total order used only to choose between different values written with the same stamp.
-    /// Every version must choose the same winner, so this order is part of the record format.
+    /// A total order on stored values, zero exactly when they are equal. It chooses between
+    /// different values written with the same stamp, and every version must choose the same
+    /// winner, so this order is part of the record format.
     fileprivate func compare(_ other: FieldValue) -> Int {
         switch (self, other) {
         case (.null, .null): 0
