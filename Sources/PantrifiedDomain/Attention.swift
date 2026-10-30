@@ -17,7 +17,7 @@ public struct GuidanceProvenance: Sendable, Hashable, Codable {
     }
 }
 
-public struct GuidanceWindow: Sendable, Hashable, Codable {
+public struct GuidanceWindow: Sendable, Hashable {
     public var storageType: StorageType
     public var anchor: WindowAnchor
     public var days: Int
