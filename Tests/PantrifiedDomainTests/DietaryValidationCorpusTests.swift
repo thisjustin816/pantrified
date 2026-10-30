@@ -133,6 +133,12 @@ let dietaryCorpus: [DietaryCase] = [
         expected: .violation(["bacon", "pesto"])
     ),
     DietaryCase(
+        name: "a just-avoid exclusion of wheat excludes soy sauce and pasta through what they are made from",
+        lines: ["2 tbsp soy sauce", "8 oz pasta"],
+        restrictions: [avoided("wheat")],
+        expected: .violation(["soy sauce", "pasta"])
+    ),
+    DietaryCase(
         name: "a just-avoid exclusion matches a line it cannot parse by name",
         lines: ["salt, pepper, cilantro"],
         restrictions: [avoided("cilantro")],
@@ -578,6 +584,53 @@ let dietaryCorpus: [DietaryCase] = [
         origin: .generated,
         restrictions: [vegan],
         expected: .needsReview([.unrecognizedWord])
+    ),
+    DietaryCase(
+        name: "a generated word that shares only a listed food's first word needs review",
+        lines: ["1 can kidney beans, drained"],
+        instructions: ["Add the kidneys."],
+        origin: .generated,
+        restrictions: [vegetarian],
+        expected: .needsReview([.unrecognizedWord])
+    ),
+    DietaryCase(
+        name: "a cooking word before a listed food's name can make it a different food",
+        lines: ["1 can black beans"],
+        instructions: ["Serve with baked beans."],
+        origin: .generated,
+        restrictions: [vegetarian],
+        expected: .needsReview([.unrecognizedWord])
+    ),
+    DietaryCase(
+        name: "a cooking word before a known food can name a prepared food",
+        lines: ["1 cup cooked rice", "1 onion"],
+        instructions: ["Top with crispy fried onions."],
+        origin: .generated,
+        restrictions: [.allergen(.wheat)],
+        expected: .needsReview([.unrecognizedWord])
+    ),
+    DietaryCase(
+        name: "seasoned salt is not plain salt",
+        lines: ["1 cup cooked rice", "1 tsp salt"],
+        instructions: ["Sprinkle with seasoned salt."],
+        origin: .generated,
+        restrictions: [glutenFree],
+        expected: .needsReview([.unrecognizedWord])
+    ),
+    DietaryCase(
+        name: "half-and-half is dairy even though each word is a cooking word",
+        lines: ["1 cup cooked rice"],
+        instructions: ["Stir in the half-and-half."],
+        origin: .generated,
+        restrictions: [.allergen(.milk)],
+        expected: .needsReview([.mentionedButNotListed])
+    ),
+    DietaryCase(
+        name: "toast in sourced instructions is bread",
+        lines: ["2 eggs"],
+        instructions: ["Serve on toast."],
+        restrictions: [.allergen(.wheat)],
+        expected: .needsReview([.mentionedButNotListed])
     ),
     DietaryCase(
         name: "an unlisted stock in the instructions needs review",

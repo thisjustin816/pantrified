@@ -46,8 +46,11 @@ struct BundledClassificationTests {
         }
     }
 
-    @Test("every food that contains milk, egg, peanut or sesame is linked to it, so excluding it excludes them",
-          arguments: [(DietaryTrait.milk, "milk"), (.egg, "egg"), (.peanut, "peanut"), (.sesame, "sesame seed")])
+    @Test("every food that contains milk, egg, peanut, sesame, wheat or soy is linked to it, so excluding it excludes them",
+          arguments: [
+              (DietaryTrait.milk, "milk"), (.egg, "egg"), (.peanut, "peanut"), (.sesame, "sesame seed"),
+              (.wheat, "wheat"), (.soy, "soybean"),
+          ])
     func sourcesAreLinked(trait: DietaryTrait, source: String) throws {
         let data = ClassificationDataset.bundled
         let sourceEntry = try #require(data.entry(for: IngredientName(source)))

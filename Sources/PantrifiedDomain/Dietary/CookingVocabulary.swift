@@ -12,6 +12,16 @@ enum CookingVocabulary {
         words.contains(word) || word.allSatisfy(\.isNumber)
     }
 
+    /// True for a cooking word that, placed before a food, can name a different prepared food:
+    /// fried onions are often battered, baked beans hold pork and sugar, seasoned salt is a blend.
+    static func canChangeFood(_ word: String) -> Bool {
+        foodChanging.contains(word)
+    }
+
+    private static let foodChanging: Set<String> = [
+        "fried", "crispy", "crisp", "crunchy", "baked", "seasoned", "hot", "brown",
+    ]
+
     private static let words: Set<String> = {
         let groups: [[String]] = [functionWords, numbers, measures, equipment, methods, states, time, dishes]
         return Set(groups.joined().flatMap { $0.split(separator: " ").map(String.init) })

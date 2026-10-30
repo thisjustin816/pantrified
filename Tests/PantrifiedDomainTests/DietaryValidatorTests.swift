@@ -56,6 +56,21 @@ struct DietaryValidatorTests {
         #expect(verdict == .safe)
     }
 
+    @Test("a line that could hold milk is never safe for a milk allergy", arguments: [
+        "1/2 cup peanut-free butter", "1 ½ cups milk", "dairy-free cheese", "gluten free soy sauce", "vegan mayo",
+        "1 cup rice (no nuts)", "1 cup rice, without egg", "butternut squash", "1 tsp nutmeg", "1 eggplant",
+        "cocoa butter", "1 cup rice\n2 tbsp butter", "1 cup rice or 2 tbsp butter", "1 cup rice; 2 tbsp butter",
+        "1 cup rice (or butter)", "RICE AND BUTTER", "rice/butter", "1 cup rice, plus butter",
+        "1 cup m\u{0456}lk", "rice\u{00A0}and\u{00A0}butter", "2 tbsp but\u{200B}ter", "２ tbsp ｂｕｔｔｅｒ",
+        "2 tbsp crème fraîche", "1 cup non-dairy milk", "1 cup rice (contains: milk)", "1 cup Kerrygold",
+        "1 cup rice, packed in butter", "1 cup half-and-half",
+    ])
+    func milkIsNeverHidden(line: String) {
+        let verdict = DietaryValidator().assess(recipe([line]), against: [.allergen(.milk)]).verdict
+
+        #expect(verdict != .safe)
+    }
+
     @Test("an instruction naming a listed food is not flagged, and a longer name is not read as a shorter one")
     func instructionsMatchListedFoods() {
         let verdict = DietaryValidator().assess(

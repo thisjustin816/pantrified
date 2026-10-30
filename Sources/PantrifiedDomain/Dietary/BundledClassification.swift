@@ -54,9 +54,12 @@ private let bundledEntries: [ClassificationEntry] = [
     ClassificationEntry("kidney bean", mayContain: [.gluten, .wheat]),
     ClassificationEntry("chickpea", synonyms: ["garbanzo bean"], mayContain: [.gluten, .wheat]),
     ClassificationEntry("lentil", mayContain: [.gluten, .wheat]),
-    ClassificationEntry("soybean", synonyms: ["soy", "soya", "soy bean", "edamame"], contains: [.soy], mayContain: [.gluten, .wheat]),
+    ClassificationEntry("soybean", synonyms: ["soy bean", "soya bean", "edamame"], contains: [.soy], mayContain: [.gluten, .wheat]),
+    // Alone, "soy" may mean soy sauce.
+    ClassificationEntry("soy", synonyms: ["soya"], contains: [.soy], mayContain: [.gluten, .wheat], madeFrom: ["soybean"]),
+    ClassificationEntry("wheat", synonyms: ["wheat berry"], contains: [.wheat, .gluten]),
     ClassificationEntry("cornstarch"),
-    ClassificationEntry("flour", synonyms: ["all purpose flour", "wheat flour"], contains: [.wheat, .gluten]),
+    ClassificationEntry("flour", synonyms: ["all purpose flour", "wheat flour"], contains: [.wheat, .gluten], madeFrom: ["wheat"]),
     ClassificationEntry("barley", contains: [.gluten], mayContain: [.wheat]),
     ClassificationEntry("rye", contains: [.gluten], mayContain: [.wheat]),
     ClassificationEntry("oat", synonyms: ["rolled oat", "oatmeal"], mayContain: [.gluten, .wheat]),
@@ -71,9 +74,19 @@ private let bundledEntries: [ClassificationEntry] = [
         mayContain: [.milk, .egg, .soy, .sesame, .treeNut, .peanut, .meat, .slaughterByproduct, .otherAnimalProduct],
         composite: true, madeFrom: ["flour"]
     ),
+    ClassificationEntry(
+        "toast", contains: [.wheat, .gluten],
+        mayContain: [.milk, .egg, .soy, .sesame, .treeNut, .peanut, .meat, .slaughterByproduct, .otherAnimalProduct],
+        composite: true, madeFrom: ["bread"]
+    ),
+    ClassificationEntry(
+        "breadcrumb", synonyms: ["bread crumb", "panko", "panko breadcrumb"], contains: [.wheat, .gluten],
+        mayContain: [.milk, .egg, .soy, .sesame, .treeNut, .peanut, .meat, .slaughterByproduct, .otherAnimalProduct],
+        composite: true, madeFrom: ["bread"]
+    ),
     ClassificationEntry("corn tortilla", mayContain: [.wheat, .gluten]),
-    ClassificationEntry("tofu", contains: [.soy], madeFrom: ["soy milk"]),
-    ClassificationEntry("soy milk", contains: [.soy]),
+    ClassificationEntry("tofu", contains: [.soy], mayContain: [.gluten, .wheat], madeFrom: ["soy milk"]),
+    ClassificationEntry("soy milk", contains: [.soy], mayContain: [.gluten, .wheat], madeFrom: ["soybean"]),
 
     // Meat, fish, shellfish
     ClassificationEntry("chicken", synonyms: ["chicken breast", "chicken thigh"], contains: [.meat]),
@@ -116,6 +129,7 @@ private let bundledEntries: [ClassificationEntry] = [
     ClassificationEntry("butter", synonyms: ["unsalted butter", "salted butter"], contains: [.milk], madeFrom: ["cream"]),
     ClassificationEntry("ghee", contains: [.milk], madeFrom: ["butter"]),
     ClassificationEntry("cream", synonyms: ["heavy cream", "whipping cream"], contains: [.milk], madeFrom: ["milk"]),
+    ClassificationEntry("half and half", contains: [.milk], madeFrom: ["milk", "cream"]),
     ClassificationEntry("sour cream", contains: [.milk], mayContain: [.slaughterByproduct], madeFrom: ["cream"]),
     ClassificationEntry(
         "yogurt", synonyms: ["greek yogurt", "plain yogurt"], contains: [.milk], mayContain: [.slaughterByproduct],
@@ -198,8 +212,8 @@ private let bundledEntries: [ClassificationEntry] = [
     // Unqualified broth or bouillon may be made from any meat, fish or shellfish.
     ClassificationEntry("broth", synonyms: ["stock"], mayContain: everything, composite: true, genericTerm: true),
     ClassificationEntry("bouillon", synonyms: ["bouillon cube"], mayContain: everything, composite: true),
-    ClassificationEntry("soy sauce", contains: [.soy, .wheat, .gluten], composite: true),
-    ClassificationEntry("tamari", contains: [.soy], mayContain: [.wheat, .gluten], composite: true),
+    ClassificationEntry("soy sauce", contains: [.soy, .wheat, .gluten], composite: true, madeFrom: ["soybean", "wheat"]),
+    ClassificationEntry("tamari", contains: [.soy], mayContain: [.wheat, .gluten], composite: true, madeFrom: ["soybean"]),
     // Some brands add hydrolyzed wheat protein.
     ClassificationEntry(
         "fish sauce", contains: [.fish], mayContain: [.crustaceanShellfish, .wheat, .gluten], composite: true,

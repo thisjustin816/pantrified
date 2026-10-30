@@ -343,7 +343,9 @@ public struct DietaryValidator: Sendable {
     /// Foods the title and instructions use that the list leaves out, when they would change the
     /// verdict had they been listed. A generic word such as "sauce" counts only when no listed line
     /// accounts for it. Generated text must also use only listed foods, known foods and cooking
-    /// vocabulary.
+    /// vocabulary. A listed food may be called by its last word alone ("the beans"), but not by
+    /// another of its words ("the kidneys"), and not after a cooking word that can make it a
+    /// different food ("baked beans").
     private func unlisted(
         in texts: [String],
         listed: [IngredientName],
@@ -351,7 +353,9 @@ public struct DietaryValidator: Sendable {
         restrictions: [DietaryRestriction]
     ) -> [ReviewReason] {
         let listedEntries = listed.compactMap { data.entry(for: $0) }
-        let listedWords = Set(listed.flatMap(\.words) + listedEntries.flatMap { $0.names.flatMap(\.words) })
+        let listedNames = listed + listedEntries.flatMap(\.names)
+        let listedWords = Set(listedNames.flatMap(\.words))
+        let listedHeads = Set(listedNames.compactMap(\.words.last))
         let exclusions = restrictions
             .flatMap { restriction -> [IngredientName] in
                 guard case .excluded(let name, _) = restriction else { return [] }
@@ -370,6 +374,11 @@ public struct DietaryValidator: Sendable {
             var index = 0
             while index < words.count {
                 let rest = words[index...]
+                if checksWords, index > 0, CookingVocabulary.canChangeFood(written[index - 1]),
+                   candidates.contains(where: { rest.starts(with: $0.0.words) }) || listedHeads.contains(words[index]) {
+                    let phrase = "\(written[index - 1]) \(written[index])"
+                    if !unrecognized.contains(phrase) { unrecognized.append(phrase) }
+                }
                 if let (name, entry) = candidates.first(where: { rest.starts(with: $0.0.words) }) {
                     index += name.words.count
                     let accounted = listedEntries.contains(entry)
@@ -384,7 +393,7 @@ public struct DietaryValidator: Sendable {
                     if !listed.contains(where: { $0.contains(excluded) }), !found.contains(excluded) { found.append(excluded) }
                     continue
                 }
-                if checksWords, !CookingVocabulary.contains(written[index]), !listedWords.contains(words[index]),
+                if checksWords, !CookingVocabulary.contains(written[index]), !listedHeads.contains(words[index]),
                    !unrecognized.contains(written[index]) {
                     unrecognized.append(written[index])
                 }
