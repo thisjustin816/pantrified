@@ -99,6 +99,12 @@ public struct SyncRecord: Sendable, Hashable, Codable {
         self.fields = fields
     }
 
+    /// A write of `values` at one stamp. `created` defaults to that stamp for a new record; a change
+    /// to an existing record passes the record's own creation stamp.
+    init(id: RecordID, writing values: [String: FieldValue], at stamp: HybridTimestamp, created: HybridTimestamp? = nil) {
+        self.init(id: id, created: created ?? stamp, fields: values.mapValues { FieldEntry(value: $0, stamp: stamp) })
+    }
+
     public func merged(with other: SyncRecord) -> SyncRecord {
         precondition(id == other.id, "merging records of different entities")
         var result = self
