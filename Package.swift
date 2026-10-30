@@ -10,11 +10,15 @@ let package = Package(
     ],
     targets: [
         .target(name: "PantrifiedDomain"),
-        .testTarget(name: "PantrifiedDomainTests", dependencies: ["PantrifiedDomain"]),
+        .target(name: "PantrifiedTestSupport"),
+        .testTarget(
+            name: "PantrifiedDomainTests",
+            dependencies: ["PantrifiedDomain", "PantrifiedTestSupport"]
+        ),
         .target(name: "PantrifiedApplication", dependencies: ["PantrifiedDomain"]),
         .testTarget(
             name: "PantrifiedApplicationTests",
-            dependencies: ["PantrifiedApplication", "PantrifiedDomain"]
+            dependencies: ["PantrifiedApplication", "PantrifiedDomain", "PantrifiedTestSupport"]
         ),
     ]
 )
