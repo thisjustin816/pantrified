@@ -73,7 +73,8 @@ public enum ReviewReason: Sendable, Hashable {
     /// The title or instructions use a relevant food the ingredient list leaves out.
     case mentionedButNotListed(IngredientName)
     /// The title or instructions use a word that is not a listed food, a known food or cooking
-    /// vocabulary, so it may name a food the list leaves out.
+    /// vocabulary, or a cooking word beside a food that can make it a different food, so the text
+    /// may name a food the list leaves out.
     case unrecognizedWord(String)
     /// The recipe came without instructions, so what the cook will be told to use was not checked.
     case instructionsMissing
@@ -124,9 +125,9 @@ public struct DietaryAssessment: Sendable, Hashable {
 
 /// Deterministic hard-restriction checking. A recipe is safe only when its ingredient list is
 /// complete and every ingredient is positively known not to break every active restriction;
-/// anything unknown, ambiguous or unparsed needs review. A just-avoid exclusion is the one
-/// restriction matched by name alone, so an unknown food does not count against it. No model
-/// takes part.
+/// anything unknown, ambiguous or unparsed needs review. A just-avoid exclusion is matched only
+/// through the names, made-from links and classes the data knows, so an unknown food does not
+/// count against it. No model takes part.
 public struct DietaryValidator: Sendable {
     public let data: ClassificationDataset
 
@@ -362,17 +363,13 @@ public struct DietaryValidator: Sendable {
     }
 
     /// Foods the title and instructions use that the list leaves out, when they would change the
-    /// verdict had they been listed. A generic word such as "sauce" counts only when no listed line
-    /// accounts for it. When some restriction relies on classification, the text must also use only
-    /// listed foods, known foods and cooking vocabulary. A listed food may be called by its last word alone ("the beans"), but not by
-    /// another of its words ("the kidneys"), and not after a cooking word that can make it a
-    /// different food ("baked beans"). An excluded food is looked for anywhere in the text,
-    /// whatever known food its words also begin.
-    private func unlisted(
-        in texts: [String],
-        listed: [IngredientName],
-        restrictions: [DietaryRestriction]
-    ) -> [ReviewReason] {
+    /// verdict had they been listed, and, when some restriction relies on classification, every
+    /// word that is not a food or cooking vocabulary. A generic word such as "sauce" counts as the
+    /// listed one only when a listed line accounts for it and nothing right before it says it is
+    /// another ("a dark sauce", "peanut sauce"). A listed food may be called by its last word
+    /// alone ("the beans"), but not by another of its words ("the kidneys"). An excluded food is
+    /// looked for anywhere in the text, whatever known food its words also begin.
+    private func unlisted(in texts: [String], listed: [IngredientName], restrictions: [DietaryRestriction]) -> [ReviewReason] {
         let listedEntries = listed.compactMap { data.entry(for: $0) }
         let listedNames = listed + listedEntries.flatMap(\.names)
         let listedWords = Set(listedNames.flatMap(\.words))
@@ -382,36 +379,29 @@ public struct DietaryValidator: Sendable {
             return excludedNames(name)
         }
         let checksWords = restrictions.contains(where: \.reliesOnClassification)
-        let candidates = data.entries.flatMap { entry in entry.names.map { ($0, entry) } }
-            .sorted { $0.0.words.count > $1.0.words.count }
+        let known = data.entries.flatMap { entry in entry.names.map { FoodName(name: $0, entry: entry) } }
+        let unknownListed = listed.filter { data.entry(for: $0) == nil }.map { FoodName(name: $0, entry: nil) }
+        let foods = (known + unknownListed).sorted { $0.name.words.count > $1.name.words.count }
 
         var found: [IngredientName] = []
         var unrecognized: [String] = []
         for text in texts {
-            let written = text.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
-            let words = written.map { IngredientName($0).words.first ?? $0 }
-            var index = 0
-            while index < words.count {
-                let rest = words[index...]
-                if checksWords, index > 0, CookingVocabulary.canChangeFood(written[index - 1]),
-                   candidates.contains(where: { rest.starts(with: $0.0.words) }) || listedHeads.contains(words[index]) {
-                    let phrase = "\(written[index - 1]) \(written[index])"
-                    if !unrecognized.contains(phrase) { unrecognized.append(phrase) }
-                }
-                if let (name, entry) = candidates.first(where: { rest.starts(with: $0.0.words) }) {
-                    index += name.words.count
+            for sentence in RecipeText(text).sentences {
+                let spans = Self.foodSpans(in: sentence, foods: foods, listedHeads: listedHeads)
+                for span in spans {
+                    guard let entry = span.entry else { continue }
                     let accounted = listedEntries.contains(entry)
-                        || (entry.isGenericTerm && name.words.allSatisfy(listedWords.contains))
-                    if !accounted, !assess(name, line: text, restrictions: restrictions).isClean, !found.contains(name) {
-                        found.append(name)
+                        || (entry.isGenericTerm && span.name.words.allSatisfy(listedWords.contains)
+                            && Self.refersBack(sentence, at: span.range.lowerBound, spans: spans))
+                    if !accounted, !assess(span.name, line: text, restrictions: restrictions).isClean, !found.contains(span.name) {
+                        found.append(span.name)
                     }
-                    continue
                 }
-                if checksWords, !CookingVocabulary.contains(written[index]), !listedHeads.contains(words[index]),
-                   !unrecognized.contains(written[index]) {
-                    unrecognized.append(written[index])
+                guard checksWords else { continue }
+                for word in Self.unrecognizedWords(in: sentence, spans: spans) + Self.changedFoods(in: sentence, spans: spans)
+                where !unrecognized.contains(word) {
+                    unrecognized.append(word)
                 }
-                index += 1
             }
             // Hyphens are also read as joining, so "pea-nuts" is found as peanuts.
             let named = [IngredientName(text), IngredientName(text.replacingOccurrences(of: "-", with: ""))]
@@ -422,6 +412,144 @@ public struct DietaryValidator: Sendable {
             }
         }
         return found.map(ReviewReason.mentionedButNotListed) + unrecognized.map(ReviewReason.unrecognizedWord)
+    }
+
+    private struct FoodName {
+        let name: IngredientName
+        /// Nil for a listed food the data does not know.
+        let entry: ClassificationEntry?
+    }
+
+    private struct FoodSpan {
+        let range: Range<Int>
+        let name: IngredientName
+        /// Nil for a listed food the data does not know, or one called by its last word.
+        let entry: ClassificationEntry?
+    }
+
+    /// The foods a sentence names, longest name first, so "peanut butter" is not read as "butter".
+    private static func foodSpans(in sentence: [RecipeText.Word], foods: [FoodName], listedHeads: Set<String>) -> [FoodSpan] {
+        var spans: [FoodSpan] = []
+        var index = 0
+        while index < sentence.count {
+            if let food = foods.first(where: { begins(sentence, at: index, with: $0.name) }) {
+                spans.append(FoodSpan(range: index..<(index + food.name.words.count), name: food.name, entry: food.entry))
+                index += food.name.words.count
+            } else if listedHeads.contains(sentence[index].normalized) {
+                spans.append(FoodSpan(range: index..<(index + 1), name: IngredientName(sentence[index].normalized), entry: nil))
+                index += 1
+            } else {
+                index += 1
+            }
+        }
+        return spans
+    }
+
+    /// True when the name's words follow one another from `index` with no punctuation between.
+    private static func begins(_ sentence: [RecipeText.Word], at index: Int, with name: IngredientName) -> Bool {
+        let end = index + name.words.count
+        guard !name.words.isEmpty, end <= sentence.count else { return false }
+        return (index..<end).allSatisfy { position in
+            sentence[position].normalized == name.words[position - index] && (position == index || !sentence[position].followsPause)
+        }
+    }
+
+    /// True when nothing right before a generic word marks it as a different one: not "a" or
+    /// "another", not a describing word ("dark sauce"), and not another food ("peanut sauce").
+    private static func refersBack(_ sentence: [RecipeText.Word], at index: Int, spans: [FoodSpan]) -> Bool {
+        guard index > 0, !sentence[index].followsPause else { return true }
+        let previous = sentence[index - 1].written
+        if spans.contains(where: { $0.range.contains(index - 1) })
+            || CookingVocabulary.introducesNew(previous) || CookingVocabulary.describes(previous) {
+            return false
+        }
+        return CookingVocabulary.contains(previous) || CookingVocabulary.isMeasure(previous)
+    }
+
+    /// Words that are neither part of a food nor cooking vocabulary. A measure counts as
+    /// unrecognized unless it measures a named food or names a shape after "into". So does a count,
+    /// or a describing word after a determiner, that does not go on to something it counts or
+    /// describes.
+    private static func unrecognizedWords(in sentence: [RecipeText.Word], spans: [FoodSpan]) -> [String] {
+        let phrases = phraseWords(in: sentence)
+        let accepted = Set(spans.flatMap(\.range)).union(phrases).union(shapeWords(in: sentence))
+        let foodStarts = Set(spans.map(\.range.lowerBound))
+        return sentence.indices.compactMap { index in
+            let word = sentence[index].written
+            if accepted.contains(index) { return nil }
+            if CookingVocabulary.contains(word) {
+                let afterDeterminer = index > 0 && !sentence[index].followsPause
+                    && CookingVocabulary.isDeterminer(sentence[index - 1].written)
+                guard CookingVocabulary.isCount(word) || (afterDeterminer && CookingVocabulary.describes(word)) else { return nil }
+                return describesSomething(sentence, from: index, foodStarts: foodStarts.union(phrases)) ? nil : word
+            }
+            if CookingVocabulary.isMeasure(word), measuresFood(sentence, at: index, foodStarts: foodStarts) { return nil }
+            return word
+        }
+    }
+
+    /// True when a run of describing words starting at `index` reaches, with no punctuation
+    /// between, a food or another content word: "the cooked rice", "a large pan".
+    private static func describesSomething(_ sentence: [RecipeText.Word], from index: Int, foodStarts: Set<Int>) -> Bool {
+        var next = index + 1
+        while next < sentence.count, !sentence[next].followsPause, !foodStarts.contains(next),
+              CookingVocabulary.continuesDescription(sentence[next].written) {
+            next += 1
+        }
+        guard next < sentence.count, !sentence[next].followsPause else { return false }
+        return foodStarts.contains(next) || CookingVocabulary.isContentWord(sentence[next].written)
+    }
+
+    /// True when a measure is followed, with no punctuation between, by an optional "of" and
+    /// article, words describing the food, and then the food: "a knob of cold butter".
+    private static func measuresFood(_ sentence: [RecipeText.Word], at index: Int, foodStarts: Set<Int>) -> Bool {
+        var next = index + 1
+        func nextIs(_ test: (String) -> Bool) -> Bool {
+            next < sentence.count && !sentence[next].followsPause && test(sentence[next].written)
+        }
+        if nextIs({ $0 == "of" }) {
+            next += 1
+            if nextIs(CookingVocabulary.articles.contains) { next += 1 }
+        }
+        while !foodStarts.contains(next), nextIs(CookingVocabulary.describes) { next += 1 }
+        return foodStarts.contains(next) && !sentence[next].followsPause
+    }
+
+    private static func phraseWords(in sentence: [RecipeText.Word]) -> Set<Int> {
+        var indices: Set<Int> = []
+        for start in sentence.indices {
+            for phrase in CookingVocabulary.phrases where start + phrase.count <= sentence.count {
+                let range = start..<(start + phrase.count)
+                if range.allSatisfy({ sentence[$0].written == phrase[$0 - start] && ($0 == start || !sentence[$0].followsPause) }) {
+                    indices.formUnion(range)
+                }
+            }
+        }
+        return indices
+    }
+
+    /// The sizes and shape after "into", as in "cut into 1 inch pieces".
+    private static func shapeWords(in sentence: [RecipeText.Word]) -> Set<Int> {
+        var indices: Set<Int> = []
+        for start in sentence.indices where sentence[start].written == "into" {
+            var end = start + 1
+            while end < sentence.count, !sentence[end].followsPause, CookingVocabulary.sizesShape(sentence[end].written) { end += 1 }
+            if end < sentence.count, !sentence[end].followsPause, CookingVocabulary.isShape(sentence[end].written) {
+                indices.formUnion((start + 1)...end)
+            }
+        }
+        return indices
+    }
+
+    /// Foods a food-changing word right before them describes, as the words that make the change:
+    /// "fried onions".
+    private static func changedFoods(in sentence: [RecipeText.Word], spans: [FoodSpan]) -> [String] {
+        spans.compactMap { span in
+            let before = span.range.lowerBound - 1
+            guard before >= 0, !spans.contains(where: { $0.range.contains(before) }),
+                  CookingVocabulary.canChangeFood(sentence[before].written) else { return nil }
+            return sentence[before..<span.range.upperBound].map(\.written).joined(separator: " ")
+        }
     }
 }
 

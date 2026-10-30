@@ -77,6 +77,18 @@ let dietaryCorpus: [DietaryCase] = [
         expected: .safe
     ),
     DietaryCase(
+        name: "a recipe written only in listed foods, measures of them and cooking words passes",
+        title: "Garlic potatoes",
+        lines: ["2 potatoes", "2 cloves garlic", "1 tbsp olive oil", "1 tsp salt", "2 cups water"],
+        instructions: [
+            "Cut the potatoes into 1-inch pieces and boil in 2 cups of the water until soft.",
+            "Drain, then toss with the oil, the garlic and a pinch of salt.",
+        ],
+        origin: .generated,
+        restrictions: [vegan, .allergen(.milk)],
+        expected: .safe
+    ),
+    DietaryCase(
         name: "with no hard restrictions there is nothing to label",
         lines: ["2 tbsp butter", "1 cup mystery ingredient"],
         restrictions: [],
@@ -888,6 +900,49 @@ let dietaryCorpus: [DietaryCase] = [
         expected: .needsReview([.unrecognizedWord])
     ),
     DietaryCase(
+        name: "mashed potatoes may hold milk and butter",
+        lines: ["2 potatoes", "1 tsp salt"],
+        instructions: ["Serve the mashed potatoes."],
+        origin: .generated,
+        restrictions: [.allergen(.milk)],
+        expected: .needsReview([.unrecognizedWord])
+    ),
+    DietaryCase(
+        name: "roasted or toasted nuts may be roasted in another nut's oil",
+        lines: ["1 cup cooked rice", "1/4 cup almonds"],
+        instructions: ["Top with the toasted almonds."],
+        restrictions: [.allergen(.peanut)],
+        expected: .needsReview([.unrecognizedWord])
+    ),
+    DietaryCase(
+        name: "a generic word after an indefinite article may be a different one",
+        lines: ["1 cup rice", "2 tbsp soy sauce"],
+        instructions: ["Serve with a sauce."],
+        restrictions: [.allergen(.peanut)],
+        expected: .needsReview([.mentionedButNotListed])
+    ),
+    DietaryCase(
+        name: "a generic word after another food is a different one",
+        lines: ["1 cup rice", "2 tbsp soy sauce"],
+        instructions: ["Serve with the peanut sauce."],
+        restrictions: [.allergen(.milk)],
+        expected: .needsReview([.mentionedButNotListed])
+    ),
+    DietaryCase(
+        name: "food names do not run across punctuation",
+        lines: ["1 cup rice", "2 tbsp peanut butter"],
+        instructions: ["Serve with peanut, butter and the rice."],
+        restrictions: [.allergen(.milk)],
+        expected: .needsReview([.mentionedButNotListed])
+    ),
+    DietaryCase(
+        name: "an ampersand reads as and",
+        lines: ["1 cup rice"],
+        instructions: ["Stir in the half & half."],
+        restrictions: [.allergen(.milk)],
+        expected: .needsReview([.mentionedButNotListed])
+    ),
+    DietaryCase(
         name: "a dish named only in cooking words is a food",
         lines: ["1 cup rice"],
         instructions: ["Serve with soft serve."],
@@ -993,6 +1048,13 @@ let dietaryCorpus: [DietaryCase] = [
         lines: ["1 cup rice"],
         instructions: ["Top with toasted hazelnuts."],
         restrictions: [.allergen(.treeNut)],
+        expected: .needsReview([.unrecognizedWord])
+    ),
+    DietaryCase(
+        name: "sourced instructions that serve the dish in a wrap need review",
+        lines: ["1 lb chicken breast", "2 cups cooked rice"],
+        instructions: ["Serve the chicken and rice in a wrap."],
+        restrictions: [.allergen(.wheat)],
         expected: .needsReview([.unrecognizedWord])
     ),
 ]

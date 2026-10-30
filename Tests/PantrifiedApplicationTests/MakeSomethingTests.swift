@@ -126,6 +126,39 @@ struct MakeSomethingTests {
         #expect(reasons == [.unrecognizedWord("ricotta")])
     }
 
+    @Test("a recipe served in a wrap the list leaves out is withheld")
+    func wrapIsWithheld() async throws {
+        let wrap = GeneratedRecipe(
+            title: "Chicken Rice Wrap",
+            ingredientLines: ["1 lb chicken breast", "2 cups cooked rice", "1 tbsp olive oil", "1 tsp salt"],
+            instructions: ["Cook the chicken.", "Serve the chicken and rice in a wrap."]
+        )
+        let outcome = try await makeSomething(ScriptedRuntime(returning: wrap)).run(.newRecipe(try context([.allergen(.wheat)])))
+
+        guard case .withheld(let assessment, _) = outcome, case .needsReview(let reasons) = assessment.verdict else {
+            Issue.record("expected withheld for review, got \(outcome)")
+            return
+        }
+        #expect(reasons == [.unrecognizedWord("wrap")])
+    }
+
+    @Test("a recipe served with mash is withheld for a milk allergy")
+    func mashIsWithheld() async throws {
+        let garlicChicken = GeneratedRecipe(
+            title: "Garlic chicken",
+            ingredientLines: ["1 lb chicken breast", "2 cloves garlic", "1 tbsp olive oil", "1 tsp salt"],
+            instructions: ["Season the chicken with the garlic and salt.", "Grill and serve with mash."]
+        )
+        let outcome = try await makeSomething(ScriptedRuntime(returning: garlicChicken))
+            .run(.newRecipe(try context([.allergen(.milk)])))
+
+        guard case .withheld(let assessment, _) = outcome, case .needsReview(let reasons) = assessment.verdict else {
+            Issue.record("expected withheld for review, got \(outcome)")
+            return
+        }
+        #expect(reasons == [.unrecognizedWord("mash")])
+    }
+
     @Test("a recipe without instructions is withheld")
     func missingInstructionsAreWithheld() async throws {
         var stepless = saag
