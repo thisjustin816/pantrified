@@ -9,7 +9,12 @@ extension ClassificationDataset {
             version: "2",
             reviewed: "2026-10-30"
         ),
-        coveredTraits: Set(DietaryTrait.allCases),
+        // Listed by hand: a trait added to DietaryTrait is unknown for every food until each
+        // entry has been reviewed for it.
+        coveredTraits: [
+            .milk, .egg, .fish, .crustaceanShellfish, .mollusc, .treeNut, .peanut, .wheat, .soy, .sesame,
+            .gluten, .meat, .slaughterByproduct, .otherAnimalProduct,
+        ],
         entries: bundledEntries
     )
 }

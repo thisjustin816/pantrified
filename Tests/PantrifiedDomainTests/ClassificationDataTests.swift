@@ -4,13 +4,19 @@ import Testing
 
 @Suite("Bundled classification data")
 struct BundledClassificationTests {
-    @Test("the data says it is not exhaustive and covers every trait")
+    @Test("the data says it is not exhaustive and names its version")
     func declaredLimits() {
         let data = ClassificationDataset.bundled
 
         #expect(!data.isExhaustive)
-        #expect(data.coveredTraits == Set(DietaryTrait.allCases))
         #expect(!data.provenance.version.isEmpty)
+    }
+
+    @Test("every trait has been reviewed for every entry, so a new trait cannot pass unreviewed")
+    func everyTraitReviewed() {
+        let unreviewed = Set(DietaryTrait.allCases).subtracting(ClassificationDataset.bundled.coveredTraits)
+
+        #expect(unreviewed.isEmpty, "Review every bundled entry for \(unreviewed), then add it to coveredTraits")
     }
 
     @Test("no entry both contains and may contain the same trait")
