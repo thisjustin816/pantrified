@@ -237,6 +237,33 @@ struct SyncEngineTests {
         #expect(ids.allSatisfy { state.packages[$0]?.events.count == 2 })
     }
 
+    @Test("undoing removals written with equal stamps on restored devices gives one result everywhere", arguments: [false, true])
+    func undoTiedRemovals(undoBoth: Bool) async throws {
+        let world = World()
+        let a = try world.device("A")
+        var ids: [PackageID] = []
+        for name in ["Milk", "Eggs", "Rice", "Beans", "Bread", "Kale"] {
+            ids.append(try await world.putAway(name, on: a))
+        }
+        try await a.sync()
+        let b = try world.restore(a, as: "B")
+
+        for id in ids {
+            guard case .applied(let usedUp) = try await a.actions.apply(.usedUp, to: id),
+                  case .applied(let discard) = try await b.actions.apply(.discard(reason: .spoiled), to: id) else {
+                Issue.record("removal not applied")
+                return
+            }
+            try await a.actions.undo(usedUp)
+            if undoBoth { try await b.actions.undo(discard) }
+        }
+        try await world.settle([a, b])
+
+        let state = try await expectConverged([a, b], in: world)
+        let expected: PackageStatus = undoBoth ? .active : .discarded(at: syncEpoch, reason: .spoiled)
+        #expect(ids.allSatisfy { state.packages[$0]?.status == expected })
+    }
+
     @Test("a device that pulls writes made under its own replica ID that it never issued takes a new ID")
     func restoredDeviceTakesNewReplicaID() async throws {
         let world = World()
