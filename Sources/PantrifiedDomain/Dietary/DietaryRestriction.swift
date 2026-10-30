@@ -1,7 +1,7 @@
 import Foundation
 
-/// Allergens a person can declare. The first nine are the U.S. major food allergens; molluscs are
-/// included because many people with a shellfish allergy avoid them too.
+/// Allergens a person can declare: the nine U.S. major food allergens, whose shellfish is
+/// crustacean shellfish only, plus molluscs, which many people with a shellfish allergy avoid too.
 public enum Allergen: Sendable, Hashable, Codable, CaseIterable {
     case milk
     case egg
@@ -78,8 +78,9 @@ public enum DietaryTrait: Sendable, Hashable, Codable, CaseIterable {
     case meat
     /// Gelatin, animal rennet and similar products of slaughter.
     case slaughterByproduct
-    /// Animal products that do not require slaughter, such as honey, and animal-derived
-    /// processing aids such as bone char.
+    /// Animal products a vegan avoids that no other trait covers: those that do not require
+    /// slaughter, such as honey, and animal-derived processing aids that do not end up in the
+    /// food, such as bone char used to refine sugar.
     case otherAnimalProduct
 
     public init(_ allergen: Allergen) {

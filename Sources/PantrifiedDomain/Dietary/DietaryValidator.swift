@@ -121,7 +121,9 @@ public struct DietaryAssessment: Sendable, Hashable {
 
 /// Deterministic hard-restriction checking. A recipe is safe only when its ingredient list is
 /// complete and every ingredient is positively known not to break every active restriction;
-/// anything unknown, ambiguous or unparsed needs review. No model takes part.
+/// anything unknown, ambiguous or unparsed needs review. A just-avoid exclusion is the one
+/// restriction matched by name alone, so an unknown food does not count against it. No model
+/// takes part.
 public struct DietaryValidator: Sendable {
     public let data: ClassificationDataset
 
