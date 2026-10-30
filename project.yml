@@ -39,6 +39,8 @@ targets:
         product: PantrifiedApplication
       - package: Pantrified
         product: PantrifiedFoundationModels
+      - package: Pantrified
+        product: PantrifiedGuidanceData
   PantrifiedTests:
     type: bundle.unit-test
     platform: iOS
