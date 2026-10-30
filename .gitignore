@@ -4,3 +4,7 @@
 xcuserdata/
 DerivedData/
 .DS_Store
+*.xcodeproj/
+*.xcresult
+build/
+Config/Signing.local.xcconfig

@@ -1,0 +1,8 @@
+// Copy to Signing.local.xcconfig (git-ignored) and fill in your values.
+
+// Your Apple team ID, a 10-character code.
+DEVELOPMENT_TEAM = ABCDE12345
+
+// Appended to com.thisjustin816.Pantrified. Set it, for example to .dev, only if the base
+// identifier is unavailable to your team. A different identifier is a separate app with its own data.
+BUNDLE_ID_SUFFIX =
