@@ -159,8 +159,56 @@ struct MakeSomethingTests {
     }
 }
 
+/// Records which packages a use case reads.
+private actor ReadRecordingInventory: InventoryRepository {
+    private let inner: InMemoryInventory
+    private(set) var readIDs: [PackageID] = []
+    private(set) var listedSpaces: [SpaceID] = []
+
+    init(_ packages: [Package]) { inner = InMemoryInventory(packages) }
+
+    func package(_ id: PackageID) async throws -> Package? {
+        readIDs.append(id)
+        return try await inner.package(id)
+    }
+
+    func activePackages(in space: SpaceID) async throws -> [Package] {
+        listedSpaces.append(space)
+        return try await inner.activePackages(in: space)
+    }
+
+    func save(_ package: Package) async throws { try await inner.save(package) }
+    func saveAll(_ packages: [Package]) async throws { try await inner.saveAll(packages) }
+}
+
 @Suite("Prepare Make Something")
 struct PrepareMakeSomethingTests {
+    @Test("only the selected packages are read, and a selected package that is used up or elsewhere is left out")
+    func readsOnlySelected() async throws {
+        let space = SpaceID()
+        let fridge = StorageLocation(name: "Fridge", storageType: .refrigerated)
+        let rice = Package(spaceID: space, name: "Rice", location: fridge.id, quantity: .full, addedAt: t0)
+        let other = Package(spaceID: space, name: "Birthday cake for Ana", location: fridge.id, addedAt: t0)
+        var usedUp = Package(spaceID: space, name: "Milk", location: fridge.id, addedAt: t0)
+        try usedUp.record(.usedUp, at: t0)
+        let elsewhere = Package(spaceID: SpaceID(), name: "Beans", location: fridge.id, addedAt: t0)
+        let inventory = ReadRecordingInventory([rice, other, usedUp, elsewhere])
+        let useSoon = UseSoon(
+            inventory: inventory,
+            locations: InMemoryLocations(locationsBySpace: [space: [fridge]]),
+            guidance: FakeGuidance(result: nil),
+            time: FixedTime(t0)
+        )
+        let diner = ConsumerProfile(name: "Diner", restrictions: .known([]))
+
+        let context = try await PrepareMakeSomething(useSoon: useSoon)
+            .context(selecting: [rice.id, usedUp.id, elsewhere.id], diners: [diner], in: space)
+
+        #expect(context.ingredients.map(\.name) == ["Rice"])
+        #expect(await inventory.listedSpaces.isEmpty)
+        #expect(Set(await inventory.readIDs) == [rice.id, usedUp.id, elsewhere.id])
+    }
+
     @Test("only the selected foods reach the context, use-soon first, with no diner identity")
     func selectedOnly() async throws {
         let space = SpaceID()

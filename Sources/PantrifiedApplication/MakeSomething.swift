@@ -80,8 +80,7 @@ public struct PrepareMakeSomething: Sendable {
         diners: [ConsumerProfile],
         in space: SpaceID
     ) async throws -> MakeSomethingContext {
-        let ingredients = try await useSoon.assessments(in: space)
-            .filter { packages.contains($0.package.id) }
+        let ingredients = try await useSoon.assessments(of: packages, in: space)
             .sorted { $0.needsAttention != $1.needsAttention ? $0.needsAttention : $0.package.name < $1.package.name }
             .map { MealContextIngredient(name: $0.package.name, useSoon: $0.needsAttention, quantity: $0.package.quantity) }
         return try MakeSomethingContext(ingredients: ingredients, diners: diners)
