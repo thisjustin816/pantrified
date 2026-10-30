@@ -235,7 +235,7 @@ public struct Package: Sendable, Identifiable {
     public var productID: ProductID? { details.productID }
     public var printedDate: PrintedDate? { details.printedDate }
     public var instruction: PackageInstruction? { details.instruction }
-    /// Fields the user has decided; recognition no longer changes them.
+    /// Fields the user has decided, which recognition does not change.
     public var confirmedFields: Set<PackageField> { described.confirmed }
 
     public var location: LocationID {
