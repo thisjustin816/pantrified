@@ -162,6 +162,7 @@ Apple Foundation Models ───────┘
 - Generated requests contain only minimum structured meal context.
 - Deterministic hard-restriction validation is downstream of generated output.
 - Sourced recipe safety depends on ingredient completeness; ambiguous results are Needs review.
+- Restriction model, classification data, verdict rules, and the request context boundary are in `dietary-validation.md`.
 
 ### Apple model adapter
 
