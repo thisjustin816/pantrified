@@ -56,3 +56,11 @@ jobs:
         run: |
           python3 -I Scripts/tests/test_normalize_foodkeeper.py
           python3 -I Scripts/normalize-foodkeeper.py --check Data/FoodKeeper/foodkeeper.json Sources/PantrifiedGuidanceData/Resources/foodkeeper.normalized.json
+      - name: Test the privacy checks and check the manifest against the code
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          python3 -I Scripts/tests/test_verify_privacy_manifest.py
+          python3 -I Scripts/tests/test_verify_required_reason_apis.py
+          python3 -I Scripts/verify-privacy-manifest.py App/PrivacyInfo.xcprivacy
+          python3 -I Scripts/verify-required-reason-apis.py App/PrivacyInfo.xcprivacy App Sources
