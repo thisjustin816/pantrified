@@ -1,13 +1,14 @@
 import Foundation
 
 /// A comparable form of a food name, so "Boneless chicken breasts" and "chicken breast" meet.
-/// Normalization is deliberately shallow: case, punctuation, a few preparation descriptors, and
-/// simple plurals. Anything fuzzier is a possible match for the user to confirm, not a guess.
+/// Normalization is deliberately shallow: case, punctuation, invisible characters, a few
+/// preparation descriptors, and simple plurals. Anything fuzzier is a possible match for the user
+/// to confirm, not a guess.
 public struct IngredientName: Sendable, Hashable, Codable {
     public let words: [String]
 
     public init(_ raw: String) {
-        let tokens = raw.lowercased()
+        let tokens = raw.withoutInvisibleCharacters.lowercased()
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { !$0.isEmpty }
         let meaningful = tokens.filter { !Self.descriptors.contains($0) }
@@ -33,5 +34,25 @@ public struct IngredientName: Sendable, Hashable, Codable {
             return String(word.dropLast())
         }
         return word
+    }
+}
+
+extension String {
+    /// The text as a person sees it. Characters that display as nothing are removed, because left
+    /// in they split one visible word into several ("to\u{200B}ast" would read as "to" and "ast"):
+    /// format characters such as zero-width spaces, joiners, soft hyphens and byte order marks,
+    /// other default-ignorable code points such as variation selectors and Hangul fillers, and
+    /// control characters other than tabs and line breaks.
+    var withoutInvisibleCharacters: String {
+        var visible = String.UnicodeScalarView()
+        visible.append(contentsOf: unicodeScalars.filter { scalar in
+            let properties = scalar.properties
+            switch properties.generalCategory {
+            case .format: return false
+            case .control: return properties.isWhitespace
+            default: return !properties.isDefaultIgnorableCodePoint
+            }
+        })
+        return String(visible)
     }
 }

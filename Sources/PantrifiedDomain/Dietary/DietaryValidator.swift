@@ -139,7 +139,9 @@ public struct DietaryValidator: Sendable {
         guard !restrictions.isEmpty else { return .noRestrictions }
         let ordered = restrictions.sorted { "\($0)" < "\($1)" }
         let classifying = ordered.contains(where: \.reliesOnClassification)
-        let lines = recipe.ingredientLines.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        // Every check reads the text as displayed, without characters that show as nothing.
+        let lines = recipe.ingredientLines.map(\.withoutInvisibleCharacters).filter(Self.hasText)
+        let instructions = recipe.instructions.map(\.withoutInvisibleCharacters)
 
         var finding = Finding()
         if lines.isEmpty { finding.reviews.append(.emptyIngredientList) }
@@ -173,12 +175,17 @@ public struct DietaryValidator: Sendable {
             }
         }
         finding.reviews += unlisted(
-            in: [recipe.title] + recipe.instructions, listed: listed, origin: recipe.origin, restrictions: ordered
+            in: [recipe.title.withoutInvisibleCharacters] + instructions, listed: listed, origin: recipe.origin,
+            restrictions: ordered
         )
 
         if !finding.violations.isEmpty { return .violation(finding.violations, alsoNeedsReview: finding.reviews) }
         if !finding.reviews.isEmpty { return .needsReview(finding.reviews) }
         return .safe
+    }
+
+    private static func hasText(_ text: String) -> Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     // MARK: Ingredients

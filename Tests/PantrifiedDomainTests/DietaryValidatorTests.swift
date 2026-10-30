@@ -86,6 +86,42 @@ struct DietaryValidatorTests {
     }
 }
 
+@Suite("Text as displayed")
+struct InvisibleCharacterTests {
+    private let validator = DietaryValidator()
+
+    private func verdict(title: String = "", _ lines: [String], instructions: [String] = ["Serve."],
+                         _ restrictions: Set<DietaryRestriction>) -> DietaryVerdict {
+        validator.assess(
+            RecipeUnderReview(title: title, ingredientLines: lines, instructions: instructions, completeness: .complete, origin: .generated),
+            against: restrictions
+        ).verdict
+    }
+
+    @Test("a character that displays as nothing cannot split a word into cooking words or hide a name", arguments: [
+        "\u{200B}", "\u{00AD}", "\u{2060}", "\u{FEFF}", "\u{180E}", "\u{200C}", "\u{200D}", "\u{034F}", "\u{FE0F}", "\u{0007}",
+    ])
+    func invisible(mark: String) {
+        let toast = "to\(mark)as\(mark)t"
+        let rice = ["2 cups cooked rice"]
+
+        #expect(verdict(title: "Rice on \(toast)", rice, [.allergen(.wheat)]) != .safe, "title")
+        #expect(verdict(rice, instructions: ["Serve on \(toast)."], [.allergen(.wheat)]) != .safe, "instructions")
+        #expect(verdict(rice + ["1 bunch cilan\(mark)tro"], [.excluded(IngredientName("cilantro"), severity: .justAvoid)]) != .safe,
+                "ingredient line")
+        #expect(verdict(["1 cup rice (may contain pea\(mark)nuts)"], [.excluded(IngredientName("peanut"), severity: .justAvoid)]) != .safe,
+                "advisory")
+        #expect(verdict(rice + ["1 bunch cilantro"], [.excluded(IngredientName("cilan\(mark)tro"), severity: .justAvoid)]) != .safe,
+                "excluded name")
+    }
+
+    @Test("line breaks and tabs still separate words")
+    func whitespaceKept() {
+        #expect("rice\tand\nbeans".withoutInvisibleCharacters == "rice\tand\nbeans")
+        #expect(IngredientName("black\tbeans") == IngredientName("black beans"))
+    }
+}
+
 @Suite("Ingredient line parsing")
 struct IngredientLineTests {
     @Test("quantities, units, notes and preparation are removed", arguments: [
