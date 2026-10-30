@@ -21,7 +21,8 @@ public enum ExclusionSeverity: Sendable, Hashable, Codable, CaseIterable {
     /// Strict, like an allergen: a food that could be or hide the excluded food needs review, and
     /// an excluded food the data does not know makes every recipe need review.
     case allergyOrIntolerance
-    /// Only a food named as the excluded food, by name or synonym, or known to be made from it,
+    /// Only a food named as the excluded food, by name or synonym, known to be made from it, or
+    /// belonging to a class the excluded name stands for (excluding "fish" excludes salmon),
     /// counts. Nothing else about the recipe needs review because of it.
     case justAvoid
 }

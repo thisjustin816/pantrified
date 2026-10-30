@@ -363,7 +363,8 @@ public struct DietaryValidator: Sendable {
     /// accounts for it. Generated text must also use only listed foods, known foods and cooking
     /// vocabulary. A listed food may be called by its last word alone ("the beans"), but not by
     /// another of its words ("the kidneys"), and not after a cooking word that can make it a
-    /// different food ("baked beans").
+    /// different food ("baked beans"). An excluded food is looked for anywhere in the text,
+    /// whatever known food its words also begin.
     private func unlisted(
         in texts: [String],
         listed: [IngredientName],
@@ -374,12 +375,10 @@ public struct DietaryValidator: Sendable {
         let listedNames = listed + listedEntries.flatMap(\.names)
         let listedWords = Set(listedNames.flatMap(\.words))
         let listedHeads = Set(listedNames.compactMap(\.words.last))
-        let exclusions = restrictions
-            .flatMap { restriction -> [IngredientName] in
-                guard case .excluded(let name, _) = restriction else { return [] }
-                return excludedNames(name)
-            }
-            .sorted { $0.words.count > $1.words.count }
+        let exclusions = restrictions.flatMap { restriction -> [IngredientName] in
+            guard case .excluded(let name, _) = restriction else { return [] }
+            return excludedNames(name)
+        }
         let checksWords = origin == .generated && restrictions.contains(where: \.reliesOnClassification)
         let candidates = data.entries.flatMap { entry in entry.names.map { ($0, entry) } }
             .sorted { $0.0.words.count > $1.0.words.count }
@@ -406,16 +405,18 @@ public struct DietaryValidator: Sendable {
                     }
                     continue
                 }
-                if let excluded = exclusions.first(where: { rest.starts(with: $0.words) }) {
-                    index += excluded.words.count
-                    if !listed.contains(where: { $0.contains(excluded) }), !found.contains(excluded) { found.append(excluded) }
-                    continue
-                }
                 if checksWords, !CookingVocabulary.contains(written[index]), !listedHeads.contains(words[index]),
                    !unrecognized.contains(written[index]) {
                     unrecognized.append(written[index])
                 }
                 index += 1
+            }
+            // Hyphens are also read as joining, so "pea-nuts" is found as peanuts.
+            let named = [IngredientName(text), IngredientName(text.replacingOccurrences(of: "-", with: ""))]
+            for excluded in exclusions
+            where named.contains(where: { $0.contains(excluded) }) && !listed.contains(where: { $0.contains(excluded) })
+                && !found.contains(excluded) {
+                found.append(excluded)
             }
         }
         return found.map(ReviewReason.mentionedButNotListed) + unrecognized.map(ReviewReason.unrecognizedWord)

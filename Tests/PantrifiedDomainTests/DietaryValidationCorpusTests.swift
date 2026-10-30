@@ -205,6 +205,42 @@ let dietaryCorpus: [DietaryCase] = [
         restrictions: [avoided("shrimp")],
         expected: .safe
     ),
+    DietaryCase(
+        name: "a just-avoid exclusion is found in the instructions even inside a longer known food",
+        lines: ["1 potato"],
+        instructions: ["Top with cream cheese."],
+        restrictions: [avoided("cream cheese")],
+        expected: .needsReview([.mentionedButNotListed])
+    ),
+    DietaryCase(
+        name: "a just-avoid exclusion is found in generated instructions alongside an allergy",
+        lines: ["1 potato"],
+        instructions: ["Top with cream cheese."],
+        origin: .generated,
+        restrictions: [avoided("cream cheese"), .allergen(.peanut)],
+        expected: .needsReview([.mentionedButNotListed])
+    ),
+    DietaryCase(
+        name: "a just-avoid exclusion is found when its first word is a known food",
+        lines: ["1 cup rice"],
+        instructions: ["Stir in almond extract."],
+        restrictions: [avoided("almond extract")],
+        expected: .needsReview([.mentionedButNotListed])
+    ),
+    DietaryCase(
+        name: "a just-avoid exclusion is found when a known food ends inside it",
+        lines: ["1 potato"],
+        instructions: ["Sprinkle with black pepper flakes."],
+        restrictions: [avoided("pepper flakes")],
+        expected: .needsReview([.mentionedButNotListed])
+    ),
+    DietaryCase(
+        name: "a just-avoid exclusion is found when hyphens split it",
+        lines: ["1 cup rice"],
+        instructions: ["Top with crushed pea-nuts."],
+        restrictions: [avoided("peanut")],
+        expected: .needsReview([.mentionedButNotListed])
+    ),
 
     // Positive violations, including hidden ones
     DietaryCase(
