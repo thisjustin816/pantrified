@@ -10,7 +10,7 @@ Markdown files starts no run.
 |---|---|---|
 | `ci.yml` | Package tests | `swift test` on Linux in the `swift:6.1.2-noble` image. Every test target runs, so a new one needs no change to the workflow |
 | `ci.yml` | Repository hygiene | `Scripts/verify-repo-hygiene.sh` (no tracked generated Xcode project, per-developer signing settings, signing material, environment files or private key text), `shellcheck` at error severity, and the tests for the two scripts |
-| `ios-build.yml` | Xcode build, tests and Release archive | On one macOS runner: `make generate` (XcodeGen), `make build` and `make test` on an iPhone simulator, `make test-package` (the package tests against Apple's Foundation) and `make archive-unsigned`, a Release archive for a device with signing off. The package tests and the archive run even when the build or app tests failed. On failure, a last step repeats only the Xcode error lines in the job summary, and the logs upload as `ios-build-logs` |
+| `ios-build.yml` | Xcode build, tests and Release archive | On one macOS runner: `make generate` (XcodeGen), `make build` and `make test` on an iPhone simulator, `make test-package` (the package tests against Apple's Foundation), `make archive-unsigned`, a Release archive for a device with signing off, and `make archive-evaluation-unsigned`, the same archive with the Evaluation tab compiled in (`docs/evaluation.md`). The package tests and the archive run even when the build or app tests failed. On failure, a last step repeats only the Xcode error lines in the job summary, and the logs upload as `ios-build-logs` |
 
 The runner is the `MACOS_RUNNER` repository variable when set, otherwise `xcode-27`. The iOS 27
 SDK needs the Xcode 27 image; the app's minimum is iOS 26.
@@ -38,4 +38,4 @@ A green workflow is not device verification.
 - **Privacy manifest and its check.** The app does not declare one yet.
 - **App icon and the export-compliance declaration.** Both are needed before an upload.
 - **UI tests and screenshots.**
-- **Foundation Models adapters and the on-device evaluation screen.**
+- **A Private Cloud Compute runtime.** Only the on-device model has an adapter.
