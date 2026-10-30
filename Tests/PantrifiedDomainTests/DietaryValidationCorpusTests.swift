@@ -14,9 +14,11 @@ struct DietaryCase: Sendable, CustomTestStringConvertible {
     }
 
     let name: String
+    var title = ""
     let lines: [String]
     var instructions: [String] = []
     var completeness: IngredientListCompleteness = .complete
+    var origin: RecipeOrigin = .sourced
     var providerLabels: Set<String> = []
     let restrictions: Set<DietaryRestriction>
     let expected: Expected
@@ -25,8 +27,8 @@ struct DietaryCase: Sendable, CustomTestStringConvertible {
 
     var recipe: RecipeUnderReview {
         RecipeUnderReview(
-            ingredientLines: lines, instructions: instructions,
-            completeness: completeness, providerLabels: providerLabels
+            title: title, ingredientLines: lines, instructions: instructions,
+            completeness: completeness, origin: origin, providerLabels: providerLabels
         )
     }
 }
@@ -332,6 +334,69 @@ let dietaryCorpus: [DietaryCase] = [
         lines: ["1 lb potatoes", "1 tsp salt"],
         instructions: ["Boil the potatoes until tender.", "Mash with the butter and salt."],
         restrictions: [dairyFree],
+        expected: .needsReview([.mentionedButNotListed])
+    ),
+
+    // Titles and instructions
+    DietaryCase(
+        name: "a generated recipe whose instructions use a food the data does not know needs review",
+        lines: ["1 cup rice", "1 tbsp olive oil"],
+        instructions: ["Fold in the ricotta and serve."],
+        origin: .generated,
+        restrictions: [.allergen(.milk)],
+        expected: .needsReview([.unrecognizedWord])
+    ),
+    DietaryCase(
+        name: "a generated recipe that tops the dish with an unlisted nut needs review",
+        lines: ["1 cup rice"],
+        instructions: ["Top with toasted hazelnuts."],
+        origin: .generated,
+        restrictions: [.allergen(.treeNut)],
+        expected: .needsReview([.unrecognizedWord])
+    ),
+    DietaryCase(
+        name: "a generated recipe written only in listed foods and cooking words passes",
+        title: "Garlic rice",
+        lines: ["2 cups cooked rice", "2 cloves garlic, minced", "1 tbsp olive oil"],
+        instructions: ["Heat the oil in a large pan over medium heat.", "Add the garlic and cook for 1 minute, then stir in the rice."],
+        origin: .generated,
+        restrictions: [vegan, .allergen(.peanut)],
+        expected: .safe
+    ),
+    DietaryCase(
+        name: "a generated word is checked as written, so fries are not the verb fry",
+        lines: ["2 cups cooked rice"],
+        instructions: ["Serve with fries."],
+        origin: .generated,
+        restrictions: [vegan],
+        expected: .needsReview([.unrecognizedWord])
+    ),
+    DietaryCase(
+        name: "an unlisted stock in the instructions needs review",
+        lines: ["1 cup rice", "1 onion"],
+        instructions: ["Pour in 2 cups of stock and simmer."],
+        restrictions: [vegetarian],
+        expected: .needsReview([.mentionedButNotListed])
+    ),
+    DietaryCase(
+        name: "an unlisted sauce in the instructions needs review",
+        lines: ["1 cup rice"],
+        instructions: ["Toss the rice with the sauce."],
+        restrictions: [.allergen(.peanut)],
+        expected: .needsReview([.mentionedButNotListed])
+    ),
+    DietaryCase(
+        name: "a generic word in the instructions passes when a listed line accounts for it",
+        lines: ["1 cup rice", "2 tbsp soy sauce"],
+        instructions: ["Toss the rice with the sauce."],
+        restrictions: [.allergen(.peanut)],
+        expected: .safe
+    ),
+    DietaryCase(
+        name: "a title naming an unlisted food needs review",
+        title: "Garlic shrimp rice",
+        lines: ["1 cup rice", "2 cloves garlic", "1 tbsp olive oil"],
+        restrictions: [.allergen(.crustaceanShellfish)],
         expected: .needsReview([.mentionedButNotListed])
     ),
 ]

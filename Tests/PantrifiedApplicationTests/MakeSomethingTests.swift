@@ -96,6 +96,36 @@ struct MakeSomethingTests {
         #expect(reasons == [.mentionedButNotListed(IngredientName("butter"))])
     }
 
+    @Test("a title naming an unlisted food is withheld")
+    func titleIsValidated() async throws {
+        let shrimpRice = GeneratedRecipe(
+            title: "Garlic shrimp rice",
+            ingredientLines: ["1 cup rice", "2 cloves garlic", "1 tbsp olive oil"],
+            instructions: ["Cook everything together and serve."]
+        )
+        let outcome = try await makeSomething(ScriptedRuntime(returning: shrimpRice))
+            .run(.newRecipe(context([.allergen(.crustaceanShellfish)])))
+
+        guard case .withheld(let assessment, _) = outcome, case .needsReview(let reasons) = assessment.verdict else {
+            Issue.record("expected withheld for review, got \(outcome)")
+            return
+        }
+        #expect(reasons.contains(.mentionedButNotListed(IngredientName("shrimp"))))
+    }
+
+    @Test("a food the data does not know, used only in the instructions, is withheld")
+    func unknownUnlistedFoodIsWithheld() async throws {
+        var withRicotta = saag
+        withRicotta.instructions.append("Fold in the ricotta and serve.")
+        let outcome = try await makeSomething(ScriptedRuntime(returning: withRicotta)).run(.newRecipe(context([.allergen(.milk)])))
+
+        guard case .withheld(let assessment, _) = outcome, case .needsReview(let reasons) = assessment.verdict else {
+            Issue.record("expected withheld for review, got \(outcome)")
+            return
+        }
+        #expect(reasons == [.unrecognizedWord("ricotta")])
+    }
+
     @Test("adaptations are validated the same way")
     func adaptationIsValidated() async throws {
         var withFishSauce = saag

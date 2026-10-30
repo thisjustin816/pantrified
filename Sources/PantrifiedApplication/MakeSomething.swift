@@ -43,13 +43,16 @@ public struct MakeSomething: Sendable {
         case .unavailable(let skipped):
             return .unavailable(skipped)
         case .generated(let recipe, let runtime, _):
-            // The structured list is the recipe's full list as generated; the instruction scan
-            // catches foods the model used without listing.
+            // The list is taken as complete only because generated text is checked word by word:
+            // a title or instruction word that is not a listed food, a known food or cooking
+            // vocabulary makes the recipe need review, so it is withheld.
             let assessment = validator.assess(
                 RecipeUnderReview(
+                    title: recipe.title,
                     ingredientLines: recipe.ingredientLines,
                     instructions: recipe.instructions,
-                    completeness: .complete
+                    completeness: .complete,
+                    origin: .generated
                 ),
                 against: request.context.restrictions
             )

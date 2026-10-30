@@ -3,7 +3,7 @@ import Testing
 @testable import PantrifiedDomain
 
 private func recipe(_ lines: [String], instructions: [String] = []) -> RecipeUnderReview {
-    RecipeUnderReview(ingredientLines: lines, instructions: instructions, completeness: .complete)
+    RecipeUnderReview(title: "", ingredientLines: lines, instructions: instructions, completeness: .complete, origin: .sourced)
 }
 
 @Suite("Dietary validator")

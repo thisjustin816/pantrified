@@ -7,24 +7,42 @@ public enum IngredientListCompleteness: Sendable, Hashable {
     case unknown
 }
 
+/// Who wrote a recipe's title and instructions, which decides how far the validator trusts them
+/// to name only the listed foods.
+public enum RecipeOrigin: Sendable, Hashable {
+    /// A provider's recipe. Its title and instructions are scanned for known foods the list
+    /// leaves out.
+    case sourced
+    /// A model's recipe. Every word of its title and instructions must also be a listed food, a
+    /// known food, or known cooking vocabulary, because a model can use a food without listing it.
+    case generated
+}
+
 /// A recipe as the validator sees it, whether sourced or generated.
 public struct RecipeUnderReview: Sendable, Hashable {
+    /// Scanned like the instructions, since a title can name a food the list leaves out.
+    public var title: String
     public var ingredientLines: [String]
     /// Scanned for foods the ingredient list leaves out.
     public var instructions: [String]
     public var completeness: IngredientListCompleteness
+    public var origin: RecipeOrigin
     /// A provider's own dietary labels. Kept for display; never evidence that a recipe is suitable.
     public var providerLabels: Set<String>
 
     public init(
+        title: String,
         ingredientLines: [String],
         instructions: [String] = [],
         completeness: IngredientListCompleteness,
+        origin: RecipeOrigin,
         providerLabels: Set<String> = []
     ) {
+        self.title = title
         self.ingredientLines = ingredientLines
         self.instructions = instructions
         self.completeness = completeness
+        self.origin = origin
         self.providerLabels = providerLabels
     }
 }
@@ -50,13 +68,16 @@ public enum ReviewReason: Sendable, Hashable {
     /// The excluded food is unknown to the data, so other foods cannot be shown not to be it.
     case exclusionUnverifiable(line: String, ingredient: IngredientName, excluded: IngredientName)
     case compositeMayHideExclusion(line: String, ingredient: IngredientName, excluded: IngredientName)
-    /// The instructions use a relevant food the ingredient list leaves out.
+    /// The title or instructions use a relevant food the ingredient list leaves out.
     case mentionedButNotListed(IngredientName)
+    /// A generated title or instructions use a word that is not a listed food, a known food or
+    /// known cooking vocabulary, so it may name a food the list leaves out.
+    case unrecognizedWord(String)
 
     public enum Kind: Sendable, Hashable, CaseIterable {
         case emptyIngredientList, incompleteIngredientList, unparsedLine, unknownIngredient, mayContain
         case advisoryStatement, unrecognizedNote, alternativesDisagree, traitNotCovered
-        case exclusionUnverifiable, compositeMayHideExclusion, mentionedButNotListed
+        case exclusionUnverifiable, compositeMayHideExclusion, mentionedButNotListed, unrecognizedWord
     }
 
     public var kind: Kind {
@@ -73,6 +94,7 @@ public enum ReviewReason: Sendable, Hashable {
         case .exclusionUnverifiable: .exclusionUnverifiable
         case .compositeMayHideExclusion: .compositeMayHideExclusion
         case .mentionedButNotListed: .mentionedButNotListed
+        case .unrecognizedWord: .unrecognizedWord
         }
     }
 }
@@ -136,7 +158,9 @@ public struct DietaryValidator: Sendable {
                 finding.merge(choice(alternatives, line: line, restrictions: ordered))
             }
         }
-        finding.reviews += unlisted(in: recipe.instructions, listed: listed, restrictions: ordered)
+        finding.reviews += unlisted(
+            in: [recipe.title] + recipe.instructions, listed: listed, origin: recipe.origin, restrictions: ordered
+        )
 
         if !finding.violations.isEmpty { return .violation(finding.violations, alsoNeedsReview: finding.reviews) }
         if !finding.reviews.isEmpty { return .needsReview(finding.reviews) }
@@ -272,37 +296,52 @@ public struct DietaryValidator: Sendable {
             || !entry.contains.union(entry.mayContain).isDisjoint(with: named)
     }
 
-    /// Foods the instructions name that the list leaves out, when they could matter: a relevant
-    /// trait, a prepared food, or a custom exclusion. Generic words such as "sauce" are skipped.
+    /// Foods the title and instructions use that the list leaves out, when they would change the
+    /// verdict had they been listed. A generic word such as "sauce" counts only when no listed line
+    /// accounts for it. Generated text must also use only listed foods, known foods and cooking
+    /// vocabulary.
     private func unlisted(
-        in instructions: [String],
+        in texts: [String],
         listed: [IngredientName],
+        origin: RecipeOrigin,
         restrictions: [DietaryRestriction]
     ) -> [ReviewReason] {
         let listedEntries = listed.compactMap { data.entry(for: $0) }
-        let forbidden = restrictions.reduce(into: Set<DietaryTrait>()) { $0.formUnion($1.forbiddenTraits) }
+        let listedWords = Set(listed.flatMap(\.words) + listedEntries.flatMap { $0.names.flatMap(\.words) })
         let exclusions = restrictions.compactMap { if case .excluded(let name) = $0 { name } else { nil } }
-        let candidates = data.entries.filter { !$0.isGenericTerm }.flatMap { entry in entry.names.map { ($0, entry) } }
+        let candidates = data.entries.flatMap { entry in entry.names.map { ($0, entry) } }
             .sorted { $0.0.words.count > $1.0.words.count }
 
         var found: [IngredientName] = []
-        for instruction in instructions {
-            var words = IngredientName(instruction).words[...]
-            while !words.isEmpty {
-                if let (name, entry) = candidates.first(where: { words.starts(with: $0.0.words) }) {
-                    words = words.dropFirst(name.words.count)
-                    let relevant = !entry.contains.union(entry.mayContain).isDisjoint(with: forbidden) || entry.isComposite
-                    if relevant, !listedEntries.contains(entry), !found.contains(entry.name) { found.append(entry.name) }
+        var unrecognized: [String] = []
+        for text in texts {
+            let written = text.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
+            let words = written.map { IngredientName($0).words.first ?? $0 }
+            var index = 0
+            while index < words.count {
+                let rest = words[index...]
+                if let (name, entry) = candidates.first(where: { rest.starts(with: $0.0.words) }) {
+                    index += name.words.count
+                    let accounted = listedEntries.contains(entry)
+                        || (entry.isGenericTerm && name.words.allSatisfy(listedWords.contains))
+                    if !accounted, !assess(name, line: text, restrictions: restrictions).isClean, !found.contains(name) {
+                        found.append(name)
+                    }
                     continue
                 }
-                for excluded in exclusions where words.starts(with: excluded.words)
-                    && !listed.contains(where: { $0.contains(excluded) }) && !found.contains(excluded) {
-                    found.append(excluded)
+                if let excluded = exclusions.first(where: { rest.starts(with: $0.words) }) {
+                    index += excluded.words.count
+                    if !listed.contains(where: { $0.contains(excluded) }), !found.contains(excluded) { found.append(excluded) }
+                    continue
                 }
-                words = words.dropFirst()
+                if origin == .generated, !CookingVocabulary.contains(written[index]), !listedWords.contains(words[index]),
+                   !unrecognized.contains(written[index]) {
+                    unrecognized.append(written[index])
+                }
+                index += 1
             }
         }
-        return found.map(ReviewReason.mentionedButNotListed)
+        return found.map(ReviewReason.mentionedButNotListed) + unrecognized.map(ReviewReason.unrecognizedWord)
     }
 }
 
