@@ -6,6 +6,7 @@ public typealias ShoppingItemID = Identifier<ShoppingItemTag>
 public enum ShoppingError: Error, Sendable, Equatable {
     case blankName
     case itemNotFound
+    case notADuplicate
 }
 
 public struct ShoppingItem: Sendable, Hashable, Identifiable {
@@ -91,6 +92,12 @@ public struct ShoppingList: Sendable {
 
     public mutating func clearChecked() -> RemovedShoppingItems {
         remove(Set(items.filter(\.isChecked).map(\.id)))
+    }
+
+    /// Changes one item in place. Callers that need the change to be undoable keep what they replaced.
+    mutating func modify(_ id: ShoppingItemID, _ change: (inout ShoppingItem) -> Void) {
+        guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+        change(&items[index])
     }
 
     /// Puts removed items back at their original positions.

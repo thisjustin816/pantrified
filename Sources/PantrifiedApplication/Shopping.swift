@@ -43,6 +43,20 @@ public struct ShoppingListActions: Sendable {
         ShoppingTextImport.review(text, against: try await repository.list(in: space))
     }
 
+    public func duplicateGroups(in space: SpaceID) async throws -> [DuplicateGroup] {
+        try await repository.list(in: space).duplicateGroups
+    }
+
+    /// Merges only when the person asks; duplicates are never merged automatically.
+    @discardableResult
+    public func mergeDuplicates(of id: ShoppingItemID, in space: SpaceID) async throws -> ShoppingMerge {
+        try await mutate(space) { try $0.mergeDuplicates(of: id) }
+    }
+
+    public func undoMerge(_ merge: ShoppingMerge, in space: SpaceID) async throws {
+        try await mutate(space) { $0.restore(merge) }
+    }
+
     @discardableResult
     public func commitImport(_ lines: [ShoppingImportLine], in space: SpaceID) async throws -> [ShoppingItem] {
         try await mutate(space) { try $0.add(importing: lines, at: time.now()) }
