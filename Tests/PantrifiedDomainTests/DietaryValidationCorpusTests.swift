@@ -47,7 +47,7 @@ private let dairyFree = DietaryRestriction.diet(.dairyFree)
 let dietaryCorpus: [DietaryCase] = [
     // Clear passes
     DietaryCase(
-        name: "rice and beans pass every diet",
+        name: "rice and beans pass vegan, dairy-free and a peanut allergy",
         lines: [
             "2 cups cooked rice", "1 can black beans, drained and rinsed", "1 onion, diced",
             "2 cloves garlic, minced", "1 tbsp olive oil", "Salt and pepper to taste",
