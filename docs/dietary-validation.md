@@ -176,9 +176,6 @@ The tests check field names and types. They do not inspect what people typed.
 4. **Molluscs are a separate allergen**, and "shellfish" in a may-contain statement is read as both crustaceans and molluscs.
 5. **A custom exclusion is either an allergy or intolerance, or just avoid**, as described under Custom exclusions. The caller must choose; nothing defaults to just avoid.
 6. **Sourced titles and instructions get the same word scan as generated ones.** An unrecognized word makes a sourced recipe need review, shown with the Needs review label. Until the classification data and the vocabulary grow, this labels many ordinary sourced recipes Needs review, as the Limits figures show.
-
-The following were not settled by the owner and were taken the conservative way, pending confirmation:
-
 7. **Cross-contact in staples counts.** Dried pulses, soybeans and quinoa need review for gluten-free and wheat, and barley and rye for wheat, like oats. Bread needs review for vegetarians and vegans because of possible lard and L-cysteine, and maple syrup because of defoamers.
 8. **Recipe text is held to a closed vocabulary** rather than to structured steps that reference listed lines. A structured step still carries free text in which a model can name an unlisted food, so the word check would be needed either way.
 9. **A just-avoid exclusion still needs review** for an incomplete or empty list, missing instructions, and an advisory that names the food.
