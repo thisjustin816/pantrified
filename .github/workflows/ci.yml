@@ -49,3 +49,4 @@ jobs:
         run: |
           ./Scripts/tests/test_select_simulator.sh
           ./Scripts/tests/test_verify_repo_hygiene.sh
+          ./Scripts/tests/test_verify_evaluation_gating.sh

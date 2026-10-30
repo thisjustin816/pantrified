@@ -16,6 +16,11 @@ struct RootView: View {
             Tab("List", systemImage: "cart") {
                 PlaceholderView(title: "List", detail: "Your shared shopping list will appear here.")
             }
+            #if DEBUG || EVALUATION
+            Tab("Evaluate", systemImage: "checklist") {
+                EvaluationView()
+            }
+            #endif
         }
     }
 }

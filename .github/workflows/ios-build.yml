@@ -63,10 +63,27 @@ jobs:
       # A simulator Debug build misses Release-only code, device architectures and resource
       # differences.
       - name: Unsigned Release archive
+        id: archive
         if: ${{ !cancelled() && steps.generate.outcome == 'success' }}
         run: |
           set -o pipefail
           make archive-unsigned 2>&1 | tee archive.log
+      # The Evaluation tab is compiled only for Debug and this configuration, so the Release
+      # archive above does not build it.
+      - name: Unsigned Evaluation archive
+        id: archive-evaluation
+        if: ${{ !cancelled() && steps.generate.outcome == 'success' }}
+        run: |
+          set -o pipefail
+          make archive-evaluation-unsigned 2>&1 | tee archive-evaluation.log
+      # A successful compile does not show that the gating works, so the archived executables are
+      # checked for the Evaluation tab's types.
+      - name: Check the Release app has no Evaluation tab
+        if: ${{ !cancelled() && steps.archive.outcome == 'success' }}
+        run: ./Scripts/verify-evaluation-gating.sh build/Pantrified.xcarchive/Products/Applications/Pantrified.app/Pantrified absent
+      - name: Check the Evaluation app has the Evaluation tab
+        if: ${{ !cancelled() && steps.archive-evaluation.outcome == 'success' }}
+        run: ./Scripts/verify-evaluation-gating.sh build/Pantrified-Evaluation.xcarchive/Products/Applications/Pantrified.app/Pantrified present
       # xcodebuild prints thousands of long command lines, so the failure is hard to find in the
       # raw log. Repeat only the diagnostics, once, at the end.
       - name: Summarize failures
@@ -76,7 +93,7 @@ jobs:
             echo '### Xcode diagnostics'
             echo '```'
             grep -hE ' error: |✘|BUILD FAILED|TEST FAILED|ARCHIVE FAILED|\*\* .* FAILED|Testing failed' \
-              build.log test.log package-test.log archive.log 2>/dev/null | sort -u | head -80
+              build.log test.log package-test.log archive.log archive-evaluation.log 2>/dev/null | sort -u | head -80
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Upload logs

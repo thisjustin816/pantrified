@@ -2,7 +2,7 @@ PROJECT_NAME ?= Pantrified
 DESTINATION ?= platform=iOS Simulator,name=$(shell ./Scripts/select-simulator.sh)
 ARCHIVE_PATH ?= build/$(PROJECT_NAME).xcarchive
 
-.PHONY: generate build test test-package archive-unsigned
+.PHONY: generate build test test-package archive-unsigned archive-evaluation-unsigned
 
 # The Xcode project is generated from project.yml and not tracked.
 generate:
@@ -22,3 +22,9 @@ test-package:
 archive-unsigned:
 	xcodebuild archive -project $(PROJECT_NAME).xcodeproj -scheme $(PROJECT_NAME) -configuration Release \
 		-destination 'generic/platform=iOS' -archivePath '$(ARCHIVE_PATH)' CODE_SIGNING_ALLOWED=NO
+
+# The same archive with the Evaluation tab compiled in, for a build that runs the model on a device.
+archive-evaluation-unsigned:
+	xcodebuild archive -project $(PROJECT_NAME).xcodeproj -scheme $(PROJECT_NAME) -configuration Release \
+		-destination 'generic/platform=iOS' -archivePath 'build/$(PROJECT_NAME)-Evaluation.xcarchive' \
+		CODE_SIGNING_ALLOWED=NO SWIFT_ACTIVE_COMPILATION_CONDITIONS='$$(inherited) EVALUATION'
