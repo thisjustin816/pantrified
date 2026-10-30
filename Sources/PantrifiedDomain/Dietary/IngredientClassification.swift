@@ -82,4 +82,17 @@ public struct ClassificationDataset: Sendable {
     public func entry(for name: IngredientName) -> ClassificationEntry? {
         index[name]
     }
+
+    /// The known foods an entry is made from, directly or through other foods, so pesto reaches
+    /// milk through parmesan.
+    func ingredients(of entry: ClassificationEntry) -> [ClassificationEntry] {
+        var found: [ClassificationEntry] = []
+        var pending = entry.madeFrom
+        while let name = pending.popLast() {
+            guard let next = self.entry(for: name), next != entry, !found.contains(next) else { continue }
+            found.append(next)
+            pending += next.madeFrom
+        }
+        return found
+    }
 }

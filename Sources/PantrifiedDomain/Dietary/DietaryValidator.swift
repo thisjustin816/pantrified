@@ -68,6 +68,9 @@ public enum ReviewReason: Sendable, Hashable {
     /// The excluded food is unknown to the data, so other foods cannot be shown not to be it.
     case exclusionUnverifiable(line: String, ingredient: IngredientName, excluded: IngredientName)
     case compositeMayHideExclusion(line: String, ingredient: IngredientName, excluded: IngredientName)
+    /// The food may be the excluded food, being a less specific name for it, or may contain a
+    /// trait the excluded food has.
+    case mayBeExcluded(line: String, ingredient: IngredientName, excluded: IngredientName)
     /// The title or instructions use a relevant food the ingredient list leaves out.
     case mentionedButNotListed(IngredientName)
     /// A generated title or instructions use a word that is not a listed food, a known food or
@@ -77,7 +80,7 @@ public enum ReviewReason: Sendable, Hashable {
     public enum Kind: Sendable, Hashable, CaseIterable {
         case emptyIngredientList, incompleteIngredientList, unparsedLine, unknownIngredient, mayContain
         case advisoryStatement, unrecognizedNote, alternativesDisagree, traitNotCovered
-        case exclusionUnverifiable, compositeMayHideExclusion, mentionedButNotListed, unrecognizedWord
+        case exclusionUnverifiable, compositeMayHideExclusion, mayBeExcluded, mentionedButNotListed, unrecognizedWord
     }
 
     public var kind: Kind {
@@ -93,6 +96,7 @@ public enum ReviewReason: Sendable, Hashable {
         case .traitNotCovered: .traitNotCovered
         case .exclusionUnverifiable: .exclusionUnverifiable
         case .compositeMayHideExclusion: .compositeMayHideExclusion
+        case .mayBeExcluded: .mayBeExcluded
         case .mentionedButNotListed: .mentionedButNotListed
         case .unrecognizedWord: .unrecognizedWord
         }
@@ -214,6 +218,10 @@ public struct DietaryValidator: Sendable {
         return finding
     }
 
+    /// A food is excluded when it, or a food it is made from, goes by a name that contains the
+    /// excluded food or one of its synonyms. Beyond that, a food that could be the excluded food
+    /// needs review: one the data cannot tell apart from it, a less specific name for it, one
+    /// that may contain a trait it has, or a prepared food that could hide it.
     private func exclusion(
         _ excluded: IngredientName,
         ingredient: IngredientName,
@@ -221,15 +229,23 @@ public struct DietaryValidator: Sendable {
         line: String,
         restriction: DietaryRestriction
     ) -> Finding {
-        let violation = Finding(violations: [
-            DietaryViolation(line: line, ingredient: ingredient, restriction: restriction, trait: nil),
-        ])
-        if ingredient.contains(excluded) { return violation }
+        let excludedEntry = data.entry(for: excluded)
+        let excludedNames = [excluded] + (excludedEntry?.names ?? [])
+        let sources = entry.map { [$0] + data.ingredients(of: $0) } ?? []
+        let names = [ingredient] + sources.flatMap(\.names)
+        if names.contains(where: { name in excludedNames.contains(where: name.contains) }) {
+            return Finding(violations: [
+                DietaryViolation(line: line, ingredient: ingredient, restriction: restriction, trait: nil),
+            ])
+        }
         guard let entry else { return Finding() }
-        guard let excludedEntry = data.entry(for: excluded) else {
+        guard let excludedEntry else {
             return Finding(reviews: [.exclusionUnverifiable(line: line, ingredient: ingredient, excluded: excluded)])
         }
-        if entry == excludedEntry || entry.madeFrom.contains(where: excludedEntry.names.contains) { return violation }
+        if names.contains(where: { name in excludedNames.contains { $0.contains(name) } })
+            || !entry.mayContain.isDisjoint(with: excludedEntry.contains) {
+            return Finding(reviews: [.mayBeExcluded(line: line, ingredient: ingredient, excluded: excluded)])
+        }
         if entry.isComposite {
             return Finding(reviews: [.compositeMayHideExclusion(line: line, ingredient: ingredient, excluded: excluded)])
         }

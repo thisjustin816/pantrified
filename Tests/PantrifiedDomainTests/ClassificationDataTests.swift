@@ -30,6 +30,26 @@ struct BundledClassificationTests {
         }
     }
 
+    @Test("every food an entry is made from has its own entry")
+    func madeFromResolves() {
+        let data = ClassificationDataset.bundled
+        for entry in data.entries {
+            for source in entry.madeFrom {
+                #expect(data.entry(for: source) != nil, "\(entry.name.text) is made from unknown \(source.text)")
+            }
+        }
+    }
+
+    @Test("every food that contains milk, egg, peanut or sesame is linked to it, so excluding it excludes them",
+          arguments: [(DietaryTrait.milk, "milk"), (.egg, "egg"), (.peanut, "peanut"), (.sesame, "sesame seed")])
+    func sourcesAreLinked(trait: DietaryTrait, source: String) throws {
+        let data = ClassificationDataset.bundled
+        let sourceEntry = try #require(data.entry(for: IngredientName(source)))
+        for entry in data.entries where entry.contains.contains(trait) && entry != sourceEntry {
+            #expect(data.ingredients(of: entry).contains(sourceEntry), "\(entry.name.text) is not made from \(source)")
+        }
+    }
+
     @Test("lookup is exact: a phrase containing a known food is not that food")
     func exactLookup() {
         #expect(ClassificationDataset.bundled.entry(for: IngredientName("peanut sauce")) == nil)

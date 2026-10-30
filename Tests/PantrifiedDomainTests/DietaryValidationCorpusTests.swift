@@ -139,6 +139,42 @@ let dietaryCorpus: [DietaryCase] = [
         expected: .violation(["cilantro"])
     ),
     DietaryCase(
+        name: "excluding pork excludes gelatin",
+        lines: ["1 tbsp gelatin"],
+        restrictions: [excluded("pork")],
+        expected: .violation(["gelatin"])
+    ),
+    DietaryCase(
+        name: "excluding cheese excludes parmesan",
+        lines: ["1/2 cup parmesan"],
+        restrictions: [excluded("cheese")],
+        expected: .violation(["parmesan"])
+    ),
+    DietaryCase(
+        name: "excluding milk excludes butter",
+        lines: ["2 tbsp butter"],
+        restrictions: [excluded("milk")],
+        expected: .violation(["butter"])
+    ),
+    DietaryCase(
+        name: "excluding milk excludes pesto through the parmesan in it",
+        lines: ["1/2 cup pesto"],
+        restrictions: [excluded("milk")],
+        expected: .violation(["pesto"])
+    ),
+    DietaryCase(
+        name: "excluding sesame seed excludes tahini",
+        lines: ["2 tbsp tahini"],
+        restrictions: [excluded("sesame seed")],
+        expected: .violation(["tahini"])
+    ),
+    DietaryCase(
+        name: "excluding pepper excludes paprika",
+        lines: ["1 tsp paprika"],
+        restrictions: [excluded("pepper")],
+        expected: .violation(["paprika"])
+    ),
+    DietaryCase(
         name: "shrimp breaks a shellfish allergy",
         lines: ["1 lb shrimp, peeled", "2 cloves garlic", "2 tbsp olive oil"],
         restrictions: [.allergen(.crustaceanShellfish)],
@@ -328,6 +364,24 @@ let dietaryCorpus: [DietaryCase] = [
         lines: ["8 oz penne", "1/2 cup pesto"],
         restrictions: [excluded("mushroom")],
         expected: .needsReview([.compositeMayHideExclusion])
+    ),
+    DietaryCase(
+        name: "a food that may contain a trait of the excluded food needs review",
+        lines: ["8 oz pasta"],
+        restrictions: [excluded("egg")],
+        expected: .needsReview([.mayBeExcluded])
+    ),
+    DietaryCase(
+        name: "a less specific name for the excluded food needs review",
+        lines: ["2 peppers, seeded and diced"],
+        restrictions: [excluded("bell pepper")],
+        expected: .needsReview([.mayBeExcluded])
+    ),
+    DietaryCase(
+        name: "a different vinegar passes an exclusion of white vinegar",
+        lines: ["1 tbsp apple cider vinegar", "1 cup cooked rice"],
+        restrictions: [excluded("white vinegar")],
+        expected: .safe
     ),
     DietaryCase(
         name: "instructions that use an unlisted ingredient need review",
