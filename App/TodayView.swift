@@ -13,6 +13,10 @@ struct TodayView: View {
                 Section("Debug") {
                     let sample = AttentionDemo.sample()
                     LabeledContent(sample.name, value: sample.stateLabel)
+                    LabeledContent(
+                        "FoodKeeper records",
+                        value: AttentionDemo.guidanceRecordCount().map(String.init) ?? "not loaded"
+                    )
                 }
                 #endif
             }

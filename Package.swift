@@ -8,6 +8,7 @@ let package = Package(
         .library(name: "PantrifiedDomain", targets: ["PantrifiedDomain"]),
         .library(name: "PantrifiedApplication", targets: ["PantrifiedApplication"]),
         .library(name: "PantrifiedFoundationModels", targets: ["PantrifiedFoundationModels"]),
+        .library(name: "PantrifiedGuidanceData", targets: ["PantrifiedGuidanceData"]),
     ],
     targets: [
         .target(name: "PantrifiedDomain"),
@@ -20,6 +21,17 @@ let package = Package(
         // Apple's on-device model behind the application layer's runtime capability. It is empty
         // where the FoundationModels framework does not exist, such as Linux.
         .target(name: "PantrifiedFoundationModels", dependencies: ["PantrifiedApplication", "PantrifiedDomain"]),
+        // The bundled USDA FoodKeeper snapshot, regenerated from Data/FoodKeeper by
+        // Scripts/normalize-foodkeeper.py.
+        .target(
+            name: "PantrifiedGuidanceData",
+            dependencies: ["PantrifiedDomain"],
+            resources: [.copy("Resources/foodkeeper.normalized.json")]
+        ),
+        .testTarget(
+            name: "PantrifiedGuidanceDataTests",
+            dependencies: ["PantrifiedGuidanceData", "PantrifiedApplication", "PantrifiedDomain"]
+        ),
         .testTarget(
             name: "PantrifiedApplicationTests",
             dependencies: ["PantrifiedApplication", "PantrifiedDomain", "PantrifiedTestSupport"]

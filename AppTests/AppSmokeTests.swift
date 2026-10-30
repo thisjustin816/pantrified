@@ -11,6 +11,11 @@ struct AppSmokeTests {
         #expect(name == "Pantrified")
     }
 
+    @Test("the bundled FoodKeeper snapshot loads inside the app")
+    func guidanceSnapshotShips() {
+        #expect(AttentionDemo.guidanceRecordCount() == 661)
+    }
+
     @Test("the domain package runs inside the app on the Apple SDK")
     func domainIsLinked() {
         let sample = AttentionDemo.sample()
