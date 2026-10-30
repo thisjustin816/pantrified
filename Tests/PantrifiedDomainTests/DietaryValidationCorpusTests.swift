@@ -241,6 +241,24 @@ let dietaryCorpus: [DietaryCase] = [
         restrictions: [avoided("peanut")],
         expected: .needsReview([.mentionedButNotListed])
     ),
+    DietaryCase(
+        name: "a just-avoid exclusion matches the other names for cilantro",
+        lines: ["1 bunch cilantro"],
+        restrictions: [avoided("coriander"), avoided("cilantro leaves")],
+        expected: .violation(["cilantro"])
+    ),
+    DietaryCase(
+        name: "half-half is half and half",
+        lines: ["1 cup rice", "1/2 cup half-half"],
+        restrictions: [.allergen(.milk)],
+        expected: .violation(["half half"])
+    ),
+    DietaryCase(
+        name: "a just-avoid exclusion of a class of nuts excludes its members",
+        lines: ["1 cup almonds"],
+        restrictions: [avoided("tree nuts")],
+        expected: .violation(["almond"])
+    ),
 
     // Positive violations, including hidden ones
     DietaryCase(
@@ -532,6 +550,162 @@ let dietaryCorpus: [DietaryCase] = [
         expected: .needsReview([.mayContain])
     ),
     DietaryCase(
+        name: "peanut butter may hold soybean oil",
+        lines: ["2 tbsp peanut butter"],
+        restrictions: [.allergen(.soy)],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "peanut butter may hold bone-char sugar",
+        lines: ["2 tbsp peanut butter"],
+        restrictions: [vegan],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "peanut butter is made with sugar",
+        lines: ["2 tbsp peanut butter"],
+        restrictions: [strictlyExcluded("sugar")],
+        expected: .violation(["peanut butter"])
+    ),
+    DietaryCase(
+        name: "almond milk may hold bone-char sugar or dairy",
+        lines: ["1 cup almond milk"],
+        restrictions: [vegan, .allergen(.milk)],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "soy milk may hold bone-char sugar",
+        lines: ["1 cup soy milk"],
+        restrictions: [vegan],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "tofu is not sweetened soy milk",
+        lines: ["1 lb tofu"],
+        restrictions: [vegan, .allergen(.milk)],
+        expected: .safe
+    ),
+    DietaryCase(
+        name: "canned tuna may hold casein",
+        lines: ["1 can tuna"],
+        restrictions: [.allergen(.milk)],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "anchovies may be packed in soybean oil, and so may the fish sauce made from them",
+        lines: ["4 anchovies", "1 tbsp fish sauce"],
+        restrictions: [.allergen(.soy)],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "crab may be imitation crab made of fish and wheat",
+        lines: ["1 cup crab"],
+        restrictions: [.allergen(.fish), .allergen(.wheat)],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "unqualified vinegar may be made from wheat",
+        lines: ["1 tbsp vinegar"],
+        restrictions: [.allergen(.wheat)],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "vegetable broth may hold animal-derived flavors",
+        lines: ["2 cups vegetable broth"],
+        restrictions: [vegetarian],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "chicken broth may hold shellfish flavors",
+        lines: ["2 cups chicken broth"],
+        restrictions: [.allergen(.crustaceanShellfish), .allergen(.mollusc)],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "beef broth may hold fish",
+        lines: ["2 cups beef broth"],
+        restrictions: [.allergen(.fish)],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "sausage and ham may hold flavorings made from fish",
+        lines: ["1 lb sausage", "4 oz ham"],
+        restrictions: [.allergen(.fish)],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "bacon is cured with sugar",
+        lines: ["4 slices bacon"],
+        restrictions: [avoided("sugar")],
+        expected: .violation(["bacon"])
+    ),
+    DietaryCase(
+        name: "mayonnaise may hold flavorings made from milk",
+        lines: ["2 tbsp mayonnaise"],
+        restrictions: [.allergen(.milk)],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "Worcestershire sauce may hold milk-derived flavorings",
+        lines: ["1 tbsp worcestershire sauce"],
+        restrictions: [.allergen(.milk)],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "soy sauce and oyster sauce may hold bone-char sugar",
+        lines: ["1 tbsp soy sauce", "1 tbsp oyster sauce"],
+        restrictions: [strictlyExcluded("honey")],
+        expected: .needsReview([.mayBeExcluded])
+    ),
+    DietaryCase(
+        name: "soy alone may mean sweetened soy sauce",
+        lines: ["1 tbsp soy"],
+        restrictions: [strictlyExcluded("honey")],
+        expected: .needsReview([.mayBeExcluded])
+    ),
+    DietaryCase(
+        name: "chocolate may be made with animal-derived flavors",
+        lines: ["2 oz dark chocolate"],
+        restrictions: [vegetarian],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "curry paste may hold egg",
+        lines: ["2 tbsp curry paste"],
+        restrictions: [.allergen(.egg)],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "bread may be made with fish oil",
+        lines: ["2 slices bread", "1 cup breadcrumbs"],
+        restrictions: [.allergen(.fish)],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "nuts may be cross-contacted with sesame, and pesto through its pine nuts",
+        lines: ["1 cup walnuts", "1/2 cup pesto"],
+        restrictions: [.allergen(.sesame)],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "sesame seeds, tahini and sesame oil may be cross-contacted with nuts",
+        lines: ["1 tbsp sesame seeds", "2 tbsp tahini", "1 tsp sesame oil"],
+        restrictions: [.allergen(.peanut)],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "waxed apples and citrus may be coated with shellac",
+        lines: ["1 apple", "1 lemon", "1 lime", "1 tbsp lemon juice", "1 tbsp apple cider vinegar"],
+        restrictions: [vegan],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "an excluded class of crustaceans or molluscs excludes its members",
+        lines: ["1 lb shrimp", "6 clams"],
+        restrictions: [strictlyExcluded("crustaceans"), avoided("mollusks")],
+        expected: .violation(["shrimp", "clam"])
+    ),
+    DietaryCase(
         name: "sugar may be refined with bone char",
         lines: ["1 cup sugar", "2 cups flour"],
         restrictions: [vegan],
@@ -710,6 +884,13 @@ let dietaryCorpus: [DietaryCase] = [
         origin: .generated,
         restrictions: [.allergen(.wheat)],
         expected: .needsReview([.unrecognizedWord])
+    ),
+    DietaryCase(
+        name: "a dish named only in cooking words is a food",
+        lines: ["1 cup rice"],
+        instructions: ["Serve with soft serve."],
+        restrictions: [.allergen(.milk)],
+        expected: .needsReview([.mentionedButNotListed])
     ),
     DietaryCase(
         name: "seasoned salt is not plain salt",
