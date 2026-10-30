@@ -263,6 +263,12 @@ let dietaryCorpus: [DietaryCase] = [
         expected: .violation(["butter", "almond", "peanut butter", "cod", "barley"])
     ),
     DietaryCase(
+        name: "excluding a class of foods excludes a food made from a member",
+        lines: ["1 tbsp gelatin"],
+        restrictions: [strictlyExcluded("meat")],
+        expected: .violation(["gelatin"])
+    ),
+    DietaryCase(
         name: "a just-avoid exclusion of a class of foods excludes its members",
         lines: ["1 lb salmon", "1 cup cheddar", "1 lb ground beef"],
         restrictions: [avoided("fish"), avoided("dairy"), avoided("meat")],

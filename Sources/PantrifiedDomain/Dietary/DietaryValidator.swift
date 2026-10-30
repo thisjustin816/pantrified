@@ -249,7 +249,7 @@ public struct DietaryValidator: Sendable {
         let sources = entry.map { [$0] + data.ingredients(of: $0) } ?? []
         let names = [ingredient] + sources.flatMap(\.names)
         if names.contains(where: { name in excludedNames.contains(where: name.contains) })
-            || !(entry?.contains ?? []).isDisjoint(with: excludedEntry?.category ?? []) {
+            || !Set(sources.flatMap(\.contains)).isDisjoint(with: excludedEntry?.category ?? []) {
             return Finding(violations: [
                 DietaryViolation(line: line, ingredient: ingredient, restriction: restriction, trait: nil),
             ])
