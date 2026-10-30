@@ -67,6 +67,13 @@ jobs:
         run: |
           set -o pipefail
           make archive-unsigned 2>&1 | tee archive.log
+      # The Evaluation tab is compiled only for Debug and this configuration, so the Release
+      # archive above does not build it.
+      - name: Unsigned Evaluation archive
+        if: ${{ !cancelled() && steps.generate.outcome == 'success' }}
+        run: |
+          set -o pipefail
+          make archive-evaluation-unsigned 2>&1 | tee archive-evaluation.log
       # xcodebuild prints thousands of long command lines, so the failure is hard to find in the
       # raw log. Repeat only the diagnostics, once, at the end.
       - name: Summarize failures
@@ -76,7 +83,7 @@ jobs:
             echo '### Xcode diagnostics'
             echo '```'
             grep -hE ' error: |✘|BUILD FAILED|TEST FAILED|ARCHIVE FAILED|\*\* .* FAILED|Testing failed' \
-              build.log test.log package-test.log archive.log 2>/dev/null | sort -u | head -80
+              build.log test.log package-test.log archive.log archive-evaluation.log 2>/dev/null | sort -u | head -80
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Upload logs
