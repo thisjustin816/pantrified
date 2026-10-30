@@ -28,6 +28,8 @@ struct IngredientLine: Sendable, Hashable {
         text = replace(parenthetical, in: text, with: " ")
         guard !text.contains("("), !text.contains(")") else { return nil }
 
+        // The rest of the line is kept whole as an advisory. A food named there stops the advisory
+        // from being read as about allergens alone, so it concerns every restriction.
         if let marker = advisoryMarkers.compactMap({ text.range(of: $0) }).min(by: { $0.lowerBound < $1.lowerBound }) {
             advisories.append(String(text[marker.lowerBound...]))
             text = String(text[..<marker.lowerBound])

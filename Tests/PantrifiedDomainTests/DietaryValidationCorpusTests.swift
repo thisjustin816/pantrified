@@ -256,6 +256,54 @@ let dietaryCorpus: [DietaryCase] = [
         expected: .needsReview([.advisoryStatement])
     ),
     DietaryCase(
+        name: "a may-contain statement naming only the restricted allergen needs review",
+        lines: ["1 cup rice (may contain shrimp)"],
+        restrictions: [.allergen(.crustaceanShellfish)],
+        expected: .needsReview([.advisoryStatement])
+    ),
+    DietaryCase(
+        name: "an advisory naming an allergen and an unrecognized food concerns every restriction",
+        lines: ["1 cup rice (may contain milk and shrimp)"],
+        restrictions: [.allergen(.crustaceanShellfish)],
+        expected: .needsReview([.advisoryStatement])
+    ),
+    DietaryCase(
+        name: "an advisory naming an irrelevant allergen and a tree nut concerns a tree nut allergy",
+        lines: ["1 cup rice (may contain wheat and almonds)"],
+        restrictions: [.allergen(.treeNut)],
+        expected: .needsReview([.advisoryStatement])
+    ),
+    DietaryCase(
+        name: "a may-contain gluten statement concerns a wheat allergy",
+        lines: ["1 cup rice (may contain gluten)"],
+        restrictions: [.allergen(.wheat)],
+        expected: .needsReview([.advisoryStatement])
+    ),
+    DietaryCase(
+        name: "text after an advisory marker cannot hide a food",
+        lines: ["2 cups rice, processed in butter with egg"],
+        restrictions: [.allergen(.milk)],
+        expected: .needsReview([.advisoryStatement])
+    ),
+    DietaryCase(
+        name: "an advisory naming an excluded food needs review",
+        lines: ["1 cup rice (may contain peanuts)"],
+        restrictions: [excluded("peanut")],
+        expected: .needsReview([.advisoryStatement])
+    ),
+    DietaryCase(
+        name: "an advisory naming only allergens unrelated to an excluded food passes",
+        lines: ["1 cup rice (may contain soy)"],
+        restrictions: [excluded("pork")],
+        expected: .safe
+    ),
+    DietaryCase(
+        name: "an advisory made only of allergen words and filler passes other restrictions",
+        lines: ["1 cup rice (processed in a facility that also processes sesame and tree nuts)"],
+        restrictions: [.allergen(.milk), vegan],
+        expected: .safe
+    ),
+    DietaryCase(
         name: "a note that could name another ingredient needs review",
         lines: ["1 tbsp vinegar (such as malt)", "1 potato"],
         restrictions: [vegan],

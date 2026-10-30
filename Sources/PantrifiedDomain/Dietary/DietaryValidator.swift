@@ -214,31 +214,62 @@ public struct DietaryValidator: Sendable {
 
     // MARK: Advisories and instructions
 
-    private static let advisoryAllergens: [(words: [String], traits: Set<DietaryTrait>)] = [
-        (["milk", "dairy"], [.milk]),
-        (["egg"], [.egg]),
-        (["fish"], [.fish]),
-        (["shellfish"], [.crustaceanShellfish, .mollusc]),
-        (["crustacean"], [.crustaceanShellfish]),
-        (["mollusc", "mollusk"], [.mollusc]),
-        (["nut"], [.treeNut, .peanut]),
-        (["peanut"], [.peanut]),
-        (["wheat"], [.wheat, .gluten]),
-        (["gluten"], [.gluten]),
-        (["soy", "soya"], [.soy]),
-        (["sesame"], [.sesame]),
-    ]
+    private static let advisoryAllergens: [String: Set<DietaryTrait>] = normalizedKeys([
+        "milk": [.milk], "dairy": [.milk],
+        "egg": [.egg],
+        "fish": [.fish],
+        "shellfish": [.crustaceanShellfish, .mollusc],
+        "crustacean": [.crustaceanShellfish],
+        "mollusc": [.mollusc], "mollusk": [.mollusc],
+        "tree": [.treeNut],
+        "nut": [.treeNut, .peanut],
+        "peanut": [.peanut],
+        // Gluten is named on labels for wheat as often as for barley or rye.
+        "wheat": [.wheat, .gluten], "gluten": [.gluten, .wheat],
+        "soy": [.soy], "soya": [.soy],
+        "sesame": [.sesame],
+    ])
 
-    /// An advisory that names recognizable allergens concerns only restrictions forbidding them;
-    /// one that names nothing recognizable concerns every restriction.
+    /// Words an advisory uses around the allergens it names. Nothing here may name a food.
+    private static let advisoryFiller = Set([
+        "may", "contain", "contains", "trace", "traces", "of", "and", "or", "other", "processed",
+        "process", "processes", "in", "on", "a", "an", "the", "facility", "facilities", "that",
+        "which", "also", "handle", "handles", "product", "products", "made", "manufactured",
+        "shared", "equipment", "line", "lines", "with", "cross", "contact", "produced", "same",
+        "plant", "packed", "packaged", "including", "small", "amount", "amounts",
+    ].flatMap { IngredientName($0).words })
+
+    private static func normalizedKeys(_ raw: [String: Set<DietaryTrait>]) -> [String: Set<DietaryTrait>] {
+        Dictionary(raw.map { (IngredientName($0.key).text, $0.value) }, uniquingKeysWith: { $0.union($1) })
+    }
+
+    /// An advisory made only of allergen words and filler concerns the restrictions those
+    /// allergens touch. Any other word could name a food the advisory hides, and an advisory that
+    /// names no allergen says nothing about which, so either concerns every restriction.
     private func advisoryReviews(_ advisory: String, line: String, restrictions: [DietaryRestriction]) -> [ReviewReason] {
-        let words = Set(IngredientName(advisory).words)
-        let named = Self.advisoryAllergens
-            .filter { !words.isDisjoint(with: $0.words) }
-            .reduce(into: Set<DietaryTrait>()) { $0.formUnion($1.traits) }
+        let text = IngredientName(advisory)
+        var named: Set<DietaryTrait> = []
+        var narrowed = true
+        for word in text.words where !Self.advisoryFiller.contains(word) {
+            guard let traits = Self.advisoryAllergens[word] else {
+                narrowed = false
+                break
+            }
+            named.formUnion(traits)
+        }
+        narrowed = narrowed && !named.isEmpty
         return restrictions
-            .filter { named.isEmpty || !$0.forbiddenTraits.isDisjoint(with: named) }
+            .filter { !narrowed || advisoryConcerns($0, naming: named, in: text) }
             .map { .advisoryStatement(line: line, restriction: $0) }
+    }
+
+    private func advisoryConcerns(_ restriction: DietaryRestriction, naming named: Set<DietaryTrait>, in text: IngredientName) -> Bool {
+        guard case .excluded(let excluded) = restriction else {
+            return !restriction.forbiddenTraits.isDisjoint(with: named)
+        }
+        guard let entry = data.entry(for: excluded) else { return true }
+        return entry.names.contains(where: text.contains)
+            || !entry.contains.union(entry.mayContain).isDisjoint(with: named)
     }
 
     /// Foods the instructions name that the list leaves out, when they could matter: a relevant
