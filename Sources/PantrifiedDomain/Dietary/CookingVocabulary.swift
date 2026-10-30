@@ -62,8 +62,8 @@ enum CookingVocabulary {
         foodChanging.contains(word)
     }
 
-    /// True for a word that can sit in a run of words describing something: "the golden and crispy
-    /// onions".
+    /// True for a word that can sit in a run of words describing a food, so a food-changing word
+    /// at one end of the run still applies to the food at the other: "fried, warm golden onions".
     static func continuesDescription(_ word: String) -> Bool {
         descriptors.contains(word) || foodChanging.contains(word) || conjunctions.contains(word)
     }

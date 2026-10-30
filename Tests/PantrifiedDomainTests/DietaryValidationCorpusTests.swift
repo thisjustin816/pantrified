@@ -900,10 +900,33 @@ let dietaryCorpus: [DietaryCase] = [
         expected: .needsReview([.unrecognizedWord])
     ),
     DietaryCase(
+        name: "a food-changing word applies across a describing word",
+        lines: ["1 cup cooked rice", "1 onion"],
+        instructions: ["Top with fried golden onions."],
+        origin: .generated,
+        restrictions: [.allergen(.wheat)],
+        expected: .needsReview([.unrecognizedWord])
+    ),
+    DietaryCase(
+        name: "a food-changing word applies across a run of describing words and a comma",
+        lines: ["1 cup cooked rice", "1 onion"],
+        instructions: ["Top with fried, lightly warmed golden onions."],
+        origin: .generated,
+        restrictions: [.allergen(.wheat)],
+        expected: .needsReview([.unrecognizedWord])
+    ),
+    DietaryCase(
         name: "mashed potatoes may hold milk and butter",
         lines: ["2 potatoes", "1 tsp salt"],
         instructions: ["Serve the mashed potatoes."],
         origin: .generated,
+        restrictions: [.allergen(.milk)],
+        expected: .needsReview([.unrecognizedWord])
+    ),
+    DietaryCase(
+        name: "a food-changing word after the food changes it too",
+        lines: ["2 potatoes", "1 tsp salt"],
+        instructions: ["Serve the potatoes mashed."],
         restrictions: [.allergen(.milk)],
         expected: .needsReview([.unrecognizedWord])
     ),

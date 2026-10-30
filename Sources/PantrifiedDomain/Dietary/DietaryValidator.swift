@@ -541,14 +541,29 @@ public struct DietaryValidator: Sendable {
         return indices
     }
 
-    /// Foods a food-changing word right before them describes, as the words that make the change:
-    /// "fried onions".
+    /// Foods described by a food-changing word on either side, through any run of describing
+    /// words, as the words that make the change: "fried golden onions", "potatoes, mashed".
     private static func changedFoods(in sentence: [RecipeText.Word], spans: [FoodSpan]) -> [String] {
-        spans.compactMap { span in
-            let before = span.range.lowerBound - 1
-            guard before >= 0, !spans.contains(where: { $0.range.contains(before) }),
-                  CookingVocabulary.canChangeFood(sentence[before].written) else { return nil }
-            return sentence[before..<span.range.upperBound].map(\.written).joined(separator: " ")
+        let inFood = Set(spans.flatMap(\.range))
+        func describing(_ index: Int) -> Bool {
+            sentence.indices.contains(index) && !inFood.contains(index)
+                && CookingVocabulary.continuesDescription(sentence[index].written)
+        }
+        return spans.compactMap { span in
+            var start = span.range.lowerBound
+            var end = span.range.upperBound
+            var index = start - 1
+            while describing(index) {
+                if CookingVocabulary.canChangeFood(sentence[index].written) { start = index }
+                index -= 1
+            }
+            index = end
+            while describing(index) {
+                if CookingVocabulary.canChangeFood(sentence[index].written) { end = index + 1 }
+                index += 1
+            }
+            guard start < span.range.lowerBound || end > span.range.upperBound else { return nil }
+            return sentence[start..<end].map(\.written).joined(separator: " ")
         }
     }
 }
