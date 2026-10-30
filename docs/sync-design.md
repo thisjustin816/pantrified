@@ -133,13 +133,11 @@ A crash at any point leaves the last completed step stored. On restart the repli
 - **Not synchronized yet:** storage locations, ingredient links, consumer profiles and restrictions, preferences, Space membership, and deletion of Space data. Tests treat locations as fixed shared configuration.
 - **Evidence removal is not implemented.** Crops are not yet removed when their package leaves active inventory, and approved crops have no removal record.
 
-## Decisions for the owner
-
-These follow the conservative reading of the accepted rules and are open to change:
+## Owner decisions
 
 1. **Independent removals are undone separately.** When two people remove the same package concurrently, undoing one removal leaves the package removed by the other.
-2. **Concurrent Used up and Discard.** The earlier one by clock sets the status; both stay in history. Whether an overshadowed Discard counts toward Waste Insights is undecided.
+2. **Concurrent Used up and Discard.** The earlier one by clock sets the status and both stay in history. Waste Insights counts one outcome per package, the one that set its final status.
 3. **Shopping removal beats a concurrent check or uncheck.** The item stays removed and restorable.
-4. **Concurrent duplicate list items are kept.** No automatic merge, consistent with conservative duplicate detection.
+4. **Concurrent duplicate list items are kept and flagged.** Nothing is deleted automatically. Items that match by the add-time duplicate rule are shown as duplicates with a one-tap Merge. The flag and the Merge action are not built.
 5. **Drafts stay on the capturing device.** Review and put-away happen where the capture was made.
 6. **Corrections need an active package.** A used-up or discarded package refuses new corrections until its removal is undone.

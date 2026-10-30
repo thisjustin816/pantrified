@@ -99,15 +99,14 @@ It has no field for identifiers, people's names, dates, locations, photos, evide
 - No recipe discovery adapter exists yet. Sourced labeling is the validator called with the completeness the future adapter reports.
 - Cross-contact is recorded only where the seed says so. A "safe" verdict reflects typical ingredients, not a specific product's manufacturing.
 
-## Decisions for the owner
-
-These follow the conservative reading of the accepted rules and are open to change:
+## Owner decisions
 
 1. **Generated recipes that need review are withheld**, not shown with a Needs review label as sourced recipes are.
 2. **Diners' needs are combined.** The request does not say how many diners have each restriction or preference.
-3. **Animal rennet and gelatin count against vegetarian.** Cheese, yogurt, and sour cream therefore need review for vegetarians.
-4. **Processing aids count against vegan.** Cane sugar needs review for vegans because of possible bone char.
-5. **Highly refined oils are not exempt.** Vegetable oil needs review for a soy allergy.
-6. **Oats need review for gluten-free** unless a future entry distinguishes certified gluten-free oats.
-7. **Molluscs are a separate allergen**, and "shellfish" in a may-contain statement is read as both crustaceans and molluscs.
-8. **A custom exclusion the data does not know** makes every recipe need review rather than relying on name matching alone.
+3. **Restrictions are strict for allergens and for diets alike.** Anything that could plausibly breach a restriction needs review, so the cases below apply to every diner who has the restriction.
+   - Animal rennet and gelatin count against vegetarian, so cheese, yogurt, and sour cream need review.
+   - Processing aids count against vegan, so cane sugar needs review because of possible bone char.
+   - Highly refined oils are not exempt, so vegetable oil needs review for a soy allergy.
+   - Oats need review for gluten-free unless a future entry distinguishes certified gluten-free oats.
+4. **Molluscs are a separate allergen**, and "shellfish" in a may-contain statement is read as both crustaceans and molluscs.
+5. **A custom exclusion is either an allergy or intolerance, or just avoid.** An allergy or intolerance the data does not know makes every recipe need review. A just-avoid exclusion is matched by name and synonyms in ingredient text only, so a recipe that does not name it passes. The choice is not built: every custom exclusion is currently treated as an allergy or intolerance.
