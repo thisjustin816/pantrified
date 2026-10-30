@@ -39,14 +39,32 @@ actor InMemoryInventory: InventoryRepository {
 
     func save(_ package: Package) async throws {
         if failOnSave { throw FakeFailure() }
-        packages[package.id] = package
+        store(package)
         saveCount += 1
     }
 
     func saveAll(_ batch: [Package]) async throws {
         if failOnSave { throw FakeFailure() }
-        for package in batch { packages[package.id] = package }
+        for package in batch { store(package) }
         saveCount += 1
+    }
+
+    /// Keeps stored creation facts and adds only events the store does not hold.
+    private func store(_ package: Package) {
+        guard let stored = packages[package.id] else {
+            packages[package.id] = package
+            return
+        }
+        let held = Set(stored.events.map(\.id))
+        let added = package.events.filter { !held.contains($0.id) }
+        guard !added.isEmpty else { return }
+        let origin = stored.origin
+        packages[package.id] = Package(
+            id: stored.id, spaceID: stored.spaceID, productID: origin.details.productID, name: origin.details.name,
+            location: origin.location, quantity: origin.quantity, printedDate: origin.details.printedDate,
+            instruction: origin.details.instruction, confirmed: origin.confirmed, addedAt: stored.addedAt,
+            events: stored.events + added
+        )
     }
 }
 

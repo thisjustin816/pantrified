@@ -6,6 +6,17 @@ public protocol TimeSource: Sendable {
     func now() -> Date
 }
 
+/// Stores packages as append-only histories. Use cases read a package, change it and save it in
+/// separate steps, with other awaits in between, so a save must never lose a change stored after
+/// the copy was read:
+///
+/// - The first save of a package ID stores its creation facts; a later save never changes them.
+/// - A save adds the events the store does not hold yet and never removes, reorders or replaces
+///   one it holds.
+///
+/// A check made on a stale copy, such as whether the package is still active, can let through an
+/// event that a fresh read would have refused. The fold resolves it as it resolves the same events
+/// made on two devices.
 public protocol InventoryRepository: Sendable {
     func package(_ id: PackageID) async throws -> Package?
     /// Packages still in active inventory; used up and discarded packages are excluded.
