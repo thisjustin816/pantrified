@@ -86,9 +86,11 @@ public struct AttentionPolicy: Sendable {
         self.useSoonWithinDays = useSoonWithinDays
     }
 
+    /// `storageType` is nil when the package's location is unknown; sourced guidance then has no
+    /// window to apply, and only instructions that name no storage condition do.
     public func assess(
         _ package: Package,
-        storageType: StorageType,
+        storageType: StorageType?,
         guidance: StorageGuidance?,
         now: Date
     ) -> AttentionAssessment {
@@ -123,7 +125,7 @@ public struct AttentionPolicy: Sendable {
 
     private func instructionCandidate(
         for package: Package,
-        storageType: StorageType
+        storageType: StorageType?
     ) -> (date: Date, basis: AttentionBasis)? {
         guard let instruction = package.instruction,
               instruction.storageType == nil || instruction.storageType == storageType,
@@ -137,10 +139,10 @@ public struct AttentionPolicy: Sendable {
     /// package moves from the unopened window to the opened one. Ties take the shorter window.
     private func guidanceCandidate(
         for package: Package,
-        storageType: StorageType,
+        storageType: StorageType?,
         guidance: StorageGuidance?
     ) -> (date: Date, basis: AttentionBasis)? {
-        guard let guidance else { return nil }
+        guard let guidance, let storageType else { return nil }
         let applicable = guidance.windows.compactMap { window -> (window: GuidanceWindow, start: Date)? in
             guard window.storageType == storageType,
                   let start = anchorDate(window.anchor, of: package) else { return nil }

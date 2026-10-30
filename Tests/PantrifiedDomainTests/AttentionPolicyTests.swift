@@ -174,6 +174,25 @@ struct AttentionGuidanceTests {
         #expect(assessment.basis == [.packageInstruction(days: 3, anchor: .opened)])
     }
 
+    @Test("with no known storage type, guidance does not apply but printed dates still do")
+    func unknownStorageType() {
+        let package = makePackage(printed: PrintedDate(label: .useBy, date: day(1)))
+        let assessment = policy.assess(package, storageType: nil, guidance: guidance, now: day(0))
+
+        #expect(assessment.basis == [.printedDate(label: .useBy, date: day(1))])
+        #expect(assessment.state == .useSoon)
+    }
+
+    @Test("with no known storage type, only an instruction that names none applies")
+    func unknownStorageTypeInstructions() {
+        var package = makePackage(addedDay: 0)
+        package.instruction = PackageInstruction(days: 4, anchor: .added, storageType: .refrigerated)
+        #expect(policy.assess(package, storageType: nil, guidance: nil, now: day(0)).state == .unknown)
+
+        package.instruction = PackageInstruction(days: 4, anchor: .added, storageType: nil)
+        #expect(policy.assess(package, storageType: nil, guidance: nil, now: day(0)).attentionDate == day(4))
+    }
+
     @Test("an instruction for a different storage type does not apply")
     func instructionStorageTypeMismatch() {
         var package = makePackage(addedDay: 0)
