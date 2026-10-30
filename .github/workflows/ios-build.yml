@@ -1,0 +1,89 @@
+name: iOS build
+
+# Apple SDK and simulator gates. Linux checks are in ci.yml. Physical-iPhone verification is
+# separate and stays manual.
+
+on:
+  # A change to docs alone can't break a build or a test, so it starts no run.
+  pull_request:
+    paths-ignore: ['docs/**', '**/*.md']
+  push:
+    branches: [main]
+    paths-ignore: ['docs/**', '**/*.md']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to a pull request replaces its running build. On main every build runs to the end.
+concurrency:
+  group: ios-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # The build, tests, package tests and archive share one runner. The package tests and the
+  # archive run even when the app's build or tests failed, so one push reports each kind of failure.
+  build-and-test:
+    name: Xcode build, tests and Release archive
+    # Set the MACOS_RUNNER repository variable to use another runner image. The iOS 27 SDK needs
+    # the Xcode 27 image.
+    runs-on: ${{ vars.MACOS_RUNNER || 'xcode-27' }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          xcrun simctl list devices available | grep -i 'iPhone' || true
+          echo "Simulator: $(./Scripts/select-simulator.sh)"
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate the Xcode project
+        id: generate
+        run: make generate
+      - name: Build
+        run: |
+          set -o pipefail
+          make build 2>&1 | tee build.log
+      - name: App tests
+        run: |
+          set -o pipefail
+          make test 2>&1 | tee test.log
+      # The package tests also run on Linux in ci.yml. Running them here exercises the same code
+      # against Apple's Foundation, which differs from Linux Foundation in Sendable conformances
+      # and file-system behavior.
+      - name: Package tests
+        if: ${{ !cancelled() }}
+        run: |
+          set -o pipefail
+          make test-package 2>&1 | tee package-test.log
+      # A simulator Debug build misses Release-only code, device architectures and resource
+      # differences.
+      - name: Unsigned Release archive
+        if: ${{ !cancelled() && steps.generate.outcome == 'success' }}
+        run: |
+          set -o pipefail
+          make archive-unsigned 2>&1 | tee archive.log
+      # xcodebuild prints thousands of long command lines, so the failure is hard to find in the
+      # raw log. Repeat only the diagnostics, once, at the end.
+      - name: Summarize failures
+        if: failure()
+        run: |
+          {
+            echo '### Xcode diagnostics'
+            echo '```'
+            grep -hE ' error: |✘|BUILD FAILED|TEST FAILED|ARCHIVE FAILED|\*\* .* FAILED|Testing failed' \
+              build.log test.log package-test.log archive.log 2>/dev/null | sort -u | head -80
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ios-build-logs
+          path: '*.log'
+          if-no-files-found: ignore
+          retention-days: 7

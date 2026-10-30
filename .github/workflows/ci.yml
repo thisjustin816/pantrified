@@ -1,0 +1,51 @@
+name: CI
+
+# Host-level checks that run on Linux without Xcode. Apple SDK and simulator gates live in
+# ios-build.yml.
+
+on:
+  # A change to docs alone can't break a build or a test, so it starts no run.
+  pull_request:
+    paths-ignore: ['docs/**', '**/*.md']
+  push:
+    branches: [main]
+    paths-ignore: ['docs/**', '**/*.md']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Every test target runs here, so a new one needs no change to this file.
+  package-tests:
+    name: Package tests
+    runs-on: ubuntu-24.04
+    container: swift:6.1.2-noble
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Run the package tests
+        run: swift test
+
+  repo-hygiene:
+    name: Repository hygiene
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Reject generated projects, signing material and private keys
+        run: ./Scripts/verify-repo-hygiene.sh
+      - name: Lint shell scripts
+        run: shellcheck -x --severity=error Scripts/*.sh Scripts/tests/*.sh
+      - name: Test the scripts
+        run: |
+          ./Scripts/tests/test_select_simulator.sh
+          ./Scripts/tests/test_verify_repo_hygiene.sh
