@@ -1,0 +1,41 @@
+# Continuous integration
+
+Workflows live in `.github/workflows/`. Every action is pinned to a commit SHA and every workflow
+runs with `contents: read`. Neither workflow uses secrets. A change that touches only `docs/` or
+Markdown files starts no run.
+
+## Implemented
+
+| Workflow | Job | What it runs |
+|---|---|---|
+| `ci.yml` | Package tests | `swift test` on Linux in the `swift:6.1.2-noble` image. Every test target runs, so a new one needs no change to the workflow |
+| `ci.yml` | Repository hygiene | `Scripts/verify-repo-hygiene.sh` (no tracked generated Xcode project, per-developer signing settings, signing material, environment files or private key text), `shellcheck` at error severity, and the tests for the two scripts |
+| `ios-build.yml` | Xcode build, tests and Release archive | On one macOS runner: `make generate` (XcodeGen), `make build` and `make test` on an iPhone simulator, `make test-package` (the package tests against Apple's Foundation) and `make archive-unsigned`, a Release archive for a device with signing off. The package tests and the archive run even when the build or app tests failed. On failure, a last step repeats only the Xcode error lines in the job summary, and the logs upload as `ios-build-logs` |
+
+The runner is the `MACOS_RUNNER` repository variable when set, otherwise `xcode-27`. The iOS 27
+SDK needs the Xcode 27 image; the app's minimum is iOS 26.
+
+`Scripts/select-simulator.sh` picks the newest available `iPhone <number> Pro` simulator, so the
+Makefile does not name a model the runner image may lack. `DESTINATION` overrides it.
+
+## Evidence levels
+
+| Check | What it establishes |
+|---|---|
+| Linux `swift test` | Domain and application behavior on the Linux toolchain |
+| macOS `make test-package` | The same behavior against Apple's Foundation |
+| `make build` and `make test` | The app compiles for the simulator and its hosted tests pass |
+| `make archive-unsigned` | The Release configuration compiles for a device |
+| A TestFlight or Debug build on a physical iPhone | Behavior on that device and iOS version, including the Apple models. Nothing in CI runs on a device, and the simulator does not run the Apple models |
+
+A green workflow is not device verification.
+
+## Not built yet
+
+- **TestFlight upload.** It needs the app record, a distribution certificate, an App Store profile
+  and an App Store Connect API key as repository secrets, and a workflow that loads them only in
+  its own job.
+- **Privacy manifest and its check.** The app does not declare one yet.
+- **App icon and the export-compliance declaration.** Both are needed before an upload.
+- **UI tests and screenshots.**
+- **Foundation Models adapters and the on-device evaluation screen.**

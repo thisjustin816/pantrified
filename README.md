@@ -10,7 +10,7 @@ The app is designed around imperfect real-world inventory: approximate quantitie
 
 ## Product status
 
-**Specified enough to begin the first validation/implementation slice.** Competitive research reinforced that the main product risk is inventory-maintenance friction, not the availability of AI recipe features. The first milestone therefore validates the household loop:
+**The pure-Swift domain and application layers for the first slice are implemented and tested on Linux, and an app shell and its macOS workflows are in place.** Capture, local persistence, CloudKit sync and the Apple model adapters are not built, and nothing has been verified on a device. Competitive research reinforced that the main product risk is inventory-maintenance friction, not the availability of AI recipe features. The first milestone therefore validates the household loop:
 
 `capture → correct/put away → use/cook → reconcile → return`
 
@@ -37,6 +37,10 @@ See GitHub issue #1 for the pilot and completion criteria.
 - [`docs/architecture.md`](docs/architecture.md) — implementation architecture constraints and the first vertical slice.
 - [`docs/ai-runtime.md`](docs/ai-runtime.md) — Apple Foundation Models/PCC runtime and fallback boundary.
 - [`docs/monetization.md`](docs/monetization.md) — free/Plus boundary and purchase strategy.
+- [`docs/sync-design.md`](docs/sync-design.md): shared-Space record schema, clock, merge rules, and resume behavior.
+- [`docs/dietary-validation.md`](docs/dietary-validation.md): hard-restriction validation, classification data and its limits, and the Make Something request context.
+- [`docs/branching-and-ci.md`](docs/branching-and-ci.md): how work is branched, merged and verified.
+- [`docs/ci.md`](docs/ci.md): the workflows, what each check establishes, and what is not built yet.
 
 ## Implementation handoff
 
@@ -47,3 +51,8 @@ The primary proposed product-health measure is **weekly closed-loop households**
 ## Engineering principles
 
 Domain and application behavior must remain independently testable from SwiftUI, SwiftData, CloudKit, Vision, AVFoundation, EventKit, StoreKit, Foundation Models, and network providers. Apple frameworks and remote services live behind capability protocols/adapters. Implementation work should use explicit failure-path tests and distinguish Swift tests, Apple SDK compilation, simulator verification, and physical-device verification.
+
+## License
+
+All rights reserved; see [LICENSE](LICENSE). The repository is public so its workflows can run. That
+grants no permission to use, copy, modify or distribute the code or documentation.

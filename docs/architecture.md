@@ -162,6 +162,7 @@ Apple Foundation Models ───────┘
 - Generated requests contain only minimum structured meal context.
 - Deterministic hard-restriction validation is downstream of generated output.
 - Sourced recipe safety depends on ingredient completeness; ambiguous results are Needs review.
+- Restriction model, classification data, verdict rules, and the request context boundary are in `dietary-validation.md`.
 
 ### Apple model adapter
 
@@ -206,7 +207,7 @@ Required properties:
 - full captures never sync
 - only approved generated evidence crops may sync
 
-Build/test the sync engine against an in-memory/fake transport before CloudKit integration tests.
+Build/test the sync engine against an in-memory/fake transport before CloudKit integration tests. The record schema, clock, merge and precedence rules, and resume behavior are in `sync-design.md`.
 
 ## Plus and StoreKit boundary
 
@@ -249,4 +250,4 @@ Never claim a higher verification level than was actually exercised.
 
 ## Remaining intentionally open architecture choices
 
-Implementation planning may still choose exact target/package layout, concrete persistence schema, synchronization record schema, observation-grouping heuristics, and UI composition details as long as they preserve the accepted behavior above. Visual design/branding remains a product decision.
+Implementation planning may still choose exact target/package layout, concrete persistence schema, observation-grouping heuristics, and UI composition details as long as they preserve the accepted behavior above. Visual design/branding remains a product decision.
