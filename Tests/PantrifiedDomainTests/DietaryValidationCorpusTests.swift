@@ -1,0 +1,323 @@
+import Foundation
+import Testing
+@testable import PantrifiedDomain
+
+/// A realistic recipe and the verdict the validator must reach for it.
+struct DietaryCase: Sendable, CustomTestStringConvertible {
+    enum Expected: Sendable {
+        case safe
+        case noRestrictions
+        /// The ingredients, by normalized name, that positively violate a restriction.
+        case violation(Set<String>)
+        /// The review reasons that must all be present.
+        case needsReview(Set<ReviewReason.Kind>)
+    }
+
+    let name: String
+    let lines: [String]
+    var instructions: [String] = []
+    var completeness: IngredientListCompleteness = .complete
+    var providerLabels: Set<String> = []
+    let restrictions: Set<DietaryRestriction>
+    let expected: Expected
+
+    var testDescription: String { name }
+
+    var recipe: RecipeUnderReview {
+        RecipeUnderReview(
+            ingredientLines: lines, instructions: instructions,
+            completeness: completeness, providerLabels: providerLabels
+        )
+    }
+}
+
+private func excluded(_ name: String) -> DietaryRestriction { .excluded(IngredientName(name)) }
+
+private let vegetarian = DietaryRestriction.diet(.vegetarian)
+private let vegan = DietaryRestriction.diet(.vegan)
+private let glutenFree = DietaryRestriction.diet(.glutenFree)
+private let dairyFree = DietaryRestriction.diet(.dairyFree)
+
+let dietaryCorpus: [DietaryCase] = [
+    // Clear passes
+    DietaryCase(
+        name: "rice and beans pass every diet",
+        lines: [
+            "2 cups cooked rice", "1 can black beans, drained and rinsed", "1 onion, diced",
+            "2 cloves garlic, minced", "1 tbsp olive oil", "Salt and pepper to taste",
+        ],
+        restrictions: [vegan, glutenFree, dairyFree, .allergen(.peanut)],
+        expected: .safe
+    ),
+    DietaryCase(
+        name: "lemon chicken passes gluten-free and dairy-free",
+        lines: ["1 lb boneless chicken breasts", "2 cups broccoli florets", "2 tbsp extra virgin olive oil", "1 lemon", "1 tsp kosher salt"],
+        restrictions: [glutenFree, dairyFree],
+        expected: .safe
+    ),
+    DietaryCase(
+        name: "pasta with parmesan passes a peanut allergy",
+        lines: ["8 oz spaghetti", "1 (14 oz) can crushed tomatoes", "2 cloves garlic", "2 tbsp olive oil", "1/4 cup grated parmesan"],
+        restrictions: [.allergen(.peanut)],
+        expected: .safe
+    ),
+    DietaryCase(
+        name: "barley passes a wheat allergy",
+        lines: ["1 cup barley", "1 carrot"],
+        restrictions: [.allergen(.wheat)],
+        expected: .safe
+    ),
+    DietaryCase(
+        name: "a custom exclusion passes foods known to be something else",
+        lines: ["1 lb chicken thighs", "1 tbsp olive oil", "1/2 tsp paprika"],
+        restrictions: [excluded("pork")],
+        expected: .safe
+    ),
+    DietaryCase(
+        name: "with no hard restrictions there is nothing to label",
+        lines: ["2 tbsp butter", "1 cup mystery ingredient"],
+        restrictions: [],
+        expected: .noRestrictions
+    ),
+
+    // Positive violations, including hidden ones
+    DietaryCase(
+        name: "butter breaks vegan",
+        lines: ["2 tbsp unsalted butter", "1 onion"],
+        restrictions: [vegan],
+        expected: .violation(["unsalted butter"])
+    ),
+    DietaryCase(
+        name: "a provider's vegan label does not excuse butter",
+        lines: ["2 tbsp butter", "1 onion"],
+        providerLabels: ["Vegan", "Dairy-Free"],
+        restrictions: [vegan],
+        expected: .violation(["butter"])
+    ),
+    DietaryCase(
+        name: "soy sauce hides wheat from a gluten-free diet",
+        lines: ["1 lb chicken breast", "3 tbsp soy sauce", "1 tbsp sesame oil"],
+        restrictions: [glutenFree],
+        expected: .violation(["soy sauce"])
+    ),
+    DietaryCase(
+        name: "Worcestershire sauce hides anchovy from a vegetarian",
+        lines: ["1 lb mushrooms, sliced", "1 tbsp Worcestershire sauce", "2 tbsp butter"],
+        restrictions: [vegetarian],
+        expected: .violation(["worcestershire sauce"])
+    ),
+    DietaryCase(
+        name: "gelatin breaks vegetarian",
+        lines: ["2 cups plain yogurt", "1 tbsp gelatin", "1/4 cup honey"],
+        restrictions: [vegetarian],
+        expected: .violation(["gelatin"])
+    ),
+    DietaryCase(
+        name: "honey breaks vegan but not vegetarian",
+        lines: ["1/4 cup honey", "1 cup rolled oats"],
+        restrictions: [vegan],
+        expected: .violation(["honey"])
+    ),
+    DietaryCase(
+        name: "pesto hides pine nuts from a tree nut allergy",
+        lines: ["8 oz penne", "1/2 cup pesto"],
+        restrictions: [.allergen(.treeNut)],
+        expected: .violation(["pesto"])
+    ),
+    DietaryCase(
+        name: "excluding pork excludes bacon",
+        lines: ["4 slices bacon", "2 eggs"],
+        restrictions: [excluded("pork")],
+        expected: .violation(["bacon"])
+    ),
+    DietaryCase(
+        name: "a custom exclusion matches by name even for foods the data does not know",
+        lines: ["1 bunch cilantro, chopped", "1 cup jicama"],
+        restrictions: [excluded("cilantro")],
+        expected: .violation(["cilantro"])
+    ),
+    DietaryCase(
+        name: "shrimp breaks a shellfish allergy",
+        lines: ["1 lb shrimp, peeled", "2 cloves garlic", "2 tbsp olive oil"],
+        restrictions: [.allergen(.crustaceanShellfish)],
+        expected: .violation(["shrimp"])
+    ),
+    DietaryCase(
+        name: "barley breaks gluten-free",
+        lines: ["1 cup barley", "1 carrot"],
+        restrictions: [glutenFree],
+        expected: .violation(["barley"])
+    ),
+    DietaryCase(
+        name: "when every alternative breaks the restriction it is a violation",
+        lines: ["1 cup milk or almond milk"],
+        restrictions: [dairyFree, .allergen(.treeNut)],
+        expected: .violation(["milk", "almond milk"])
+    ),
+    DietaryCase(
+        name: "a violation is reported even when the list is incomplete",
+        lines: ["2 tbsp butter"],
+        completeness: .partial,
+        restrictions: [dairyFree],
+        expected: .violation(["butter"])
+    ),
+
+    // Needs review
+    DietaryCase(
+        name: "an empty ingredient list needs review",
+        lines: [" ", ""],
+        restrictions: [vegetarian],
+        expected: .needsReview([.emptyIngredientList])
+    ),
+    DietaryCase(
+        name: "a list the provider may have truncated needs review",
+        lines: ["2 cups cooked rice", "1 onion"],
+        completeness: .partial,
+        restrictions: [vegan],
+        expected: .needsReview([.incompleteIngredientList])
+    ),
+    DietaryCase(
+        name: "a list of unknown completeness needs review",
+        lines: ["2 cups cooked rice"],
+        completeness: .unknown,
+        restrictions: [vegan],
+        expected: .needsReview([.incompleteIngredientList])
+    ),
+    DietaryCase(
+        name: "an ingredient the data does not know needs review",
+        lines: ["2 tbsp gochujang", "1 cup cooked rice"],
+        restrictions: [vegan],
+        expected: .needsReview([.unknownIngredient])
+    ),
+    DietaryCase(
+        name: "a line that is only a quantity cannot be parsed",
+        lines: ["2 cups", "1 cup cooked rice"],
+        restrictions: [vegan],
+        expected: .needsReview([.unparsedLine])
+    ),
+    DietaryCase(
+        name: "several ingredients run together with commas cannot be parsed",
+        lines: ["salt, pepper, rice"],
+        restrictions: [vegan],
+        expected: .needsReview([.unparsedLine])
+    ),
+    DietaryCase(
+        name: "generic broth may be meat broth",
+        lines: ["4 cups broth", "1 cup lentils"],
+        restrictions: [vegetarian],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "chicken broth may contain wheat",
+        lines: ["4 cups chicken broth", "1 cup cooked rice"],
+        restrictions: [glutenFree],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "natural flavors may be animal-derived",
+        lines: ["1 cup cooked rice", "1 tsp natural flavors"],
+        restrictions: [vegan],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "a seasoning blend may contain gluten",
+        lines: ["1 lb chicken breast", "2 tbsp seasoning"],
+        restrictions: [glutenFree],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "an unnamed sauce may contain anything",
+        lines: ["1 cup cooked rice", "1/4 cup sauce"],
+        restrictions: [.allergen(.sesame)],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "oats may be cross-contacted with wheat",
+        lines: ["1 cup rolled oats", "1 banana"],
+        restrictions: [glutenFree],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "sugar may be refined with bone char",
+        lines: ["1 cup sugar", "2 cups flour"],
+        restrictions: [vegan],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "a may-contain statement naming a relevant allergen needs review",
+        lines: ["1 cup chocolate chips (may contain traces of peanuts)", "1 banana"],
+        restrictions: [.allergen(.peanut)],
+        expected: .needsReview([.advisoryStatement])
+    ),
+    DietaryCase(
+        name: "a may-contain statement naming nothing recognizable needs review",
+        lines: ["1 cup rice, processed in a facility that handles other products"],
+        restrictions: [.allergen(.sesame)],
+        expected: .needsReview([.advisoryStatement])
+    ),
+    DietaryCase(
+        name: "a note that could name another ingredient needs review",
+        lines: ["1 tbsp vinegar (such as malt)", "1 potato"],
+        restrictions: [vegan],
+        expected: .needsReview([.unrecognizedNote])
+    ),
+    DietaryCase(
+        name: "alternatives that disagree need review",
+        lines: ["1 cup milk or almond milk"],
+        restrictions: [dairyFree],
+        expected: .needsReview([.alternativesDisagree])
+    ),
+    DietaryCase(
+        name: "an exclusion the data does not know cannot clear other foods",
+        lines: ["1 potato", "1 tomato"],
+        restrictions: [excluded("nightshades")],
+        expected: .needsReview([.exclusionUnverifiable])
+    ),
+    DietaryCase(
+        name: "a prepared food may hide an excluded food",
+        lines: ["8 oz penne", "1/2 cup pesto"],
+        restrictions: [excluded("mushroom")],
+        expected: .needsReview([.compositeMayHideExclusion])
+    ),
+    DietaryCase(
+        name: "instructions that use an unlisted ingredient need review",
+        lines: ["1 lb potatoes", "1 tsp salt"],
+        instructions: ["Boil the potatoes until tender.", "Mash with the butter and salt."],
+        restrictions: [dairyFree],
+        expected: .needsReview([.mentionedButNotListed])
+    ),
+]
+
+private func kinds(_ reasons: [ReviewReason]) -> Set<ReviewReason.Kind> { Set(reasons.map(\.kind)) }
+
+@Suite("Dietary validation corpus")
+struct DietaryValidationCorpusTests {
+    private let validator = DietaryValidator()
+
+    @Test("each case reaches its verdict", arguments: dietaryCorpus)
+    func corpus(_ testCase: DietaryCase) {
+        let verdict = validator.assess(testCase.recipe, against: testCase.restrictions).verdict
+
+        switch (testCase.expected, verdict) {
+        case (.safe, .safe), (.noRestrictions, .noRestrictions):
+            break
+        case (.violation(let expected), .violation(let violations, _)):
+            #expect(Set(violations.map(\.ingredient.text)) == expected)
+        case (.needsReview(let expected), .needsReview(let reasons)):
+            #expect(expected.isSubset(of: kinds(reasons)), "\(reasons)")
+        default:
+            Issue.record("expected \(testCase.expected), got \(verdict)")
+        }
+    }
+
+    @Test("the corpus exercises every needs-review reason")
+    func everyReviewPathIsCovered() {
+        var seen: Set<ReviewReason.Kind> = []
+        for testCase in dietaryCorpus {
+            if case .needsReview(let expected) = testCase.expected { seen.formUnion(expected) }
+        }
+        seen.insert(.traitNotCovered)
+
+        #expect(seen == Set(ReviewReason.Kind.allCases))
+    }
+}
