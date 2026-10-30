@@ -41,6 +41,7 @@ See GitHub issue #1 for the pilot and completion criteria.
 - [`docs/dietary-validation.md`](docs/dietary-validation.md): hard-restriction validation, classification data and its limits, and the Make Something request context.
 - [`docs/branching-and-ci.md`](docs/branching-and-ci.md): how work is branched, merged and verified.
 - [`docs/ci.md`](docs/ci.md): the workflows, what each check establishes, and what is not built yet.
+- [`docs/date-recognition.md`](docs/date-recognition.md): reading printed dates and labels from recognized text, and how ambiguous dates are handled.
 - [`docs/evaluation.md`](docs/evaluation.md): the on-device model evaluation, what it measures and where it is compiled.
 
 ## Implementation handoff

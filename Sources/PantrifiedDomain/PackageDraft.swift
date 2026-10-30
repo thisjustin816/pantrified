@@ -39,6 +39,13 @@ public struct PackageProposal: Sendable, Hashable {
     }
 }
 
+/// A recognized numeric date that reads two ways. The draft holds both until the person picks one.
+public struct PrintedDateChoice: Sendable, Hashable {
+    public let label: PrintedDateLabel
+    public let monthFirst: Date
+    public let dayFirst: Date
+}
+
 public enum DraftRequirement: Sendable, Hashable {
     case name
     case location
@@ -61,6 +68,13 @@ public struct PackageDraft: Sendable, Hashable, Identifiable {
     public var quantity = DraftField<Quantity>()
     public var printedDate = DraftField<PrintedDate>()
     public var location: LocationID?
+    private var recognizedDateChoice: PrintedDateChoice?
+
+    /// A recognized date that could be read two ways and has not been settled. A date the person
+    /// entered or cleared settles it, and it never blocks put-away.
+    public var pendingDateChoice: PrintedDateChoice? {
+        printedDate.source == .userConfirmed ? nil : recognizedDateChoice
+    }
 
     public init(id: PackageID = PackageID(), spaceID: SpaceID, barcode: String? = nil) {
         self.id = id
@@ -72,6 +86,30 @@ public struct PackageDraft: Sendable, Hashable, Identifiable {
         if let name = proposal.name { self.name.propose(name) }
         if let quantity = proposal.quantity { self.quantity.propose(quantity) }
         if let printedDate = proposal.printedDate { self.printedDate.propose(printedDate) }
+    }
+
+    /// Proposes the preferred date read from recognized text. A date that could mean two things is
+    /// held as a pending choice and not proposed; a date the person confirmed is never replaced.
+    public mutating func apply(_ readings: [PrintedDateReading]) {
+        guard let reading = PrintedDateParser.preferred(readings) else { return }
+        switch reading.value {
+        case .resolved(let date, _):
+            recognizedDateChoice = nil
+            apply(PackageProposal(printedDate: PrintedDate(label: reading.label, date: date)))
+        case .ambiguous(let monthFirst, let dayFirst):
+            recognizedDateChoice = PrintedDateChoice(label: reading.label, monthFirst: monthFirst, dayFirst: dayFirst)
+        }
+    }
+
+    /// Settles a pending choice as the person's own confirmed date. An unknown order settles nothing.
+    public mutating func chooseDateOrder(_ order: DateOrderHint) {
+        guard let choice = pendingDateChoice else { return }
+        switch order {
+        case .monthFirst: printedDate.confirm(PrintedDate(label: choice.label, date: choice.monthFirst))
+        case .dayFirst: printedDate.confirm(PrintedDate(label: choice.label, date: choice.dayFirst))
+        case .unknown: return
+        }
+        recognizedDateChoice = nil
     }
 
     public var trimmedName: String? {
