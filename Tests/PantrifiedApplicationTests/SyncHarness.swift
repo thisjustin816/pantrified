@@ -36,10 +36,17 @@ struct Device {
 /// can depend on wall clocks agreeing.
 struct World {
     let space = SpaceID()
-    let cloud = InMemoryCloud()
     let fridge = StorageLocation(name: "Fridge", storageType: .refrigerated)
     let freezer = StorageLocation(name: "Freezer", storageType: .frozen)
     let pantry = StorageLocation(name: "Pantry", storageType: .roomTemperature)
+    private(set) var cloud = InMemoryCloud()
+
+    /// The same Space and locations behind an empty server.
+    func withEmptyCloud() -> World {
+        var world = self
+        world.cloud = InMemoryCloud()
+        return world
+    }
 
     var locations: InMemoryLocations {
         InMemoryLocations(locationsBySpace: [space: [fridge, freezer, pantry]])
@@ -152,4 +159,18 @@ func expectConverged(_ devices: [Device], in world: World) async throws -> Repli
     }
     #expect(await world.cloud.records(zone: world.space) == first.records)
     return first
+}
+
+/// Field-level differences between two record sets, for readable failure messages.
+func differences(_ left: RecordSet, _ right: RecordSet) -> [String] {
+    let ids = Set(left.records.keys).union(right.records.keys)
+    return ids.flatMap { id -> [String] in
+        guard let l = left[id], let r = right[id] else { return ["\(id.kind.rawValue) only on one side"] }
+        var found: [String] = []
+        if l.created != r.created { found.append("\(id.kind.rawValue).created") }
+        for name in Set(l.fields.keys).union(r.fields.keys) where l.fields[name] != r.fields[name] {
+            found.append("\(id.kind.rawValue).\(name): \(String(describing: l.fields[name]?.value)) vs \(String(describing: r.fields[name]?.value))")
+        }
+        return found
+    }
 }
