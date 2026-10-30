@@ -165,6 +165,19 @@ struct MakeSomethingContextTests {
         }
     }
 
+    @Test("a decoded request keeps every restriction with its severity, and names are normalized again")
+    func decodedRestrictions() throws {
+        let request = try fullRequest()
+        var json = String(decoding: try JSONEncoder().encode(request), as: UTF8.self)
+
+        #expect(try JSONDecoder().decode(MakeSomethingRequest.self, from: Data(json.utf8)) == request)
+        json = json.replacingOccurrences(of: #""words":["cilantro"]"#, with: #""words":["Cilantro "]"#)
+            .replacingOccurrences(of: #""name":"Spinach""#, with: #""name":" Spinach ""#)
+        #expect(json.contains("Cilantro "))
+        #expect(json.contains(" Spinach "))
+        #expect(try JSONDecoder().decode(MakeSomethingRequest.self, from: Data(json.utf8)) == request)
+    }
+
     @Test("diners' needs are combined without saying whose they are")
     func combinesDiners() throws {
         let context = try fullRequest().context

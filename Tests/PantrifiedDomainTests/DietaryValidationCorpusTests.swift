@@ -20,6 +20,7 @@ struct DietaryCase: Sendable, CustomTestStringConvertible {
     var completeness: IngredientListCompleteness = .complete
     var origin: RecipeOrigin = .sourced
     var providerLabels: Set<String> = []
+    var data = ClassificationDataset.bundled
     let restrictions: Set<DietaryRestriction>
     let expected: Expected
 
@@ -943,17 +944,30 @@ let dietaryCorpus: [DietaryCase] = [
         restrictions: [.allergen(.crustaceanShellfish)],
         expected: .needsReview([.mentionedButNotListed])
     ),
+    DietaryCase(
+        name: "a restriction whose traits the data was not reviewed for never passes",
+        lines: ["1 cup rice"],
+        data: ClassificationDataset(
+            provenance: ClassificationProvenance(source: "test", version: "t", reviewed: "today"),
+            coveredTraits: [.milk],
+            entries: [ClassificationEntry("rice")]
+        ),
+        restrictions: [.allergen(.sesame)],
+        expected: .needsReview([.traitNotCovered])
+    ),
 ]
 
 private func kinds(_ reasons: [ReviewReason]) -> Set<ReviewReason.Kind> { Set(reasons.map(\.kind)) }
 
+private func verdict(of testCase: DietaryCase) -> DietaryVerdict {
+    DietaryValidator(data: testCase.data).assess(testCase.recipe, against: testCase.restrictions).verdict
+}
+
 @Suite("Dietary validation corpus")
 struct DietaryValidationCorpusTests {
-    private let validator = DietaryValidator()
-
     @Test("each case reaches its verdict", arguments: dietaryCorpus)
     func corpus(_ testCase: DietaryCase) {
-        let verdict = validator.assess(testCase.recipe, against: testCase.restrictions).verdict
+        let verdict = verdict(of: testCase)
 
         switch (testCase.expected, verdict) {
         case (.safe, .safe), (.noRestrictions, .noRestrictions):
@@ -967,14 +981,19 @@ struct DietaryValidationCorpusTests {
         }
     }
 
-    @Test("the corpus exercises every needs-review reason")
+    @Test("every needs-review reason is both expected by some case and produced by the validator")
     func everyReviewPathIsCovered() {
-        var seen: Set<ReviewReason.Kind> = []
+        var expected: Set<ReviewReason.Kind> = []
+        var produced: Set<ReviewReason.Kind> = []
         for testCase in dietaryCorpus {
-            if case .needsReview(let expected) = testCase.expected { seen.formUnion(expected) }
+            if case .needsReview(let kinds) = testCase.expected { expected.formUnion(kinds) }
+            switch verdict(of: testCase) {
+            case .needsReview(let reasons), .violation(_, let reasons): produced.formUnion(kinds(reasons))
+            case .safe, .noRestrictions: break
+            }
         }
-        seen.insert(.traitNotCovered)
 
-        #expect(seen == Set(ReviewReason.Kind.allCases))
+        #expect(expected == Set(ReviewReason.Kind.allCases))
+        #expect(produced == Set(ReviewReason.Kind.allCases))
     }
 }

@@ -12,6 +12,19 @@ public struct MealContextIngredient: Sendable, Hashable, Codable {
         self.useSoon = useSoon
         self.quantity = quantity
     }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            name: try container.decode(String.self, forKey: .name),
+            useSoon: try container.decode(Bool.self, forKey: .useSoon),
+            quantity: try container.decode(Quantity.self, forKey: .quantity)
+        )
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name, useSoon, quantity
+    }
 }
 
 /// The selected diners' soft preferences, combined.

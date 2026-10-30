@@ -11,15 +11,28 @@ public struct IngredientName: Sendable, Hashable, Codable {
         let tokens = raw.withoutInvisibleCharacters.lowercased()
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { !$0.isEmpty }
+            .map(Self.singular)
         let meaningful = tokens.filter { !Self.descriptors.contains($0) }
-        words = (meaningful.isEmpty ? tokens : meaningful).map(Self.singular)
+        words = meaningful.isEmpty ? tokens : meaningful
+    }
+
+    /// Decoded words are normalized again, so stored or synced data can never hold a name that
+    /// typed text could not produce. Normalizing a normalized name changes nothing.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(try container.decode([String].self, forKey: .words).joined(separator: " "))
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case words
     }
 
     public var text: String { words.joined(separator: " ") }
     public var isEmpty: Bool { words.isEmpty }
 
     // Descriptors that describe preparation or size, not a different product. "whole" is absent
-    // on purpose: whole milk is not milk.
+    // on purpose: whole milk is not milk. Compared after singular forms are taken, so normalizing
+    // twice gives the same name.
     private static let descriptors: Set<String> = [
         "fresh", "chopped", "diced", "sliced", "minced", "grated",
         "large", "small", "medium", "ripe", "boneless", "skinless", "organic",
