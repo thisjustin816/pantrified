@@ -30,3 +30,20 @@ public protocol IngredientLinkRepository: Sendable {
     func links(in space: SpaceID) async throws -> Set<IngredientLink>
     func confirm(_ link: IngredientLink, in space: SpaceID) async throws
 }
+
+public protocol ShoppingListRepository: Sendable {
+    func list(in space: SpaceID) async throws -> ShoppingList
+    func save(_ list: ShoppingList, in space: SpaceID) async throws
+}
+
+public enum ShoppingExportError: Error, Sendable, Equatable {
+    /// The remembered reminders list no longer exists or is not writable. The person is asked to
+    /// reconnect; another list is never chosen silently.
+    case destinationMissing
+}
+
+/// The writable Reminders list remembered for a Space and app user.
+public protocol RemindersDestination: Sendable {
+    func incompleteReminderTitles() async throws -> [String]
+    func add(_ items: [ShoppingExportItem]) async throws
+}

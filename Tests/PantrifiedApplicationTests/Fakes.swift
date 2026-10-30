@@ -85,3 +85,40 @@ actor InMemoryLinks: IngredientLinkRepository {
         stored[space, default: []].insert(link)
     }
 }
+
+actor InMemoryShopping: ShoppingListRepository {
+    private var lists: [SpaceID: ShoppingList] = [:]
+    var failOnSave = false
+
+    func setFailOnSave(_ value: Bool) { failOnSave = value }
+
+    func list(in space: SpaceID) async throws -> ShoppingList { lists[space] ?? ShoppingList() }
+
+    func save(_ list: ShoppingList, in space: SpaceID) async throws {
+        if failOnSave { throw FakeFailure() }
+        lists[space] = list
+    }
+}
+
+actor FakeReminders: RemindersDestination {
+    var titles: [String]
+    var missing = false
+    private(set) var written: [ShoppingExportItem] = []
+    private(set) var writeCalls = 0
+
+    init(titles: [String] = [], missing: Bool = false) {
+        self.titles = titles
+        self.missing = missing
+    }
+
+    func incompleteReminderTitles() async throws -> [String] {
+        if missing { throw ShoppingExportError.destinationMissing }
+        return titles
+    }
+
+    func add(_ items: [ShoppingExportItem]) async throws {
+        if missing { throw ShoppingExportError.destinationMissing }
+        writeCalls += 1
+        written += items
+    }
+}
