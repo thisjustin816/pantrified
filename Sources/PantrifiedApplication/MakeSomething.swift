@@ -24,6 +24,12 @@ public enum MakeSomethingOutcome: Sendable, Hashable {
     case unavailable([SkippedRuntime])
 }
 
+public struct MakeSomethingEvaluation: Sendable, Hashable {
+    public let outcome: MakeSomethingOutcome
+    /// The generated recipe whatever its outcome, or nil when no runtime produced one.
+    public let generated: GeneratedRecipe?
+}
+
 /// Make Something and adaptations. Every generated recipe passes hard-restriction validation
 /// against the request's own restrictions before it can be presented.
 public struct MakeSomething: Sendable {
@@ -39,9 +45,15 @@ public struct MakeSomething: Sendable {
     }
 
     public func run(_ request: MakeSomethingRequest) async throws -> MakeSomethingOutcome {
+        try await evaluate(request).outcome
+    }
+
+    /// Like `run`, and also returns the recipe as the model wrote it, including one that was
+    /// withheld. For measuring a model: a withheld recipe must never be presented.
+    public func evaluate(_ request: MakeSomethingRequest) async throws -> MakeSomethingEvaluation {
         switch try await router.generate(request) {
         case .unavailable(let skipped):
-            return .unavailable(skipped)
+            return MakeSomethingEvaluation(outcome: .unavailable(skipped), generated: nil)
         case .generated(let recipe, let runtime, _):
             // The list is taken as complete only because generated text is checked word by word:
             // a title or instruction word that is not a listed food, a known food or cooking
@@ -58,9 +70,9 @@ public struct MakeSomething: Sendable {
             )
             switch assessment.verdict {
             case .safe, .noRestrictions:
-                return .ready(recipe, assessment, on: runtime)
+                return MakeSomethingEvaluation(outcome: .ready(recipe, assessment, on: runtime), generated: recipe)
             case .needsReview, .violation:
-                return .withheld(assessment, on: runtime)
+                return MakeSomethingEvaluation(outcome: .withheld(assessment, on: runtime), generated: recipe)
             }
         }
     }
