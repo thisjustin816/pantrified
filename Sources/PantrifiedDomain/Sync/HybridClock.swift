@@ -41,9 +41,16 @@ public struct HybridClock: Sendable, Hashable, Codable {
         if physical > physicalMillis {
             physicalMillis = physical
             counter = 0
-        } else {
+        } else if counter < .max {
             counter += 1
+        } else if physicalMillis < .max {
+            // An observed reading can carry any counter, so the counter carries into the
+            // milliseconds rather than overflow; the reading still follows every earlier one.
+            physicalMillis += 1
+            counter = 0
         }
+        // Past the largest possible reading there is no later one, so the clock repeats it and
+        // equal stamps are ordered as any other equal stamps are.
         return HybridTimestamp(physicalMillis: physicalMillis, counter: counter, replica: replica)
     }
 

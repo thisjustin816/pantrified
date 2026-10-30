@@ -60,4 +60,29 @@ struct HybridClockTests {
         #expect(x != y)
         #expect((x < y) != (y < x))
     }
+
+    @Test("after observing a reading at the largest counter, the next reading moves to the next millisecond")
+    func counterOverflowCarries() {
+        var clock = HybridClock(replica: ReplicaID())
+        let remote = HybridTimestamp(physicalMillis: 1_800_000_000_000, counter: .max, replica: ReplicaID())
+        clock.observe(remote)
+
+        let next = clock.tick(now: seconds(0))
+
+        #expect(remote < next)
+        #expect(next.physicalMillis == remote.physicalMillis + 1)
+        #expect(next.counter == 0)
+    }
+
+    @Test("after observing the largest possible reading, the clock keeps issuing it instead of failing")
+    func largestReadingSaturates() {
+        var clock = HybridClock(replica: ReplicaID())
+        clock.observe(HybridTimestamp(physicalMillis: .max, counter: .max, replica: ReplicaID()))
+
+        let first = clock.tick(now: seconds(0))
+        let second = clock.tick(now: seconds(1))
+
+        #expect(first.physicalMillis == .max && first.counter == .max)
+        #expect(second == first)
+    }
 }
