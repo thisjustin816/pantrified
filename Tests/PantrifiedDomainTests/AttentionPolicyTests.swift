@@ -167,7 +167,7 @@ struct AttentionGuidanceTests {
     func instructionOutranksGuidance() throws {
         var package = makePackage(addedDay: 0)
         try package.record(.opened, at: day(1))
-        package.instruction = PackageInstruction(days: 3, anchor: .opened, storageType: nil)
+        try package.record(.corrected(.instruction(PackageInstruction(days: 3, anchor: .opened, storageType: nil))), at: day(1))
         let assessment = policy.assess(package, storageType: .refrigerated, guidance: guidance, now: day(1))
 
         #expect(assessment.attentionDate == day(4))
@@ -184,19 +184,19 @@ struct AttentionGuidanceTests {
     }
 
     @Test("with no known storage type, only an instruction that names none applies")
-    func unknownStorageTypeInstructions() {
+    func unknownStorageTypeInstructions() throws {
         var package = makePackage(addedDay: 0)
-        package.instruction = PackageInstruction(days: 4, anchor: .added, storageType: .refrigerated)
+        try package.record(.corrected(.instruction(PackageInstruction(days: 4, anchor: .added, storageType: .refrigerated))), at: day(0))
         #expect(policy.assess(package, storageType: nil, guidance: nil, now: day(0)).state == .unknown)
 
-        package.instruction = PackageInstruction(days: 4, anchor: .added, storageType: nil)
+        try package.record(.corrected(.instruction(PackageInstruction(days: 4, anchor: .added, storageType: nil))), at: day(0))
         #expect(policy.assess(package, storageType: nil, guidance: nil, now: day(0)).attentionDate == day(4))
     }
 
     @Test("an instruction for a different storage type does not apply")
-    func instructionStorageTypeMismatch() {
+    func instructionStorageTypeMismatch() throws {
         var package = makePackage(addedDay: 0)
-        package.instruction = PackageInstruction(days: 30, anchor: .added, storageType: .frozen)
+        try package.record(.corrected(.instruction(PackageInstruction(days: 30, anchor: .added, storageType: .frozen))), at: day(0))
         let assessment = policy.assess(package, storageType: .refrigerated, guidance: guidance, now: day(0))
 
         #expect(assessment.basis == [.guidance(provenance: provenance, days: 2, anchor: .added)])

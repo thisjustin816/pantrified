@@ -80,6 +80,14 @@ public struct PackageDraft: Sendable, Hashable, Identifiable {
         return trimmed
     }
 
+    /// Fields the user decided during review, which the package keeps against later recognition.
+    public var confirmedFields: Set<PackageField> {
+        var confirmed: Set<PackageField> = []
+        if name.source == .userConfirmed { confirmed.insert(.name) }
+        if printedDate.source == .userConfirmed { confirmed.insert(.printedDate) }
+        return confirmed
+    }
+
     public var readiness: DraftReadiness {
         var missing: [DraftRequirement] = []
         if trimmedName == nil { missing.append(.name) }

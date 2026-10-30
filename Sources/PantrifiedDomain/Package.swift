@@ -30,6 +30,12 @@ public enum PackageChange: Sendable, Hashable, Codable {
     case confirmedPresent
     case usedUp
     case discarded(reason: DiscardReason?)
+    /// The user decided this field. It keeps its value against recognition recorded before or
+    /// after it, until the correction itself is undone or corrected again.
+    case corrected(PackageFieldValue)
+    /// Recognition or enrichment proposed this value. It applies only while the user has not
+    /// decided the field.
+    case recognized(PackageFieldValue)
 }
 
 public struct PackageEvent: Sendable, Hashable, Codable, Identifiable {
@@ -41,26 +47,78 @@ public struct PackageEvent: Sendable, Hashable, Codable, Identifiable {
     public let id: PackageEventID
     public let at: Date
     public let kind: Kind
+
+    public init(id: PackageEventID, at: Date, kind: Kind) {
+        self.id = id
+        self.at = at
+        self.kind = kind
+    }
+}
+
+/// A package's descriptive fields, which recognition may propose and the user may correct.
+public enum PackageField: Sendable, Hashable, Codable, CaseIterable {
+    case name
+    case productID
+    case printedDate
+    case instruction
+}
+
+public enum PackageFieldValue: Sendable, Hashable, Codable {
+    case name(String)
+    case productID(ProductID?)
+    case printedDate(PrintedDate?)
+    case instruction(PackageInstruction?)
+
+    public var field: PackageField {
+        switch self {
+        case .name: .name
+        case .productID: .productID
+        case .printedDate: .printedDate
+        case .instruction: .instruction
+        }
+    }
+}
+
+public struct PackageDetails: Sendable, Hashable {
+    public var name: String
+    public var productID: ProductID?
+    public var printedDate: PrintedDate?
+    public var instruction: PackageInstruction?
+
+    mutating func set(_ value: PackageFieldValue) {
+        switch value {
+        case .name(let name): self.name = name
+        case .productID(let productID): self.productID = productID
+        case .printedDate(let printedDate): self.printedDate = printedDate
+        case .instruction(let instruction): self.instruction = instruction
+        }
+    }
+}
+
+/// What a package was created with. Never changes; later changes are events.
+public struct PackageOrigin: Sendable, Hashable {
+    public let details: PackageDetails
+    /// Fields the user decided before the package existed, such as during draft review.
+    public let confirmed: Set<PackageField>
+    public let location: LocationID
+    public let quantity: Quantity
 }
 
 /// A physical package. Product identity is separate: a matching barcode never proves two packages
 /// are the same one, so `productID` is optional and incomplete records are valid.
 ///
 /// Current state is derived from an append-only event history so undo and sync recovery operate on
-/// the same log; undone events stay in `events` for history.
+/// the same log; undone events stay in `events` for history. Descriptive fields are part of that
+/// history too, so a correction made against a stale copy cannot erase anyone else's change.
 public struct Package: Sendable, Identifiable {
     public let id: PackageID
     public let spaceID: SpaceID
-    public var productID: ProductID?
-    public var name: String
-    public var printedDate: PrintedDate?
-    public var instruction: PackageInstruction?
     public let addedAt: Date
-    public private(set) var events: [PackageEvent] = []
+    public let origin: PackageOrigin
+    public private(set) var events: [PackageEvent]
 
-    private let initialLocation: LocationID
-    private let initialQuantity: Quantity
-
+    /// `events` restores a package from persisted or synchronized history and must be in the
+    /// order the history is folded.
     public init(
         id: PackageID = PackageID(),
         spaceID: SpaceID,
@@ -70,17 +128,22 @@ public struct Package: Sendable, Identifiable {
         quantity: Quantity = .unknown,
         printedDate: PrintedDate? = nil,
         instruction: PackageInstruction? = nil,
-        addedAt: Date
+        confirmed: Set<PackageField> = [],
+        addedAt: Date,
+        events: [PackageEvent] = []
     ) {
         self.id = id
         self.spaceID = spaceID
-        self.productID = productID
-        self.name = name
-        self.printedDate = printedDate
-        self.instruction = instruction
         self.addedAt = addedAt
-        self.initialLocation = location
-        self.initialQuantity = quantity
+        self.origin = PackageOrigin(
+            details: PackageDetails(
+                name: name, productID: productID, printedDate: printedDate, instruction: instruction
+            ),
+            confirmed: confirmed,
+            location: location,
+            quantity: quantity
+        )
+        self.events = events
     }
 
     // MARK: Recording
@@ -103,6 +166,22 @@ public struct Package: Sendable, Identifiable {
         if case .undone = event.kind { throw PackageError.cannotUndoUndo }
         guard !undoneIDs.contains(target) else { throw PackageError.alreadyUndone }
         events.append(PackageEvent(id: PackageEventID(), at: date, kind: .undone(target)))
+    }
+
+    /// Records recognition for each proposed field the user has not decided. Quantity is not
+    /// proposed after put-away: from then on it is lifecycle state the household maintains.
+    @discardableResult
+    public mutating func propose(_ proposal: PackageProposal, at date: Date) throws -> [PackageEventID] {
+        let values: [PackageFieldValue] = [
+            proposal.name.map { .name($0) },
+            proposal.printedDate.map { .printedDate($0) },
+        ].compactMap { $0 }
+        let confirmed = confirmedFields
+        var recorded: [PackageEventID] = []
+        for value in values where !confirmed.contains(value.field) {
+            recorded.append(try record(.recognized(value), at: date))
+        }
+        return recorded
     }
 
     // MARK: Derived state
@@ -134,15 +213,40 @@ public struct Package: Sendable, Identifiable {
         return .active
     }
 
+    private var described: (details: PackageDetails, confirmed: Set<PackageField>) {
+        var details = origin.details
+        var confirmed = origin.confirmed
+        for (_, change) in effectiveChanges {
+            switch change {
+            case .corrected(let value):
+                details.set(value)
+                confirmed.insert(value.field)
+            case .recognized(let value) where !confirmed.contains(value.field):
+                details.set(value)
+            default:
+                continue
+            }
+        }
+        return (details, confirmed)
+    }
+
+    public var details: PackageDetails { described.details }
+    public var name: String { details.name }
+    public var productID: ProductID? { details.productID }
+    public var printedDate: PrintedDate? { details.printedDate }
+    public var instruction: PackageInstruction? { details.instruction }
+    /// Fields the user has decided; recognition no longer changes them.
+    public var confirmedFields: Set<PackageField> { described.confirmed }
+
     public var location: LocationID {
-        effectiveChanges.reduce(initialLocation) { current, entry in
+        effectiveChanges.reduce(origin.location) { current, entry in
             if case .moved(let destination) = entry.change { return destination }
             return current
         }
     }
 
     public var quantity: Quantity {
-        effectiveChanges.reduce(initialQuantity) { current, entry in
+        effectiveChanges.reduce(origin.quantity) { current, entry in
             switch entry.change {
             case .quantityChanged(let quantity), .usedSome(let quantity): return quantity
             default: return current

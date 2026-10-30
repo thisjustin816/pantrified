@@ -56,6 +56,7 @@ public struct PutAway: Sendable {
                 location: location,
                 quantity: draft.quantity.value ?? .unknown,
                 printedDate: draft.printedDate.value,
+                confirmed: draft.confirmedFields,
                 addedAt: now
             ))
         }

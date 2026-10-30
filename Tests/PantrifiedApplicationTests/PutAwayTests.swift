@@ -61,6 +61,22 @@ struct PutAwayTests {
         #expect(package.printedDate == printed)
     }
 
+    @Test("fields the user confirmed in review resist recognition that arrives after put-away")
+    func confirmationsCarryOver() async throws {
+        let f = Fixture()
+        var draft = f.draft("Yogurt")
+        draft.apply(PackageProposal(printedDate: PrintedDate(label: .useBy, date: t0)))
+        _ = try await f.putAway.putAway([draft])
+
+        var package = try #require(await f.inventory.package(draft.id))
+        let later = PrintedDate(label: .bestBy, date: t0.addingTimeInterval(86_400))
+        try package.propose(PackageProposal(name: "Greek yogurt", printedDate: later), at: t0)
+
+        #expect(package.confirmedFields == [.name])
+        #expect(package.name == "Yogurt")
+        #expect(package.printedDate == later)
+    }
+
     @Test("repeated identical products become separate packages")
     func identicalProducts() async throws {
         let f = Fixture()
