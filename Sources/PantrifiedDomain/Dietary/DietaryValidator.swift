@@ -136,6 +136,7 @@ public struct DietaryValidator: Sendable {
     private func verdict(_ recipe: RecipeUnderReview, _ restrictions: Set<DietaryRestriction>) -> DietaryVerdict {
         guard !restrictions.isEmpty else { return .noRestrictions }
         let ordered = restrictions.sorted { "\($0)" < "\($1)" }
+        let classifying = ordered.contains(where: \.reliesOnClassification)
         let lines = recipe.ingredientLines.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
         var finding = Finding()
@@ -150,10 +151,17 @@ public struct DietaryValidator: Sendable {
         var listed: [IngredientName] = []
         for line in lines {
             guard let parsed = IngredientLine.parse(line) else {
-                finding.reviews.append(.unparsedLine(line))
+                if classifying { finding.reviews.append(.unparsedLine(line)) }
+                for restriction in ordered {
+                    guard case .excluded(let excluded, _) = restriction,
+                          let name = excludedNames(excluded).first(where: IngredientName(line).contains) else { continue }
+                    finding.violations.append(DietaryViolation(line: line, ingredient: name, restriction: restriction, trait: nil))
+                }
                 continue
             }
-            for note in parsed.unrecognizedNotes { finding.reviews.append(.unrecognizedNote(line: line, note: note)) }
+            for note in parsed.unrecognizedNotes where classifying || ordered.contains(where: { avoids($0, namedIn: note) }) {
+                finding.reviews.append(.unrecognizedNote(line: line, note: note))
+            }
             for advisory in parsed.advisories {
                 finding.reviews += advisoryReviews(advisory, line: line, restrictions: ordered)
             }
@@ -199,11 +207,15 @@ public struct DietaryValidator: Sendable {
     private func assess(_ ingredient: IngredientName, line: String, restrictions: [DietaryRestriction]) -> Finding {
         var finding = Finding()
         let entry = data.entry(for: ingredient)
-        if entry == nil { finding.reviews.append(.unknownIngredient(line: line, ingredient: ingredient)) }
+        if entry == nil, restrictions.contains(where: \.reliesOnClassification) {
+            finding.reviews.append(.unknownIngredient(line: line, ingredient: ingredient))
+        }
 
         for restriction in restrictions {
-            if case .excluded(let excluded) = restriction {
-                finding.merge(exclusion(excluded, ingredient: ingredient, entry: entry, line: line, restriction: restriction))
+            if case .excluded(let excluded, let severity) = restriction {
+                finding.merge(exclusion(
+                    excluded, severity: severity, ingredient: ingredient, entry: entry, line: line, restriction: restriction
+                ))
                 continue
             }
             guard let entry else { continue }
@@ -219,18 +231,20 @@ public struct DietaryValidator: Sendable {
     }
 
     /// A food is excluded when it, or a food it is made from, goes by a name that contains the
-    /// excluded food or one of its synonyms. Beyond that, a food that could be the excluded food
-    /// needs review: one the data cannot tell apart from it, a less specific name for it, one
-    /// that may contain a trait it has, or a prepared food that could hide it.
+    /// excluded food or one of its synonyms. For an allergy or intolerance, a food that could be
+    /// the excluded food also needs review: one the data cannot tell apart from it, a less
+    /// specific name for it, one that may contain a trait it has, or a prepared food that could
+    /// hide it.
     private func exclusion(
         _ excluded: IngredientName,
+        severity: ExclusionSeverity,
         ingredient: IngredientName,
         entry: ClassificationEntry?,
         line: String,
         restriction: DietaryRestriction
     ) -> Finding {
         let excludedEntry = data.entry(for: excluded)
-        let excludedNames = [excluded] + (excludedEntry?.names ?? [])
+        let excludedNames = excludedNames(excluded)
         let sources = entry.map { [$0] + data.ingredients(of: $0) } ?? []
         let names = [ingredient] + sources.flatMap(\.names)
         if names.contains(where: { name in excludedNames.contains(where: name.contains) }) {
@@ -238,7 +252,7 @@ public struct DietaryValidator: Sendable {
                 DietaryViolation(line: line, ingredient: ingredient, restriction: restriction, trait: nil),
             ])
         }
-        guard let entry else { return Finding() }
+        guard severity == .allergyOrIntolerance, let entry else { return Finding() }
         guard let excludedEntry else {
             return Finding(reviews: [.exclusionUnverifiable(line: line, ingredient: ingredient, excluded: excluded)])
         }
@@ -299,17 +313,31 @@ public struct DietaryValidator: Sendable {
         }
         narrowed = narrowed && !named.isEmpty
         return restrictions
-            .filter { !narrowed || advisoryConcerns($0, naming: named, in: text) }
+            .filter { restriction in
+                guard restriction.reliesOnClassification else { return avoids(restriction, namedIn: advisory) }
+                return !narrowed || advisoryConcerns(restriction, naming: named, in: text)
+            }
             .map { .advisoryStatement(line: line, restriction: $0) }
     }
 
     private func advisoryConcerns(_ restriction: DietaryRestriction, naming named: Set<DietaryTrait>, in text: IngredientName) -> Bool {
-        guard case .excluded(let excluded) = restriction else {
+        guard case .excluded(let excluded, _) = restriction else {
             return !restriction.forbiddenTraits.isDisjoint(with: named)
         }
         guard let entry = data.entry(for: excluded) else { return true }
-        return entry.names.contains(where: text.contains)
+        return excludedNames(excluded).contains(where: text.contains)
             || !entry.contains.union(entry.mayContain).isDisjoint(with: named)
+    }
+
+    /// True for a just-avoid exclusion whose food the text names.
+    private func avoids(_ restriction: DietaryRestriction, namedIn text: String) -> Bool {
+        guard case .excluded(let excluded, .justAvoid) = restriction else { return false }
+        return excludedNames(excluded).contains(where: IngredientName(text).contains)
+    }
+
+    /// The excluded food's own name first, then the data's names for it.
+    private func excludedNames(_ excluded: IngredientName) -> [IngredientName] {
+        [excluded] + (data.entry(for: excluded)?.names.filter { $0 != excluded } ?? [])
     }
 
     /// Foods the title and instructions use that the list leaves out, when they would change the
@@ -324,7 +352,13 @@ public struct DietaryValidator: Sendable {
     ) -> [ReviewReason] {
         let listedEntries = listed.compactMap { data.entry(for: $0) }
         let listedWords = Set(listed.flatMap(\.words) + listedEntries.flatMap { $0.names.flatMap(\.words) })
-        let exclusions = restrictions.compactMap { if case .excluded(let name) = $0 { name } else { nil } }
+        let exclusions = restrictions
+            .flatMap { restriction -> [IngredientName] in
+                guard case .excluded(let name, _) = restriction else { return [] }
+                return excludedNames(name)
+            }
+            .sorted { $0.words.count > $1.words.count }
+        let checksWords = origin == .generated && restrictions.contains(where: \.reliesOnClassification)
         let candidates = data.entries.flatMap { entry in entry.names.map { ($0, entry) } }
             .sorted { $0.0.words.count > $1.0.words.count }
 
@@ -350,7 +384,7 @@ public struct DietaryValidator: Sendable {
                     if !listed.contains(where: { $0.contains(excluded) }), !found.contains(excluded) { found.append(excluded) }
                     continue
                 }
-                if origin == .generated, !CookingVocabulary.contains(written[index]), !listedWords.contains(words[index]),
+                if checksWords, !CookingVocabulary.contains(written[index]), !listedWords.contains(words[index]),
                    !unrecognized.contains(written[index]) {
                     unrecognized.append(written[index])
                 }
@@ -358,6 +392,14 @@ public struct DietaryValidator: Sendable {
             }
         }
         return found.map(ReviewReason.mentionedButNotListed) + unrecognized.map(ReviewReason.unrecognizedWord)
+    }
+}
+
+extension DietaryRestriction {
+    /// False only for a just-avoid exclusion, which matches by name and never needs a food to be
+    /// classified.
+    fileprivate var reliesOnClassification: Bool {
+        if case .excluded(_, .justAvoid) = self { false } else { true }
     }
 }
 

@@ -33,7 +33,11 @@ struct DietaryCase: Sendable, CustomTestStringConvertible {
     }
 }
 
-private func excluded(_ name: String) -> DietaryRestriction { .excluded(IngredientName(name)) }
+private func strictlyExcluded(_ name: String) -> DietaryRestriction {
+    .excluded(IngredientName(name), severity: .allergyOrIntolerance)
+}
+
+private func avoided(_ name: String) -> DietaryRestriction { .excluded(IngredientName(name), severity: .justAvoid) }
 
 private let vegetarian = DietaryRestriction.diet(.vegetarian)
 private let vegan = DietaryRestriction.diet(.vegan)
@@ -67,7 +71,7 @@ let dietaryCorpus: [DietaryCase] = [
     DietaryCase(
         name: "a custom exclusion passes foods known to be something else",
         lines: ["1 lb chicken thighs", "1 tbsp olive oil", "1/2 tsp paprika"],
-        restrictions: [excluded("pork")],
+        restrictions: [strictlyExcluded("pork")],
         expected: .safe
     ),
     DietaryCase(
@@ -75,6 +79,83 @@ let dietaryCorpus: [DietaryCase] = [
         lines: ["2 tbsp butter", "1 cup mystery ingredient"],
         restrictions: [],
         expected: .noRestrictions
+    ),
+
+    // Just-avoid exclusions: matched by name, synonym and made-from links only
+    DietaryCase(
+        name: "a just-avoid exclusion the data does not know passes a recipe that does not name it",
+        lines: ["1 potato", "1 tomato"],
+        restrictions: [avoided("nightshades")],
+        expected: .safe
+    ),
+    DietaryCase(
+        name: "a just-avoid exclusion does not make unknown foods need review",
+        lines: ["1 cup jicama", "1 cup cooked rice", "2 tbsp gochujang"],
+        restrictions: [avoided("cilantro")],
+        expected: .safe
+    ),
+    DietaryCase(
+        name: "a just-avoid exclusion does not make prepared foods or near names need review",
+        lines: ["8 oz penne", "1/2 cup pesto", "2 peppers, seeded and diced"],
+        restrictions: [avoided("mushroom"), avoided("bell pepper")],
+        expected: .safe
+    ),
+    DietaryCase(
+        name: "a just-avoid exclusion ignores advisories and notes that do not name it",
+        lines: ["1 cup rice (may contain peanuts) (such as basmati)", "salt, pepper, rice"],
+        restrictions: [avoided("pork")],
+        expected: .safe
+    ),
+    DietaryCase(
+        name: "generated text is not held to the cooking vocabulary for a just-avoid exclusion alone",
+        lines: ["1 cup rice"],
+        instructions: ["Fold in the ricotta."],
+        origin: .generated,
+        restrictions: [avoided("cilantro")],
+        expected: .safe
+    ),
+    DietaryCase(
+        name: "a just-avoid exclusion matches by name",
+        lines: ["1 bunch cilantro, chopped", "1 cup jicama"],
+        restrictions: [avoided("cilantro")],
+        expected: .violation(["cilantro"])
+    ),
+    DietaryCase(
+        name: "a just-avoid exclusion matches by synonym",
+        lines: ["1 can garbanzo beans, drained"],
+        restrictions: [avoided("chickpea")],
+        expected: .violation(["garbanzo bean"])
+    ),
+    DietaryCase(
+        name: "a just-avoid exclusion matches through what foods are made from",
+        lines: ["4 slices bacon", "1/2 cup pesto"],
+        restrictions: [avoided("pork"), avoided("milk")],
+        expected: .violation(["bacon", "pesto"])
+    ),
+    DietaryCase(
+        name: "a just-avoid exclusion matches a line it cannot parse by name",
+        lines: ["salt, pepper, cilantro"],
+        restrictions: [avoided("cilantro")],
+        expected: .violation(["cilantro"])
+    ),
+    DietaryCase(
+        name: "a just-avoid exclusion still needs review for an advisory naming it",
+        lines: ["1 cup rice (may contain peanuts)"],
+        restrictions: [avoided("peanut")],
+        expected: .needsReview([.advisoryStatement])
+    ),
+    DietaryCase(
+        name: "a just-avoid exclusion is matched in the instructions",
+        lines: ["1 cup cooked rice"],
+        instructions: ["Top with cilantro."],
+        restrictions: [avoided("cilantro")],
+        expected: .needsReview([.mentionedButNotListed])
+    ),
+    DietaryCase(
+        name: "a strict exclusion needs review for a prepared food that may be made from it",
+        lines: ["1 lb sausage"],
+        restrictions: [strictlyExcluded("beef")],
+        expected: .needsReview([.compositeMayHideExclusion])
     ),
 
     // Positive violations, including hidden ones
@@ -124,49 +205,49 @@ let dietaryCorpus: [DietaryCase] = [
     DietaryCase(
         name: "excluding pork excludes bacon",
         lines: ["4 slices bacon", "2 eggs"],
-        restrictions: [excluded("pork")],
+        restrictions: [strictlyExcluded("pork")],
         expected: .violation(["bacon"])
     ),
     DietaryCase(
         name: "a custom exclusion matches by name even for foods the data does not know",
         lines: ["1 bunch cilantro, chopped", "1 cup jicama"],
-        restrictions: [excluded("cilantro")],
+        restrictions: [strictlyExcluded("cilantro")],
         expected: .violation(["cilantro"])
     ),
     DietaryCase(
         name: "excluding pork excludes gelatin",
         lines: ["1 tbsp gelatin"],
-        restrictions: [excluded("pork")],
+        restrictions: [strictlyExcluded("pork")],
         expected: .violation(["gelatin"])
     ),
     DietaryCase(
         name: "excluding cheese excludes parmesan",
         lines: ["1/2 cup parmesan"],
-        restrictions: [excluded("cheese")],
+        restrictions: [strictlyExcluded("cheese")],
         expected: .violation(["parmesan"])
     ),
     DietaryCase(
         name: "excluding milk excludes butter",
         lines: ["2 tbsp butter"],
-        restrictions: [excluded("milk")],
+        restrictions: [strictlyExcluded("milk")],
         expected: .violation(["butter"])
     ),
     DietaryCase(
         name: "excluding milk excludes pesto through the parmesan in it",
         lines: ["1/2 cup pesto"],
-        restrictions: [excluded("milk")],
+        restrictions: [strictlyExcluded("milk")],
         expected: .violation(["pesto"])
     ),
     DietaryCase(
         name: "excluding sesame seed excludes tahini",
         lines: ["2 tbsp tahini"],
-        restrictions: [excluded("sesame seed")],
+        restrictions: [strictlyExcluded("sesame seed")],
         expected: .violation(["tahini"])
     ),
     DietaryCase(
         name: "excluding pepper excludes paprika",
         lines: ["1 tsp paprika"],
-        restrictions: [excluded("pepper")],
+        restrictions: [strictlyExcluded("pepper")],
         expected: .violation(["paprika"])
     ),
     DietaryCase(
@@ -399,13 +480,13 @@ let dietaryCorpus: [DietaryCase] = [
     DietaryCase(
         name: "an advisory naming an excluded food needs review",
         lines: ["1 cup rice (may contain peanuts)"],
-        restrictions: [excluded("peanut")],
+        restrictions: [strictlyExcluded("peanut")],
         expected: .needsReview([.advisoryStatement])
     ),
     DietaryCase(
         name: "an advisory naming only allergens unrelated to an excluded food passes",
         lines: ["1 cup rice (may contain soy)"],
-        restrictions: [excluded("pork")],
+        restrictions: [strictlyExcluded("pork")],
         expected: .safe
     ),
     DietaryCase(
@@ -429,31 +510,31 @@ let dietaryCorpus: [DietaryCase] = [
     DietaryCase(
         name: "an exclusion the data does not know cannot clear other foods",
         lines: ["1 potato", "1 tomato"],
-        restrictions: [excluded("nightshades")],
+        restrictions: [strictlyExcluded("nightshades")],
         expected: .needsReview([.exclusionUnverifiable])
     ),
     DietaryCase(
         name: "a prepared food may hide an excluded food",
         lines: ["8 oz penne", "1/2 cup pesto"],
-        restrictions: [excluded("mushroom")],
+        restrictions: [strictlyExcluded("mushroom")],
         expected: .needsReview([.compositeMayHideExclusion])
     ),
     DietaryCase(
         name: "a food that may contain a trait of the excluded food needs review",
         lines: ["8 oz pasta"],
-        restrictions: [excluded("egg")],
+        restrictions: [strictlyExcluded("egg")],
         expected: .needsReview([.mayBeExcluded])
     ),
     DietaryCase(
         name: "a less specific name for the excluded food needs review",
         lines: ["2 peppers, seeded and diced"],
-        restrictions: [excluded("bell pepper")],
+        restrictions: [strictlyExcluded("bell pepper")],
         expected: .needsReview([.mayBeExcluded])
     ),
     DietaryCase(
         name: "a different vinegar passes an exclusion of white vinegar",
         lines: ["1 tbsp apple cider vinegar", "1 cup cooked rice"],
-        restrictions: [excluded("white vinegar")],
+        restrictions: [strictlyExcluded("white vinegar")],
         expected: .safe
     ),
     DietaryCase(

@@ -9,7 +9,7 @@ public struct ClassificationEntry: Sendable, Hashable {
     /// Traits some versions of the food have, through recipe variation or cross-contact.
     public let mayContain: Set<DietaryTrait>
     /// True for prepared foods made of other foods, such as broth or pesto. A composite can hide a
-    /// custom-excluded ingredient, so it never passes a custom exclusion.
+    /// custom-excluded ingredient, so it never passes an allergy or intolerance exclusion.
     public let isComposite: Bool
     /// Foods this one is made from, so excluding pork also excludes bacon.
     public let madeFrom: [IngredientName]

@@ -15,6 +15,17 @@ public enum Allergen: Sendable, Hashable, Codable, CaseIterable {
     case sesame
 }
 
+/// How strictly a custom exclusion is applied. There is no default: whoever records an exclusion
+/// chooses, so the weaker reading is never applied by accident.
+public enum ExclusionSeverity: Sendable, Hashable, Codable, CaseIterable {
+    /// Strict, like an allergen: a food that could be or hide the excluded food needs review, and
+    /// an excluded food the data does not know makes every recipe need review.
+    case allergyOrIntolerance
+    /// Only a food named as the excluded food, by name or synonym, or known to be made from it,
+    /// counts. Nothing else about the recipe needs review because of it.
+    case justAvoid
+}
+
 public enum Diet: Sendable, Hashable, Codable, CaseIterable {
     case vegetarian
     case vegan
@@ -27,9 +38,9 @@ public enum Diet: Sendable, Hashable, Codable, CaseIterable {
 public enum DietaryRestriction: Sendable, Hashable, Codable {
     case allergen(Allergen)
     case diet(Diet)
-    /// A food the person never eats, matched by name and by what the classification data knows
-    /// the food is made from.
-    case excluded(IngredientName)
+    /// A food the person never eats, matched by name, synonyms and what the classification data
+    /// knows foods are made from. The severity says how far doubt counts against a recipe.
+    case excluded(IngredientName, severity: ExclusionSeverity)
 
     /// The traits an ingredient must be known not to have. Empty for a custom exclusion, which is
     /// matched by name instead.

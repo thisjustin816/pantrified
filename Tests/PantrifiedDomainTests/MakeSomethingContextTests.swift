@@ -4,7 +4,7 @@ import Testing
 
 private let ana = ConsumerProfile(
     name: "Ana Lopez",
-    restrictions: .known([.allergen(.peanut), .diet(.vegetarian)]),
+    restrictions: .known([.allergen(.peanut), .diet(.vegetarian), .excluded(IngredientName("cilantro"), severity: .justAvoid)]),
     preferences: DietaryPreferences(
         likes: [IngredientName("mushroom"), IngredientName("cilantro")],
         dislikes: [IngredientName("olive")],
@@ -13,7 +13,7 @@ private let ana = ConsumerProfile(
 )
 private let ben = ConsumerProfile(
     name: "Ben",
-    restrictions: .known([.diet(.vegetarian), .excluded(IngredientName("pork"))]),
+    restrictions: .known([.diet(.vegetarian), .excluded(IngredientName("pork"), severity: .allergyOrIntolerance)]),
     preferences: DietaryPreferences(dislikes: [IngredientName("cilantro")], spiceTolerance: .mild)
 )
 
@@ -53,6 +53,7 @@ struct MakeSomethingContextTests {
             "adaptation.dinerCount",
             "adaptation.restrictions.allergen",
             "adaptation.restrictions.diet",
+            "adaptation.restrictions.excluded",
             "adaptation.restrictions.excluded.words",
             "adaptation.preferences.avoid.words",
             "adaptation.preferences.favor.words",
@@ -108,7 +109,11 @@ struct MakeSomethingContextTests {
         let context = try fullRequest().context
 
         #expect(context.dinerCount == 2)
-        #expect(context.restrictions == [.allergen(.peanut), .diet(.vegetarian), .excluded(IngredientName("pork"))])
+        #expect(context.restrictions == [
+            .allergen(.peanut), .diet(.vegetarian),
+            .excluded(IngredientName("cilantro"), severity: .justAvoid),
+            .excluded(IngredientName("pork"), severity: .allergyOrIntolerance),
+        ])
         #expect(context.preferences.avoid == [IngredientName("olive"), IngredientName("cilantro")])
         #expect(context.preferences.favor == [IngredientName("mushroom")])
         #expect(context.preferences.spiceTolerance == .mild)
