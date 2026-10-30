@@ -50,6 +50,20 @@ struct BundledClassificationTests {
         }
     }
 
+    @Test("a food has every trait the foods it is made from have, at least as may-contain")
+    func madeFromTraitsCarryOver() {
+        let data = ClassificationDataset.bundled
+        for entry in data.entries {
+            var own = entry.contains.union(entry.mayContain)
+            // A slaughter byproduct such as gelatin is made from meat without being meat.
+            if own.contains(.slaughterByproduct) { own.insert(.meat) }
+            for source in data.ingredients(of: entry) {
+                let missing = source.contains.union(source.mayContain).subtracting(own)
+                #expect(missing.isEmpty, "\(entry.name.text) lacks \(missing) from \(source.name.text)")
+            }
+        }
+    }
+
     @Test("lookup is exact: a phrase containing a known food is not that food")
     func exactLookup() {
         #expect(ClassificationDataset.bundled.entry(for: IngredientName("peanut sauce")) == nil)

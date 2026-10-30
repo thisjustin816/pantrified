@@ -48,7 +48,7 @@ let dietaryCorpus: [DietaryCase] = [
             "2 cups cooked rice", "1 can black beans, drained and rinsed", "1 onion, diced",
             "2 cloves garlic, minced", "1 tbsp olive oil", "Salt and pepper to taste",
         ],
-        restrictions: [vegan, glutenFree, dairyFree, .allergen(.peanut)],
+        restrictions: [vegan, dairyFree, .allergen(.peanut)],
         expected: .safe
     ),
     DietaryCase(
@@ -63,12 +63,7 @@ let dietaryCorpus: [DietaryCase] = [
         restrictions: [.allergen(.peanut)],
         expected: .safe
     ),
-    DietaryCase(
-        name: "barley passes a wheat allergy",
-        lines: ["1 cup barley", "1 carrot"],
-        restrictions: [.allergen(.wheat)],
-        expected: .safe
-    ),
+
     DietaryCase(
         name: "a custom exclusion passes foods known to be something else",
         lines: ["1 lb chicken thighs", "1 tbsp olive oil", "1/2 tsp paprika"],
@@ -267,6 +262,84 @@ let dietaryCorpus: [DietaryCase] = [
         name: "an unnamed sauce may contain anything",
         lines: ["1 cup cooked rice", "1/4 cup sauce"],
         restrictions: [.allergen(.sesame)],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "bouillon may be made from shrimp",
+        lines: ["1 bouillon cube", "1 cup cooked rice"],
+        restrictions: [.allergen(.crustaceanShellfish)],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "generic broth may contain egg",
+        lines: ["2 cups broth"],
+        restrictions: [.allergen(.egg)],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "curry paste may contain cashew or almond",
+        lines: ["2 tbsp curry paste"],
+        restrictions: [.allergen(.treeNut)],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "bread may be cross-contacted with tree nuts",
+        lines: ["2 slices bread"],
+        restrictions: [.allergen(.treeNut)],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "sausage may be bound with egg",
+        lines: ["1 lb sausage"],
+        restrictions: [.allergen(.egg)],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "cheese may be made with egg lysozyme",
+        lines: ["1/2 cup parmesan", "1 cup cheese"],
+        restrictions: [.allergen(.egg)],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "gelatin may be made from fish",
+        lines: ["1 tbsp gelatin"],
+        restrictions: [.allergen(.fish)],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "lentils may carry stray wheat or barley",
+        lines: ["1 cup lentils"],
+        restrictions: [glutenFree],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "dried beans may carry stray wheat or barley",
+        lines: ["1 can black beans, drained and rinsed"],
+        restrictions: [glutenFree],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "barley may be cross-contacted with wheat",
+        lines: ["1 cup barley", "1 carrot"],
+        restrictions: [.allergen(.wheat)],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "maple syrup may be defoamed with butter or lard",
+        lines: ["2 tbsp maple syrup", "1 cup rolled oats"],
+        restrictions: [vegan],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "ground cumin may be cross-contacted with peanut",
+        lines: ["1 tsp ground cumin", "1 cup cooked rice"],
+        restrictions: [.allergen(.peanut)],
+        expected: .needsReview([.mayContain])
+    ),
+    DietaryCase(
+        name: "unqualified oil may be peanut oil",
+        lines: ["1 tbsp oil", "1 cup cooked rice"],
+        restrictions: [.allergen(.peanut)],
         expected: .needsReview([.mayContain])
     ),
     DietaryCase(
