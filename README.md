@@ -39,6 +39,7 @@ See GitHub issue #1 for the pilot and completion criteria.
 - [`docs/monetization.md`](docs/monetization.md) — free/Plus boundary and purchase strategy.
 - [`docs/sync-design.md`](docs/sync-design.md): shared-Space record schema, clock, merge rules, and resume behavior.
 - [`docs/dietary-validation.md`](docs/dietary-validation.md): hard-restriction validation, classification data and its limits, and the Make Something request context.
+- [`docs/branching-and-ci.md`](docs/branching-and-ci.md): how work is branched and verified while the repository is private, and the move to macOS workflows.
 
 ## Implementation handoff
 
