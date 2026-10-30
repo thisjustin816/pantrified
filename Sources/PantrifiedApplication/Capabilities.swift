@@ -11,6 +11,8 @@ public protocol InventoryRepository: Sendable {
     /// Packages still in active inventory; used up and discarded packages are excluded.
     func activePackages(in space: SpaceID) async throws -> [Package]
     func save(_ package: Package) async throws
+    /// Stores every package or none of them.
+    func saveAll(_ packages: [Package]) async throws
 }
 
 public protocol StorageLocationRepository: Sendable {

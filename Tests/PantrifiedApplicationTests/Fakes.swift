@@ -42,6 +42,12 @@ actor InMemoryInventory: InventoryRepository {
         packages[package.id] = package
         saveCount += 1
     }
+
+    func saveAll(_ batch: [Package]) async throws {
+        if failOnSave { throw FakeFailure() }
+        for package in batch { packages[package.id] = package }
+        saveCount += 1
+    }
 }
 
 struct InMemoryLocations: StorageLocationRepository {
