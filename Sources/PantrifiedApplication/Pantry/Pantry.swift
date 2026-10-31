@@ -83,7 +83,10 @@ public struct Pantry: Sendable {
         let known = try await locations.locations(in: space)
         let names = Dictionary(uniqueKeysWithValues: known.map { ($0.id, $0.name) })
         let entries = try await useSoon.assessments(in: space).map {
-            PantryEntry(package: $0.package, locationName: names[$0.package.location], assessment: $0.assessment)
+            PantryEntry(
+                package: $0.package, locationName: names[$0.package.location], assessment: $0.assessment,
+                guidance: $0.guidance
+            )
         }
         return PantrySnapshot(locations: known, entries: entries.sorted(by: Self.mostUrgentFirst))
     }

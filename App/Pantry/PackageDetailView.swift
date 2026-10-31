@@ -55,6 +55,17 @@ struct PackageDetailView: View {
                     LabeledContent(row.label, value: row.value)
                 }
             }
+            if let guidance = PackageDetailText.guidance(for: entry, storageType: storageType(of: entry)) {
+                Section {
+                    ForEach(guidance.rows) { row in
+                        LabeledContent(row.label, value: row.value)
+                    }
+                } header: {
+                    Text("How long it keeps")
+                } footer: {
+                    Text("From \(guidance.source). Guidance, not an expiration date.")
+                }
+            }
             Section {
                 if entry.package.openedAt == nil {
                     Button("Mark as opened", systemImage: "seal") { act(.opened) }
@@ -86,6 +97,11 @@ struct PackageDetailView: View {
             await model.perform(action, on: entry)
             if model.snapshot?.entries.contains(where: { $0.id == id }) != true { dismiss() }
         }
+    }
+
+    /// The storage type of the place the food is kept, from the Space's locations.
+    private func storageType(of entry: PantryEntry) -> StorageType? {
+        model.snapshot?.locations.first { $0.id == entry.package.location }?.storageType
     }
 
     private func badgeColor(_ entry: PantryEntry) -> Color {
