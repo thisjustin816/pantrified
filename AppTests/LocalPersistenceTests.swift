@@ -15,7 +15,7 @@ struct LocalPersistenceTests {
 
         #expect(check.packageName == "Milk")
         #expect(check.locationNames == ["Fridge"])
-        #expect(check.protection == FileProtectionType.completeUntilFirstUserAuthentication.rawValue)
+        #expect(check.protection == URLFileProtection.completeUntilFirstUserAuthentication.rawValue)
         #expect(check.excludedFromBackup == false)
     }
 }
