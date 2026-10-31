@@ -38,7 +38,9 @@ git -C "$work/repo" add -A
 expect_pass "a clean tree"
 
 for tracked in "Pantrified.xcodeproj/project.pbxproj" "Config/Signing.local.xcconfig" "AuthKey_ABC.p8" \
-  "dist.p12" "app.mobileprovision" "certs/server.pem" ".env"; do
+  "dist.p12" "app.mobileprovision" "mac.provisionprofile" "certs/server.pem" ".env" \
+  "signing.keychain" "build/testflight-signing.keychain-db" "dist.pfx" "Dist.P12" "cert.Pfx" "AuthKey_ABC.P8" \
+  "App.MobileProvision" "server.PEM" "Login.Keychain-DB" "Config/signing.local.XCCONFIG" ".ENV"; do
   new_repo
   mkdir -p "$work/repo/$(dirname "$tracked")"
   echo "x" >"$work/repo/$tracked"

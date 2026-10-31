@@ -1,0 +1,150 @@
+name: TestFlight
+run-name: >-
+  TestFlight (${{ github.event_name == 'workflow_run' && 'main' || github.ref_name }})
+
+# Uploads each commit on main once the iOS build passes on it, and any repository branch when
+# started by hand. A workflow_run always runs this file as it is on main, and the job accepts only
+# pushes to this repository's main, so a pull request, including one from a fork, never reaches
+# the signing secrets.
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: 'release, or evaluation for a build with the Evaluation tab (internal testing only)'
+        type: choice
+        options: [release, evaluation]
+        default: release
+      upload:
+        description: 'Upload to App Store Connect. Clear it to sign and export without uploading'
+        type: boolean
+        default: true
+  workflow_run:
+    workflows: [iOS build]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: testflight
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    name: Archive and upload to TestFlight
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref_type == 'branch') ||
+      (github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ${{ vars.MACOS_RUNNER || 'xcode-27' }}
+    timeout-minutes: 75
+    permissions:
+      contents: read
+      # Reads the CI workflow's result on the same commit.
+      actions: read
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+      branch: ${{ steps.source.outputs.branch }}
+      build: ${{ steps.upload.outputs.build }}
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      # An automatic upload from main is always the release variant and always uploads.
+      TESTFLIGHT_VARIANT: ${{ github.event_name == 'workflow_dispatch' && inputs.variant || 'release' }}
+      TESTFLIGHT_UPLOAD: ${{ github.event_name != 'workflow_dispatch' || inputs.upload }}
+    steps:
+      - name: Choose the commit
+        id: source
+        env:
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [[ $GITHUB_EVENT_NAME == workflow_run ]]; then
+            printf 'sha=%s\nbranch=main\n' "$RUN_SHA" >>"$GITHUB_OUTPUT"
+          else
+            printf 'sha=%s\nbranch=%s\n' "$GITHUB_SHA" "$REF_NAME" >>"$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ steps.source.outputs.sha }}
+          # History and tags, for the notes since the previous upload.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Wait for CI on the commit
+        if: github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          for _ in $(seq 60); do
+            conclusion="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$SHA&event=push" \
+              --jq '.workflow_runs[0] | if . == null then "missing" elif .status == "completed" then .conclusion else "pending" end')"
+            case $conclusion in
+              success) exit 0 ;;
+              pending | missing) sleep 30 ;;
+              *) echo "::error::CI finished $conclusion on $SHA, so it is not uploaded."; exit 1 ;;
+            esac
+          done
+          echo "::error::CI did not finish on $SHA within 30 minutes."
+          exit 1
+      - name: Write What to Test
+        id: notes
+        env:
+          SHA: ${{ steps.source.outputs.sha }}
+          BRANCH: ${{ steps.source.outputs.branch }}
+        run: |
+          python3 -I Scripts/testflight-notes.py notes --sha "$SHA" --branch "$BRANCH" \
+            --variant "$TESTFLIGHT_VARIANT" --output "$RUNNER_TEMP/whats-new.txt"
+      - name: Skip a push that changes only docs or workflows
+        if: github.event_name == 'workflow_run' && steps.notes.outputs.app_changed != 'true'
+        run: echo "Nothing in the app changed since the previous upload, so there is no new build." >>"$GITHUB_STEP_SUMMARY"
+      - name: Install XcodeGen
+        if: github.event_name != 'workflow_run' || steps.notes.outputs.app_changed == 'true'
+        run: brew install xcodegen
+      - name: Generate the Xcode project
+        if: github.event_name != 'workflow_run' || steps.notes.outputs.app_changed == 'true'
+        run: make generate
+      - name: Sign, archive and upload
+        id: upload
+        if: github.event_name != 'workflow_run' || steps.notes.outputs.app_changed == 'true'
+        env:
+          APPLE_DISTRIBUTION_PRIVATE_KEY: ${{ secrets.APPLE_DISTRIBUTION_PRIVATE_KEY }}
+          APPLE_DISTRIBUTION_CERTIFICATE_BASE64: ${{ secrets.APPLE_DISTRIBUTION_CERTIFICATE_BASE64 }}
+          APPLE_PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: ./Scripts/upload-testflight.sh
+      # The build is already uploaded, so notes that fail to post are reported, not fatal.
+      - name: Set What to Test
+        if: steps.upload.outcome == 'success' && steps.upload.outputs.build != ''
+        continue-on-error: true
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          MARKETING_VERSION: ${{ steps.upload.outputs.marketing_version }}
+          BUILD: ${{ steps.upload.outputs.build }}
+        run: |
+          python3 -I Scripts/testflight-notes.py publish --version "$MARKETING_VERSION" --build "$BUILD" \
+            --notes "$RUNNER_TEMP/whats-new.txt"
+
+  # Marks each main upload, where the next build's notes start. Kept apart from the signing
+  # secrets because it needs write access.
+  tag:
+    name: Tag the uploaded commit
+    needs: upload
+    if: needs.upload.outputs.build != '' && needs.upload.outputs.branch == 'main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.upload.outputs.sha }}
+          BUILD: ${{ needs.upload.outputs.build }}
+        run: gh api "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/testflight/$BUILD" -f "sha=$SHA"

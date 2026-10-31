@@ -11,15 +11,19 @@ fail() {
   status=1
 }
 
+# Case-insensitive, so Dist.P12 or Key.PEM is caught like dist.p12.
+shopt -s nocasematch
 while IFS= read -r -d '' path; do
   case "$path" in
     *.xcodeproj/*) fail "generated Xcode project is tracked: $path" ;;
     Config/Signing.local.xcconfig) fail "per-developer signing settings are tracked: $path" ;;
-    *.p12 | *.p8 | *.cer | *.mobileprovision | *.certSigningRequest | *.pem | *.key)
+    *.p12 | *.pfx | *.p8 | *.cer | *.mobileprovision | *.provisionprofile | *.certSigningRequest | *.pem | *.key | \
+      *.keychain | *.keychain-db)
       fail "signing material is tracked: $path" ;;
     .env | .env.* | */.env | */.env.*) fail "environment file is tracked: $path" ;;
   esac
 done < <(git ls-files -z)
+shopt -u nocasematch
 
 # The patterns below are written here and in the script's test, so both are excluded.
 matches="$(git grep -lI -E -e '-----BEGIN ([A-Z]+ )?PRIVATE KEY-----' -- . \

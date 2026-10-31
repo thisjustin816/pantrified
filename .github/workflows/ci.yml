@@ -50,6 +50,7 @@ jobs:
           ./Scripts/tests/test_select_simulator.sh
           ./Scripts/tests/test_verify_repo_hygiene.sh
           ./Scripts/tests/test_verify_evaluation_gating.sh
+          ./Scripts/tests/test_upload_testflight.sh
       - name: Test the FoodKeeper converter and check the snapshot is current
         env:
           PYTHONDONTWRITEBYTECODE: '1'
@@ -70,3 +71,11 @@ jobs:
         run: |
           python3 -I Scripts/tests/test_verify_app_icon.py
           python3 -I Scripts/verify-app-icon.py App/Assets.xcassets/AppIcon.appiconset
+      - name: Test the TestFlight scripts and check the export-compliance setting
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          python3 -I Scripts/tests/test_testflight_notes.py
+          python3 -I Scripts/tests/test_testflight_workflow.py
+          python3 -I Scripts/tests/test_verify_export_compliance.py
+          python3 -I Scripts/verify-export-compliance.py project.yml
