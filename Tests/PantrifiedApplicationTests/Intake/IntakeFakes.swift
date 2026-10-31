@@ -103,7 +103,7 @@ actor CrashingRecognizer: PhotoRecognizer {
 }
 
 /// Waits, without sleeping, until `condition` holds, yielding to other tasks in between.
-func eventually(_ condition: @Sendable () async -> Bool) async -> Bool {
+func waitUntil(_ condition: @Sendable () async -> Bool) async -> Bool {
     for _ in 0..<100_000 {
         if await condition() { return true }
         await Task.yield()

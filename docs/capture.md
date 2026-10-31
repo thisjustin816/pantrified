@@ -9,8 +9,10 @@ separate screen described in `batch-intake.md`; it shares the GTIN rules and the
 Code: `App/Capture/` (camera, scan screen), `App/Pantry/AddFoodView.swift` (barcode and lookup on the
 form), `Sources/PantrifiedDomain/GTIN.swift` (normalization), `Sources/PantrifiedApplication/BarcodeScan.swift`
 (reads to events), `Sources/PantrifiedApplication/ProductLookup.swift` (the capability),
-`Sources/PantrifiedFoodDataCentral/` (the adapter) and `PersistentProductEvidence` in
-`Sources/PantrifiedPersistence/LocalRepositories.swift` (where the barcode is kept).
+`Sources/PantrifiedApplication/PacedProductLookup.swift` (rate limits), `Sources/PantrifiedFoodDataCentral/`
+(the adapter), `Sources/PantrifiedPersistence/LookupPauseFile.swift` (a rate limit pause kept across
+launches) and `PersistentProductEvidence` in `Sources/PantrifiedPersistence/LocalRepositories.swift` (where
+the barcode is kept).
 
 ## Flow
 
@@ -20,7 +22,7 @@ Today or Food → Scan
   → barcode read in two frames → success haptic → camera stops
   → Add food, in the same sheet, with the barcode shown
       → lookup on: "Looking up this barcode with USDA FoodData Central", then a suggested name,
-        "No product found for this barcode" or "Couldn't look this up"
+        "No product found for this barcode", "Name lookups are paused" or "Couldn't look this up"
       → lookup off: nothing about lookup
   → the person checks the form and taps Add, as for food added by hand
 Add by hand (on every scan screen) → Add food without a barcode
@@ -116,8 +118,10 @@ names it. A retry of the same draft writes the barcode again.
 ## Product lookup
 
 `ProductLookupService` (application layer) takes a GTIN and returns found with a name and its source, not
-found, or failed with a reason (offline, timed out, rate limited, key refused, provider error, cancelled). It
-never throws. `FoodDataCentralLookup` (the `PantrifiedFoodDataCentral` target) is the only adapter.
+found, or failed with a reason (offline, timed out, rate limited, key refused, provider error, cancelled). A
+rate-limited result carries when lookups resume, when that is known. It never throws.
+`FoodDataCentralLookup` (the `PantrifiedFoodDataCentral` target) is the only adapter; the app wraps it in
+`PacedProductLookup` (Rate limits, below).
 
 **Request.** One HTTPS GET to `https://api.nal.usda.gov/fdc/v1/foods/search` with `query` set to the
 barcode's search forms (below), separated by single spaces, and two constants, `dataType=Branded` and
@@ -173,15 +177,70 @@ in reach is cut between characters. A final guard of 100 characters and 400 byte
 name. Cuts fall between characters, never inside a grapheme cluster or a scalar. 401 and 403 are a refused
 key, 429 is a rate limit, other non-2xx statuses (redirects included) and anything that cannot be read as
 the search response, or is over 1 MB, are a provider error. URL loading errors are grouped into offline,
-timed out, cancelled and other.
+timed out, cancelled and other. The transport also reads two headers of any answer, under Rate limits below.
 
 **On the form.** A found name fills the Name field only when it is empty, with the note "Name suggested by
 USDA FoodData Central. Check it before adding." If the person edits it the note goes away. A name added as
 suggested is saved as a recognized proposal, not a confirmed field (`NewFood.NameSource.lookup`), so it
 carries the same provenance as other recognition. Not found shows "No product found for this barcode. Enter
-a name." Every failure shows "Couldn't look this up. Enter a name." A cancelled lookup shows nothing.
+a name." A paused lookup shows "Name lookups are paused for about 40 minutes. Enter a name to add it now, or
+scan it again later.", with the time left in whole minutes under 10 minutes, to the nearest 5 minutes under
+55, "about an hour" under 90 minutes and in whole hours past that. Every other failure shows "Couldn't look
+this up. Enter a name." A cancelled lookup shows nothing. The notes are plain footer text, so they follow
+Dynamic Type and VoiceOver like the rest of the form.
 
 Lookup runs automatically after a scan when the build has a key. Screenshot runs never look anything up.
+
+## Rate limits
+
+**What is limited.** FoodData Central's API guide says a registered api.data.gov key gets a default of
+1,000 requests an hour per IP address, that going over returns HTTP 429 and blocks the key for an hour, that
+every answer carries `X-RateLimit-Limit` and `X-RateLimit-Remaining`, and that a higher limit can be asked
+for. The public `DEMO_KEY` gets 30 an hour and 50 a day per IP address. The limit is counted per IP address,
+so the installs of the app do not share one allowance: each network address has its own, shared only by
+devices behind it, such as a household's router or a carrier's shared address. One owner key showed
+`X-RateLimit-Remaining` 3593 after its first request, so a key's real limit can be above 1,000. The app
+never assumes a figure; it reads the headers. Each lookup is one request.
+
+**Headers.** The transport reads two headers from every answer, matching names without regard to case. A
+header that is missing, repeated or not text is ignored. Neither is logged.
+
+- `Retry-After`: a whole number of seconds in ASCII digits, or an HTTP date in the IMF-fixdate form
+  (`Sun, 06 Nov 1994 08:49:37 GMT`). A date is measured from the answer's own `Date` header when that is
+  readable, so a wrong device clock does not stretch it, and from the device's clock otherwise; a date
+  already past is no wait. The wait is held between 1 second and 24 hours. Anything else is ignored: a
+  sign, a fraction, an exponent, NaN or infinity, non-ASCII digits, trailing text, a list, the obsolete
+  date forms, or a wait over 7 days.
+- `X-RateLimit-Remaining`: a whole number from 0 to 10,000,000 in ASCII digits, or ignored.
+
+**Pacing.** `PacedProductLookup` wraps the adapter. Its numbers are in `LookupPacing`:
+
+| Rule | Value | Why |
+|---|---|---|
+| Pause after a 429 | `Retry-After` when usable, otherwise 1 hour | FoodData Central documents a one-hour block |
+| Pause when an answer reports 0 remaining | 10 minutes | The next request would be refused and block the key for an hour; how the allowance refills is not documented, so the pause is shorter than the block |
+| Time between request starts | 1 second | A person scanning by hand never notices it; a batch cannot fire requests back to back |
+| At 100 or fewer remaining | 6 seconds | 600 an hour, under the documented default of 1,000 |
+| At 20 or fewer remaining | 30 seconds | Spreads the last 20 requests over about 10 minutes |
+| Lookups in flight | 3 | More wait their turn, in order |
+
+During a pause no request is sent: every lookup answers at once with `rateLimited` and the time lookups
+resume, and the first lookup at or after that time is sent. A lookup that failed for any other reason starts
+no pause. The saved pause is deleted at the first found or not-found answer after it ends; an answer to a
+request sent before a pause began does not end it. Spacing uses the last `X-RateLimit-Remaining` reported; with
+none it is 1 second. A lookup for a barcode that is already being looked up shares that request. A caller
+cancelled while waiting for its turn or its spacing gets `cancelled` at once and sends nothing; a shared
+request is cancelled only when every caller waiting for it has gone. A caller that looks up many barcodes
+goes through the same service, so the same limits apply; the barcode stays with the caller, which can look
+it up again once the resume time has passed.
+
+**Persistence.** A pause is saved as one number, its end in whole seconds since 1970, in
+`Library/Caches/Pantrified/lookup-resumes-at` (`LookupPauseFile`), so closing and reopening the app does not
+send a request the provider will refuse. Nothing else about lookups is saved. Caches are not backed up, and
+iOS may purge them, which only ends a pause early. A file that is missing, unreadable, longer than 11
+characters or not ASCII digits only is no pause; so is a time already past or more than 24 hours ahead,
+which is then deleted. A bad file can never stop lookups for longer than 24 hours or stop the app. It uses
+no file date APIs and no `UserDefaults`, so the privacy manifest's required-reason APIs are unchanged.
 
 ## The FoodData Central key
 
@@ -190,10 +249,13 @@ The app reads `FoodDataCentralAPIKey` from its Info.plist. `App/Info.plist` hold
 `project.yml`, empty by default. Empty means lookup is off, which is the state of every CI build.
 
 The key ships inside the app, so anyone with the app can read it. It is a free, rate-limited api.data.gov
-key that grants nothing but these public lookups: treat it as low value, not as a secret. Every install
-shares that one key and its hourly request limit, so one person who extracts it and uses it up can turn
-lookup off for everyone until the limit resets. Lookup then fails quietly ("Couldn't look this up") and
-adding food still works. If it is abused, register a new key and ship a build with it.
+key that grants nothing but these public lookups: treat it as low value, not as a secret. FoodData Central
+counts the limit per IP address, so someone who extracts the key can spend only their own address's
+allowance, not the allowance of other installs. The API guide also says a key that goes over is blocked for
+an hour without saying whether that block covers only the address that went over; that has not been
+tested. A device that shares an address with heavy use of the key, such as one behind the same router, can
+see its lookups paused; adding food still works. If the key is abused, register a new key and ship a build
+with it.
 
 **For a local build:** set `FDC_API_KEY = your-key` in `Config/Signing.local.xcconfig` (the example file lists
 it), which is git-ignored and included by the target's configuration, so it overrides the project-level empty
@@ -217,9 +279,9 @@ the default and largest accessibility text sizes.
 
 | Level | What runs |
 |---|---|
-| Linux `swift test` | GTIN normalization and every refusal, UPC-E expansion, coding; two-frame confirmation, repeat and refusal suppression, the forget window; barcodes through `Pantry` and `PutAway`, including failure, retry and order; suggested names saved as proposals; the device-local row and its refusal of a stored value that is not a GTIN; the FoodData Central search forms for every symbology, the request shape, matching, a fake catalog stored in mixed lengths, every status and transport failure, malformed and oversized answers, names with their brand, word-boundary cut and byte limit, hostile brand text, and cancellation, with a fake transport; and the URLSession transport against a local HTTP server: a body growing past 1 MB is cut off early, an announced oversize length and a redirect are refused, the key reaches no second server, and other origins are never contacted. Never the real network |
+| Linux `swift test` | GTIN normalization and every refusal, UPC-E expansion, coding; two-frame confirmation, repeat and refusal suppression, the forget window; barcodes through `Pantry` and `PutAway`, including failure, retry and order; suggested names saved as proposals; the device-local row and its refusal of a stored value that is not a GTIN; the FoodData Central search forms for every symbology, the request shape, matching, a fake catalog stored in mixed lengths, every status and transport failure, malformed and oversized answers, names with their brand, word-boundary cut and byte limit, hostile brand text, and cancellation, with a fake transport; and the URLSession transport against a local HTTP server: a body growing past 1 MB is cut off early, an announced oversize length and a redirect are refused, the key reaches no second server, other origins are never contacted, and a 429 with and without `Retry-After`, `X-RateLimit-Remaining` in either case, and hostile or repeated headers are read as above. Tables of header values, valid and hostile. Pacing with a fake clock and sleeper, never waiting in real time: the pause on a 429 with each kind of `Retry-After`, no request during it and one exactly at its end, no pause after other failures, a pause kept by a new instance through a fake store and through the file, unusable and corrupt saved values, a clock that moved back, the spacing thresholds, three in flight, sharing one barcode, and cancellation while queued, spacing or sharing. Never the real network |
 | macOS `make test-package` | The same against Apple's Foundation, including the transport tests against URLSession on macOS |
-| `make build` and `make test` | The camera and scan code compile against the iOS SDK; the hosted tests check the usage description and the empty key in the merged Info.plist and the scan screen's start state |
+| `make build` and `make test` | The camera and scan code compile against the iOS SDK; the hosted tests check the usage description and the empty key in the merged Info.plist, the scan screen's start state, and the paused lookup wording |
 | Screenshots | The no-camera state's layout |
 | Device | Nothing yet |
 
@@ -234,10 +296,15 @@ The body limit and redirect refusal are tested on Linux and macOS against a loca
 bodies only; that iOS hands the delegate decompressed bytes as they arrive, so a compressed bomb is stopped
 at 1 MB, is Apple's documented behavior but untested here.
 
+The rate limit handling rests on FoodData Central's API guide and one observed `X-RateLimit-Remaining`
+value, not on a test against the live service: no test has seen a real 429, so whether FoodData Central
+sends `Retry-After` with one, and in which form, is unknown, and both its presence and its absence are
+handled. How the hourly allowance refills is not documented either.
+
 ## Not built
 
-- **Lookup later.** A lookup that fails offline is not queued and retried; the barcode is kept, so a later
-  retry can be added.
+- **Lookup later.** A lookup that fails offline or is paused by a rate limit is not queued and retried from
+  Add food; the barcode is kept, so a later retry can be added.
 - **Reusing earlier scans.** A barcode scanned before does not suggest the name used last time, which would
   work offline and send nothing.
 - Date recognition in the live scanner, evidence crops, and syncing or exporting barcodes. Photo capture,

@@ -440,7 +440,7 @@ struct BatchIntakeTests {
             let recognizer = CrashingRecognizer(files: world.files)
             let pipeline = IntakePipeline(store: store, recognizer: recognizer, lookup: nil, concurrency: 1)
             let run = Task { try await pipeline.process(batch, locations: world.locations, defaultLocation: nil) }
-            #expect(await eventually { await recognizer.crashes == 1 })
+            #expect(await waitUntil { await recognizer.crashes == 1 })
             _ = run  // Never finishes: the process died here.
             #expect(await world.launch().batch(batch)?.photos[1].readAttempts == launch)
         }
@@ -503,7 +503,7 @@ struct BatchIntakeTests {
         let world = IntakeWorld()
         let store = world.launch()
         let batch = try await world.stage(["yogurt-back", "beans", "rice"], in: store)
-        let lookup = FakeLookup([IntakeFixture.yogurt: .failed(.rateLimited), IntakeFixture.beans: .failed(.rateLimited)])
+        let lookup = FakeLookup([IntakeFixture.yogurt: .failed(.rateLimited(resumesAt: nil)), IntakeFixture.beans: .failed(.rateLimited(resumesAt: nil))])
         let review = try await world.process(batch, store, lookup: lookup)
         let pipeline = world.pipeline(store, lookup: lookup)
         for _ in 0..<5 { await pipeline.lookUpNames(batch) }

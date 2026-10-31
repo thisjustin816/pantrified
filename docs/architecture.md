@@ -152,7 +152,7 @@ It emits an explainable attention state/date without rewriting those facts into 
 
 ## Product lookup
 
-`ProductLookupService` is provider-neutral. v1 live adapter is FoodData Central only (`PantrifiedFoodDataCentral`). A miss preserves the barcode and continues with OCR/user review; it is not an error requiring another provider. The barcode slice, its camera flow and the lookup are described in `capture.md`.
+`ProductLookupService` is provider-neutral. v1 live adapter is FoodData Central only (`PantrifiedFoodDataCentral`). A miss preserves the barcode and continues with OCR/user review; it is not an error requiring another provider. `PacedProductLookup` wraps the adapter to keep within the provider's rate limit. The barcode slice, its camera flow, the lookup and its rate limits are described in `capture.md`.
 
 ## Recipe architecture
 

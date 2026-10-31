@@ -158,6 +158,64 @@ struct URLSessionTransportTests {
         #expect(server.requests.isEmpty)
     }
 
+    // MARK: Rate limit headers
+
+    private func reply(_ headers: String, status: String = "200 OK", body: String = #"{"foods": []}"#) async throws -> HTTPReply {
+        let data = Data(body.utf8)
+        let server = try LoopbackServer(
+            head: "HTTP/1.1 \(status)\r\n\(headers)Content-Length: \(data.count)\r\nConnection: close\r\n\r\n",
+            body: data
+        )
+        defer { server.stop() }
+        return try #require(try? await transport(to: server).get(request(server)).get())
+    }
+
+    @Test("a 429 with Retry-After carries the wait")
+    func tooManyWithRetryAfter() async throws {
+        let answer = try await reply("Retry-After: 120\r\nX-RateLimit-Remaining: 0\r\n", status: "429 Too Many Requests")
+
+        #expect(answer.status == 429)
+        #expect(answer.retryAfter == 120)
+        #expect(answer.rateLimitRemaining == 0)
+    }
+
+    @Test("a 429 without Retry-After carries no wait")
+    func tooManyWithoutRetryAfter() async throws {
+        let answer = try await reply("", status: "429 Too Many Requests")
+
+        #expect(answer.status == 429)
+        #expect(answer.retryAfter == nil)
+        #expect(answer.rateLimitRemaining == nil)
+    }
+
+    @Test("an answer carries X-RateLimit-Remaining whatever the header's case")
+    func remainingHeader() async throws {
+        let answer = try await reply("X-RateLimit-Limit: 3600\r\nX-RateLimit-Remaining: 3593\r\n")
+        let lower = try await reply("x-ratelimit-remaining: 41\r\n")
+
+        #expect(answer.status == 200)
+        #expect(answer.body == Data(#"{"foods": []}"#.utf8))
+        #expect(answer.rateLimitRemaining == 3_593)
+        #expect(lower.rateLimitRemaining == 41)
+    }
+
+    @Test("hostile rate limit headers are dropped and the answer is still read")
+    func hostileHeaders() async throws {
+        let answer = try await reply(
+            "Retry-After: -5\r\nX-RateLimit-Remaining: 99999999999\r\n", status: "429 Too Many Requests"
+        )
+        let huge = try await reply("Retry-After: 1e308\r\nX-RateLimit-Remaining: NaN\r\n", status: "429 Too Many Requests")
+        let repeated = try await reply("Retry-After: 30\r\nRetry-After: 60\r\nX-RateLimit-Remaining: 5\r\nX-RateLimit-Remaining: 6\r\n")
+
+        #expect(answer.status == 429)
+        #expect(answer.retryAfter == nil)
+        #expect(answer.rateLimitRemaining == nil)
+        #expect(huge.retryAfter == nil)
+        #expect(huge.rateLimitRemaining == nil)
+        #expect(repeated.retryAfter == nil)
+        #expect(repeated.rateLimitRemaining == nil)
+    }
+
     // MARK: The production origin
 
     @Test("only HTTPS to api.nal.usda.gov on the default port is allowed", arguments: [

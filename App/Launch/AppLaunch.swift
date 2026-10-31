@@ -75,14 +75,16 @@ final class AppLaunch {
         }
     }
 
-    /// FoodData Central when the build carries a key, otherwise no lookup. A screenshot run never
-    /// looks anything up, so its images do not depend on the network.
+    /// FoodData Central when the build carries a key, paced to its rate limit with any pause kept
+    /// across launches, otherwise no lookup. A screenshot run never looks anything up, so its
+    /// images do not depend on the network.
     private static func lookup() -> (any ProductLookupService)? {
         #if DEBUG
         if ScreenshotScenario.current != nil { return nil }
         #endif
         let key = Bundle.main.object(forInfoDictionaryKey: "FoodDataCentralAPIKey") as? String ?? ""
-        return FoodDataCentralLookup(apiKey: key)
+        guard let foodDataCentral = FoodDataCentralLookup(apiKey: key) else { return nil }
+        return PacedProductLookup(inner: foodDataCentral, store: LookupPauseFile.inCaches())
     }
 
     /// Batch intake over the app's staging folder, or in a screenshot run a folder beside its
