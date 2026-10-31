@@ -183,11 +183,11 @@ syncs.
 |---|---|
 | Linux `swift test` | Bounds and hostile text; code classification and Digital Links; label words, names, amounts and stated storage; grouping: same product twice, similar products with different barcodes, front without barcode then barcode, a photo of several products, no text, duplicates, date photos, near-identical products (baking soda and powder, whole and skim milk, 2% and 1%, sizes, flavours), chaining, a common brand, order independence, a 140-photo batch; the review's proposals, provenance, merge, split, delete, bulk location, counts, undo and coding; the staging lifecycle and its deletion rules; reading, idempotent reprocessing, bounded concurrency, unreadable photos and lookups; Add all, Undo and partial adds; and kill and resume while capturing, reading, reviewing, adding and undoing |
 | macOS `make test-package` | The same against Apple's Foundation |
-| Hosted app tests | The usage description; the review sample on the real local store, with Add all and Undo; staged files' protection class and backup exclusion; Vision reading drawn text from a still. Vision's barcode and QR detection does not run in the CI simulator (its model fails to load there), so those tests only check that nothing wrong is read and mark the rest as a known simulator issue |
+| Hosted app tests | The usage description; the review sample on the real local store, with Add all and Undo; staged files' protection class and backup exclusion; Vision reading drawn text from a still. Vision's barcode and QR detection found nothing in the CI simulator, which logged a model load failure, so those tests only check that nothing wrong is read and mark the rest as a known simulator issue |
 | Screenshots | The review screen on synthetic readings with placeholder photos, light and dark, default and largest text |
 | Device | Nothing yet |
 
-**Not verified:** Vision's barcode and QR detection at all (it does not run in the simulator), recognition on real packaging, lighting and curved labels; whether the thresholds group
+**Not verified:** Vision's barcode and QR detection at all (it found nothing in the simulator), recognition on real packaging, lighting and curved labels; whether the thresholds group
 real photos well; feature print distances on real photos (the 0.25 and 0.5 values assume revision 2's
 unit vectors and are a guess); the camera itself, rapid shots, focus and memory on a device; the Photos
 picker with real libraries; and how long reading takes on a phone.

@@ -116,8 +116,8 @@ struct BatchIntakeAppTests {
         let gtin = GTIN("09506000134352")!
         // Whatever is read is never anything but this product.
         #expect(reading.codes.allSatisfy { $0 == .product(gtin) })
-        // Vision's barcode model does not run in the CI simulator ("Unable to compile network"), so
-        // no code may be found there. On a device this is expected to pass.
+        // In the CI simulator Vision found no code and logged a model load failure, so nothing may
+        // be found there. On a device this is expected to pass.
         withKnownIssue("Vision barcode detection does not run in the simulator", isIntermittent: true) {
             #expect(reading.codes.contains(.product(gtin)))
         }
