@@ -3,8 +3,8 @@
 The core capture flow. Take a photo of each thing you brought home, or pick photos you already took,
 tap Done, check the list Pantrified made, and tap Add all. Each photo is read on the device as soon as
 it is kept, while the camera stays open, and grouped with the photos read so far; barcodes are looked
-up as soon as they are read. At Done only the last one to three photos are usually left, so the list
-shows at once. The camera preview itself is never analyzed. Barcodes and QR codes are
+up as soon as they are read. If reading keeps pace with the shutter, only the last one to three photos
+are left at Done and the list shows at once; whether it keeps pace on a phone is not measured yet. The camera preview itself is never analyzed. Barcodes and QR codes are
 shortcuts for information that needs no image reading; the dedicated barcode scanner (`capture.md`)
 stays as it is beside this.
 
@@ -24,7 +24,7 @@ Today or Food → Add a batch
        so far are grouped again; each new barcode is looked up, at most 2 at once)
   → Done
   → 1 to 3 photos left: the list so far at once, with "Reading 2 more photos",
-      not changeable until they are read (a second or two, unmeasured)
+      not changeable until they are read (how long that takes is not measured)
     more left: "Reading photo 9 of 30" (closing keeps everything; reading goes on)
   → review: one card per package, each proposed field saying where it came from
   → Add all (or select some and Add)
@@ -57,8 +57,9 @@ pixels on its longest side (when and how many at once is under "Timing and order
 `PhotoObservation` bounds everything before it is used: 120 photos a batch, 150 lines and 12,000 bytes
 of text a photo, 160 characters and 640 UTF-8 bytes a line, 12 codes a photo, 512 bytes a code payload,
 4,096 feature print values. Control and format characters, including bidirectional overrides, are
-removed. Recognized text and lookup answers are untrusted; none of it is logged or printed in test
-failures.
+removed, also when attached to a letter; only an emoji keeps its joiners and variation selectors, and
+Hangul filler letters count as spaces. Recognized text and lookup answers are untrusted; none of it is
+logged or printed in test failures.
 
 Dates are read by `PrintedDateRecognition` (`date-recognition.md`) over each photo's lines in reading
 order, so a label above its date is read with it. An ambiguous date stays a pending choice.
@@ -70,7 +71,7 @@ read a batch twice at once. Its rules (`ReadingPolicy` and `LookupPolicy`, pure 
 
 | When | Reads at once | Why |
 |---|---|---|
-| Camera open | 1, at utility priority | The shutter and preview keep the processor. The person takes photos faster than they are read only in bursts, and the reading catches up between packages |
+| Camera open | 1, at utility priority | The shutter and preview keep the processor. Reading is expected to catch up between packages; not measured |
 | Camera open, thermal state serious or critical, or Low Power Mode | 0 (waits) | Reading is optional work while the camera runs; it carries on when the state clears or at Done |
 | After Done | 2, at user-initiated priority | The person is waiting. Each read holds one decoded photo, so 2 bounds memory |
 | After Done, serious or critical | 1 | Finish without making the heat worse |
@@ -94,8 +95,9 @@ its thumbnails, as a hint only.
 
 **Cost.** Grouping 120 photos scores 7,140 pairs; grouping again after each of 120 arrivals scores
 287,980 pairs in all. A test holds both counts, so a change that makes grouping costlier fails. On the
-Linux CI machine the 120 arrivals took about 1.1 seconds in a release build and 2.3 to 3.3 seconds in a
-debug build, about 23 ms for the last grouping. A phone has not been measured.
+Linux development machine the 120 arrivals took about 1.1 seconds in a release build and 2.3 to 3.3
+seconds in a debug build, and one grouping of all 120 about 23 ms in release. A phone has not been
+measured.
 
 **Done.** With at most 3 photos left (`ReadingPolicy.fewLeft`) the list of what is read so far shows at
 once with "Reading 2 more photos". It cannot be changed until the review exists: the store refuses every
@@ -213,8 +215,9 @@ progress, and a change whose save fails is undone in memory too:
 
 | When | What happens |
 |---|---|
-| Killed while taking photos | The batch opens again in the camera with every photo kept |
-| Killed while reading | Photos already read are kept; the next launch, or opening the batch, reads the rest |
+| Killed while taking photos | The batch opens again in the camera with every photo kept; photos already read are not read again, and the rest are read |
+| Killed during a lookup | The answer was not kept, so the next pass asks that barcode again |
+| Killed while reading after Done | Photos already read are kept; the next launch, or opening the batch, reads the rest |
 | A photo crashes the reader | Each read is counted before it starts, so the crash counts. After two reads that did not finish, the photo is kept as "could not read" and the rest go on; the reading screens also offer Discard |
 | Killed during review | Every edit is kept; the batch opens again in the review |
 | Killed during Add or its Undo | Recorded before it starts and finished on the next launch, without adding twice |
@@ -231,8 +234,8 @@ deletes them the next time it opens. The next batch screen after an unfinished b
 batch and says once "An unfinished batch was deleted after 3 days without use." Photo files no batch
 names, left by a crash between writing a file and recording it, are removed. Photos are written in
 place rather than through a temporary file, so a crash mid-write leaves only such a file; the batch list
-is replaced atomically. Times come from the store's
-own records, never from file dates, so no required-reason API is used.
+is replaced atomically. Times come from the store's own records, never from file dates, so no
+required-reason API is used.
 
 **A batch list that cannot be used.** When the list cannot be read, such as before the first unlock
 after a restart, nothing is written or deleted and it is read again on the next use. When it, or one
