@@ -279,7 +279,6 @@ reasoned, not measured on a device.
    format change.
 4. **A name is required to add.** Candidates without one stay in the review rather than being added as
    "Unnamed".
-5. **The scanner's own text.** The scan screen's prompt still says "Pantrified uses the camera only to
-   read barcodes. No photos or video are recorded." That is true of the scanner, but "only" now reads as a
-   claim about the app. The scanner was left untouched as instructed; changing it to "The scanner uses the
-   camera only to read barcodes…" is a one-line wording change for the owner to approve.
+5. **The scanner's own text.** Decided: the scan screen's prompt says "The scanner reads barcodes and
+   keeps no photos or video.", so it no longer reads as a claim about the whole app. Text only; the
+   scanner's behavior is unchanged.

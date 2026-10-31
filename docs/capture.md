@@ -36,7 +36,7 @@ closing the form cancels the lookup.
 | State | When | What the screen shows |
 |---|---|---|
 | No camera | No back camera, such as the simulator | "Camera not available" and Add by hand |
-| Asking | Access not decided yet | "Pantrified uses the camera only to read barcodes. No photos or video are recorded.", while the system prompt is up. The prompt shows the usage description |
+| Asking | Access not decided yet | "The scanner reads barcodes and keeps no photos or video.", while the system prompt is up. The prompt shows the usage description |
 | Running | Access allowed | The camera with a frame, "Point the camera at the barcode on a package", Add by hand, and a light button when the camera has a torch |
 | Denied | The person said no, or turned it off later | "Camera access is off", Open Settings and Add by hand |
 | Restricted | Screen Time or device management blocks the camera | "Camera access is restricted" and Add by hand |
@@ -48,8 +48,8 @@ screens: "Pantrified uses the camera to scan barcodes and to take photos of the 
 their labels on this iPhone. Photos and what is read from them stay on this iPhone and are never saved to
 your photo library. Pantrified deletes them, when it is open, a day after you finish a batch or 3 days after
 you last used an unfinished one." The scanner itself takes no photos; the photos are batch intake's
-(`batch-intake.md`). The Asking state's own text, "Pantrified uses the camera only to read barcodes", is
-still the scanner's wording and is an open owner decision in `batch-intake.md`.
+(`batch-intake.md`). The Asking state's own text speaks only for the scanner: "The scanner reads barcodes
+and keeps no photos or video."
 
 ## Reading barcodes
 
