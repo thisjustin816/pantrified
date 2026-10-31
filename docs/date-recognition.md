@@ -59,10 +59,10 @@ unlabeled date and a packed date. Among equal labels the earliest wins.
 ## Reading dates from photos
 
 `PrintedDateRecognition` (domain) is the engine a photo flow will use. It takes the text recognized
-in one or more photos of the same package, as `RecognizedText`, and returns the plausible readings,
+in one or more photos of the same package, as `RecognizedLines`, and returns the plausible readings,
 or the one to propose. It knows nothing about cameras or images, and it is tested on Linux.
 
-- **Bounded input.** Recognized text is untrusted. `RecognizedText` takes at most 256 lines per photo,
+- **Bounded input.** Recognized text is untrusted. `RecognizedLines` takes at most 256 lines per photo,
   drops a line longer than 200 bytes of UTF-8 whole rather than cutting it (a cut could turn a date
   into a different one), and stops at 16,384 bytes per photo. At most 8 photos are read per package.
   Digits must be ASCII digits; other digits are not read as a date.
@@ -79,7 +79,7 @@ or the one to propose. It knows nothing about cameras or images, and it is teste
   confirmed or cleared.
 
 `TextRecognizer` (app target, `App/Recognition/`) runs Vision's `VNRecognizeTextRequest` on one still
-image the caller owns, a `CGImage` or a `CVPixelBuffer`, and returns its lines as `RecognizedText`,
+image the caller owns, a `CGImage` or a `CVPixelBuffer`, and returns its lines as `RecognizedLines`,
 bounded as they are taken from Vision's results. It uses the accurate level, because dates are
 often small or dot-matrix print that the fast level misses, with language correction off, because
 it turns codes such as `5DEC26` into words. Vision runs on the device; the recognizer keeps no

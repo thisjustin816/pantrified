@@ -11,9 +11,9 @@ private func day(_ year: Int, _ month: Int, _ dayOfMonth: Int) -> Date {
 private let now = day(2026, 10, 31)
 private let recognition = PrintedDateRecognition()
 
-private func photo(_ lines: String...) -> RecognizedText { RecognizedText(lines: lines) }
+private func photo(_ lines: String...) -> RecognizedLines { RecognizedLines(lines: lines) }
 
-private func proposal(_ photos: RecognizedText...) -> PrintedDateReading? {
+private func proposal(_ photos: RecognizedLines...) -> PrintedDateReading? {
     recognition.proposal(in: photos, at: now)
 }
 
@@ -64,7 +64,7 @@ struct PrintedDateRecognitionTests {
     @Test("no photos, empty photos and text with no date propose nothing")
     func nothingToRead() {
         #expect(recognition.proposal(in: [], at: now) == nil)
-        #expect(proposal(RecognizedText()) == nil)
+        #expect(proposal(RecognizedLines()) == nil)
         #expect(proposal(photo("NET WT 16 OZ", "KEEP REFRIGERATED")) == nil)
     }
 
@@ -90,9 +90,9 @@ struct PrintedDateRecognitionTests {
 
     @Test("the plausible window holds two years back and ten years ahead")
     func plausibleWindowEdges() {
-        func line(_ date: Date, plusDays: Int) -> RecognizedText {
+        func line(_ date: Date, plusDays: Int) -> RecognizedLines {
             let parts = PrintedDateParser.utcCalendar.dateComponents([.year, .month, .day], from: date.addingTimeInterval(Double(plusDays) * 86_400))
-            return RecognizedText(lines: [String(format: "USE BY %04d-%02d-%02d", parts.year!, parts.month!, parts.day!)])
+            return RecognizedLines(lines: [String(format: "USE BY %04d-%02d-%02d", parts.year!, parts.month!, parts.day!)])
         }
         let past = now.addingTimeInterval(-PrintedDateRecognition.plausiblePast)
         let future = now.addingTimeInterval(PrintedDateRecognition.plausibleFuture)
@@ -125,7 +125,7 @@ struct PrintedDateRecognitionTests {
 @Suite("Printed date recognition on a draft")
 struct PrintedDateRecognitionDraftTests {
     private func readings(_ lines: String...) -> [PrintedDateReading] {
-        recognition.readings(in: [RecognizedText(lines: lines)], at: now)
+        recognition.readings(in: [RecognizedLines(lines: lines)], at: now)
     }
 
     @Test("a recognized date is proposed, not confirmed")
@@ -170,78 +170,78 @@ struct PrintedDateRecognitionDraftTests {
 }
 
 @Suite("Recognized text limits")
-struct RecognizedTextTests {
+struct RecognizedLinesTests {
     private static let date = "BEST BY DEC 05 2026"
 
-    private func reads(_ text: RecognizedText) -> Bool {
+    private func reads(_ text: RecognizedLines) -> Bool {
         recognition.proposal(in: [text], at: now) != nil
     }
 
     @Test("lines after the line limit are not looked at")
     func lineLimit() {
-        let filler = Array(repeating: "NET WT 16 OZ", count: RecognizedText.maxLines - 1)
+        let filler = Array(repeating: "NET WT 16 OZ", count: RecognizedLines.maxLines - 1)
 
-        #expect(reads(RecognizedText(lines: filler + [Self.date])))
-        #expect(!reads(RecognizedText(lines: filler + ["NET WT 16 OZ", Self.date])))
-        #expect(RecognizedText(lines: filler + ["NET WT 16 OZ", Self.date]).lines.count == RecognizedText.maxLines)
+        #expect(reads(RecognizedLines(lines: filler + [Self.date])))
+        #expect(!reads(RecognizedLines(lines: filler + ["NET WT 16 OZ", Self.date])))
+        #expect(RecognizedLines(lines: filler + ["NET WT 16 OZ", Self.date]).lines.count == RecognizedLines.maxLines)
     }
 
     @Test("dropped lines count toward the line limit")
     func droppedLinesCount() {
-        let long = String(repeating: "X", count: RecognizedText.maxLineBytes + 1)
+        let long = String(repeating: "X", count: RecognizedLines.maxLineBytes + 1)
 
-        #expect(!reads(RecognizedText(lines: Array(repeating: long, count: RecognizedText.maxLines) + [Self.date])))
+        #expect(!reads(RecognizedLines(lines: Array(repeating: long, count: RecognizedLines.maxLines) + [Self.date])))
     }
 
     @Test("a line over the byte limit is dropped whole, not cut")
     func longLineDropped() {
-        let padding = String(repeating: " ", count: RecognizedText.maxLineBytes - Self.date.utf8.count)
+        let padding = String(repeating: " ", count: RecognizedLines.maxLineBytes - Self.date.utf8.count)
 
-        #expect(reads(RecognizedText(lines: [Self.date + padding])))
-        #expect(!reads(RecognizedText(lines: [Self.date + padding + " "])))
-        #expect(RecognizedText(lines: [Self.date + padding + "1"]).lines.isEmpty)
+        #expect(reads(RecognizedLines(lines: [Self.date + padding])))
+        #expect(!reads(RecognizedLines(lines: [Self.date + padding + " "])))
+        #expect(RecognizedLines(lines: [Self.date + padding + "1"]).lines.isEmpty)
     }
 
     @Test("the line limit counts UTF-8 bytes, not characters")
     func bytesNotCharacters() {
         // Each "é" is one character and two bytes, so the line is under the limit in characters
         // and over it in bytes.
-        let line = Self.date + " " + String(repeating: "\u{E9}", count: RecognizedText.maxLineBytes / 2)
+        let line = Self.date + " " + String(repeating: "\u{E9}", count: RecognizedLines.maxLineBytes / 2)
 
-        #expect(line.count <= RecognizedText.maxLineBytes)
-        #expect(!reads(RecognizedText(lines: [line])))
+        #expect(line.count <= RecognizedLines.maxLineBytes)
+        #expect(!reads(RecognizedLines(lines: [line])))
     }
 
     @Test("a photo stops taking lines at its byte limit")
     func photoByteLimit() {
-        let filler = String(repeating: "N", count: RecognizedText.maxLineBytes)
-        let fits = RecognizedText.maxBytes / RecognizedText.maxLineBytes
-        let room = RecognizedText.maxBytes - fits * RecognizedText.maxLineBytes
+        let filler = String(repeating: "N", count: RecognizedLines.maxLineBytes)
+        let fits = RecognizedLines.maxBytes / RecognizedLines.maxLineBytes
+        let room = RecognizedLines.maxBytes - fits * RecognizedLines.maxLineBytes
 
-        #expect(fits < RecognizedText.maxLines)
+        #expect(fits < RecognizedLines.maxLines)
         #expect(Self.date.utf8.count <= room)
-        #expect(reads(RecognizedText(lines: Array(repeating: filler, count: fits) + [Self.date])))
-        #expect(!reads(RecognizedText(lines: Array(repeating: filler, count: fits + 1) + [Self.date])))
+        #expect(reads(RecognizedLines(lines: Array(repeating: filler, count: fits) + [Self.date])))
+        #expect(!reads(RecognizedLines(lines: Array(repeating: filler, count: fits + 1) + [Self.date])))
     }
 
     @Test("adding reports when the photo is full, so a reader can stop")
     func addReportsFull() {
-        var text = RecognizedText()
-        for _ in 0..<RecognizedText.maxLines {
+        var text = RecognizedLines()
+        for _ in 0..<RecognizedLines.maxLines {
             #expect(text.add("A") == true)
         }
         #expect(text.add("A") == false)
-        #expect(text.lines.count == RecognizedText.maxLines)
+        #expect(text.lines.count == RecognizedLines.maxLines)
 
-        var big = RecognizedText()
-        let filler = String(repeating: "N", count: RecognizedText.maxLineBytes)
+        var big = RecognizedLines()
+        let filler = String(repeating: "N", count: RecognizedLines.maxLineBytes)
         while big.add(filler) {}
-        #expect(big.lines.joined().utf8.count <= RecognizedText.maxBytes)
+        #expect(big.lines.joined().utf8.count <= RecognizedLines.maxBytes)
         #expect(big.add("A") == false)
     }
 
     @Test("empty lines are not kept")
     func emptyLines() {
-        #expect(RecognizedText(lines: ["", Self.date, ""]).lines == [Self.date])
+        #expect(RecognizedLines(lines: ["", Self.date, ""]).lines == [Self.date])
     }
 }

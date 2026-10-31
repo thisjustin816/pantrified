@@ -49,7 +49,7 @@ struct TextRecognizerTests {
         return buffer
     }
 
-    private func proposal(_ text: RecognizedText) -> PrintedDate? {
+    private func proposal(_ text: RecognizedLines) -> PrintedDate? {
         guard let reading = PrintedDateRecognition().proposal(in: [text], at: takenAt),
               case .resolved(let date, _) = reading.value else { return nil }
         return PrintedDate(label: reading.label, date: date)

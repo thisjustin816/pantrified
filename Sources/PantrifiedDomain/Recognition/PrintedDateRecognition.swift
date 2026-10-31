@@ -3,7 +3,7 @@ import Foundation
 /// The lines text recognition read in one photo, bounded as they are read. Recognized text is
 /// untrusted input: a line is checked before it is kept, and the photo stops taking lines once it
 /// is full, so a reader can stop asking for more.
-public struct RecognizedText: Sendable, Hashable {
+public struct RecognizedLines: Sendable, Hashable {
     /// Lines offered, kept or not. Later lines are not looked at.
     public static let maxLines = 256
     /// A longer line is dropped whole, because cutting it could turn a date into a different one.
@@ -64,7 +64,7 @@ public struct PrintedDateRecognition: Sendable {
 
     /// The plausible dates in the photos' text, photo by photo. Each photo is read on its own, so a
     /// label at the end of one photo's text never labels a date in the next.
-    public func readings(in photos: [RecognizedText], at time: Date) -> [PrintedDateReading] {
+    public func readings(in photos: [RecognizedLines], at time: Date) -> [PrintedDateReading] {
         photos.prefix(Self.maxPhotos).flatMap { photo -> [PrintedDateReading] in
             guard !photo.lines.isEmpty else { return [] }
             // A label and its date are often on separate lines; the parser reads a line break as a space.
@@ -74,7 +74,7 @@ public struct PrintedDateRecognition: Sendable {
     }
 
     /// The reading to propose for the package, chosen as `PrintedDateParser.preferred` chooses.
-    public func proposal(in photos: [RecognizedText], at time: Date) -> PrintedDateReading? {
+    public func proposal(in photos: [RecognizedLines], at time: Date) -> PrintedDateReading? {
         PrintedDateParser.preferred(readings(in: photos, at: time))
     }
 
