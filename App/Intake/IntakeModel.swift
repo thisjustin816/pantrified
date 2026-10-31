@@ -35,6 +35,8 @@ final class IntakeModel {
     private(set) var thumbnails: [IntakePhotoID: UIImage] = [:]
     /// A failure to tell the person about, once.
     private(set) var problem: String?
+    /// A plain line for the batch screen, such as that an old batch expired. Not an error.
+    private(set) var notice: String?
     /// Why batches cannot be opened, when it is not the folder itself.
     private(set) var unavailableDetail: String?
     private(set) var added: AddedPrompt?
@@ -73,6 +75,7 @@ final class IntakeModel {
             _ = try? await services.store.sweep()
             let batch = try await services.store.open(in: services.space)
             if await services.store.takeLoadProblem() == .damaged { problem = IntakeText.damagedBatch }
+            if await services.store.takeExpiryNotice() { notice = IntakeText.expired }
             batchID = batch.id
             photos = batch.livePhotos
             switch batch.phase {
@@ -105,6 +108,8 @@ final class IntakeModel {
             photos.append(photo)
             let thumbnail = await Task.detached(priority: .userInitiated) { SentImage(PhotoFormat.thumbnail(of: data)) }.value
             thumbnails[photo.id] = thumbnail.image
+        } catch StagingError.unknownBatch {
+            await batchExpired()
         } catch StagingError.batchFull {
             problem = "A batch holds up to \(photoLimit) photos. Tap Done to review these first."
         } catch StagingError.photoTooLarge {
@@ -220,6 +225,9 @@ final class IntakeModel {
         guard let batchID else { return }
         do {
             try await services.store.updateReview(batchID) { try body(&$0) }
+        } catch StagingError.unknownBatch {
+            await batchExpired()
+            return
         } catch IntakeReviewError.differentBarcodes {
             problem = "These have different barcodes, so they're different products."
         } catch IntakeReviewError.tooManyCandidates {
@@ -286,6 +294,17 @@ final class IntakeModel {
     }
 
     func dismissProblem() { problem = nil }
+
+    /// The batch was deleted under the screen, such as when it expired while the app was away:
+    /// start again with the batch the store has now.
+    private func batchExpired() async {
+        batchID = nil
+        review = nil
+        photos = []
+        thumbnails = [:]
+        stage = .opening
+        await start()
+    }
 
     private func animated(_ change: () -> Void) {
         if UIAccessibility.isReduceMotionEnabled {

@@ -46,10 +46,9 @@ struct BatchIntakeAppTests {
     func usageDescription() {
         let text = Bundle.main.object(forInfoDictionaryKey: "NSCameraUsageDescription") as? String ?? ""
         #expect(text.contains("scan barcodes"))
-        #expect(text.contains("two days after they were added"))
+        #expect(text.contains("3 days after you last used an unfinished one"))
         #expect(text.contains("never saved to your photo library"))
-        #expect(text.contains("until you add or discard it"))
-        #expect(IntakeText.photosStayHere.contains("two days after they're added"))
+        #expect(IntakeText.photosStayHere.contains("3 days after you last use it"))
         #expect(IntakeText.photosStayHere.contains("never saved to your photo library"))
     }
 

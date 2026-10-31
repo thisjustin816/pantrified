@@ -27,21 +27,22 @@ labels: the name, a printed date, barcodes and QR codes. You can also pick
 photos you already took with the iOS Photos picker, which gives the app only
 the photos you pick and no other access to your library. The app keeps its own
 copies of these photos in its private storage on your iPhone. They are not
-saved to your photo library and are not included in device backups. They are
-deleted a day after the app has read them or two days after you added them,
-whichever comes first, or straight away if you discard the batch. The app
-deletes them while it is open: when it starts and whenever it comes back to
-the screen. If you do not open Pantrified for longer than that, they are
-deleted the next time you do, and deleting the app deletes them at once. The
+saved to your photo library and are not included in device backups. A batch
+you finish (by adding or deleting everything in it) keeps its photos for one
+more day, so you can undo, and then they are deleted. A batch you leave
+unfinished is deleted entirely, photos and everything read from them, 3 days
+after you last used it (opened it, took or removed a photo, changed it or
+added from it). Discarding a batch deletes it straight away. The app deletes
+these while it is open: when it starts and whenever it comes back to the
+screen. If you do not open Pantrified for longer than that, they are deleted
+the next time you do, and deleting the app deletes them at once. The
 originals in your library are never changed or deleted.
 The photos are read on your iPhone and are not sent anywhere. A link in a QR
 code is never opened.
 
 What the app read from a batch's photos (their text, codes, and a numerical
 summary of how each photo looks, used to group photos of the same package) is
-kept with the batch until you add or discard everything in it, however long
-that takes and even after the photos themselves are deleted, and is deleted
-about a day after that. Once you add the food, what stays is what you added:
+kept and deleted with the batch's photos, as above. Once you add the food, what stays is what you added:
 the name, place, printed date and barcode, as for food added by hand. No photo
 is kept with your food.
 

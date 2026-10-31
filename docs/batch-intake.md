@@ -155,16 +155,15 @@ progress:
 | Killed during Add or its Undo | Recorded before it starts and finished on the next launch, without adding twice |
 | Add fails | Nothing is saved and nothing is left to finish; the candidates stay |
 
-**Deleting.** Photo files are deleted a day (24 hours, `StagingStore.defaultRecoveryWindow`) after their
-batch was read, and every photo file two days (`StagingStore.photoFileLimit`) after it was added, read or
-not, so a batch whose reading never finishes cannot keep its photos. Picked photos count from when they
-were added, not when they were taken. Deleting runs while the app is open: at launch, whenever the app
-becomes active, and when the batch screen opens; an app that stays closed deletes them the next time it
-opens. The review, with what was read from the photos (text lines, codes and feature prints) and the
-person's edits, stays until everything in it is added or deleted, then for one more day, so a batch is
-never lost before the person finishes it; this holds after its photo files are gone. A batch still in the
-camera a day after its last photo is moved on to reading. **Discard** deletes the photos and the batch at
-once. Photo files no batch
+**Deleting.** One clock for an unfinished batch: it is deleted entirely, photo files, what was read
+from them and the review, 3 days (`StagingStore.unfinishedBatchLifetime`) after it was last used. Use is
+opening the batch screen, taking, picking or removing a photo, changing the review, and adding or undoing
+an add; reading on its own is not use. A finished batch, one with everything added or deleted, keeps its
+photos for the one-day recovery window (`StagingStore.defaultRecoveryWindow`) so Add can be undone, then is
+deleted with them. **Discard** deletes the photos and the batch at once. Deleting runs while the app is
+open: at launch, whenever the app becomes active, and when the batch screen opens; an app that stays closed
+deletes them the next time it opens. The next batch screen after an unfinished batch expired starts a new
+batch and says once "An unfinished batch was deleted after 3 days without use." Photo files no batch
 names, left by a crash between writing a file and recording it, are removed. Times come from the store's
 own records, never from file dates, so no required-reason API is used.
 
@@ -209,9 +208,8 @@ picker with real libraries; and how long reading takes on a phone.
 
 1. **Thresholds.** Tune `GroupingPolicy` after trying real groceries. Raising `mergeAt` or lowering the
    text weights makes grouping more cautious.
-2. **Unfinished batches stay until finished.** The review, with what was read from the photos, is kept
-   until the person adds or discards everything. Photos still go after a day. The alternative is to
-   delete the whole batch a few days after reading.
+2. **Unfinished batches expire.** Decided: an unfinished batch is deleted entirely 3 days after it was
+   last used (`StagingStore.unfinishedBatchLifetime`, one constant to change).
 3. **Undo after Add records a discard.** The sync format has no way to retract an add, so Undo discards
    the packages with no reason. A future waste report should not count those; marking them needs a record
    format change.

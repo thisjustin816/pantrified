@@ -47,9 +47,9 @@ What is in place for an upload, what only the owner can decide, and what data le
    and disclosures before distributing a build with new data flows. The table below lists those flows.
 4. **Usage descriptions.** `NSCameraUsageDescription`, set in `project.yml`: "Pantrified uses the camera to
    scan barcodes and to take photos of the food you add, so it can read their labels on this iPhone. Photos
-   stay on this iPhone and are never saved to your photo library. While Pantrified is open, it deletes them a
-   day after reading them or two days after they were added, whichever comes first. What it read stays with
-   a batch until you add or discard it." Photo
+   and what is read from them stay on this iPhone and are never saved to your photo library. Pantrified
+   deletes them, when it is open, a day after you finish a batch or 3 days after you last used an
+   unfinished one." Photo
    import uses the system Photos picker, which runs outside the app and needs no photo library permission
    or usage string.
 5. **Product lookup key and App Privacy.** A build looks products up only when it carries a FoodData Central
@@ -78,5 +78,5 @@ data types change when the flow is built.
 | Purchases | Purchase and entitlement state | Apple StoreKit | Not built |
 | Reminders export | The shopping selection | The person's own Reminders | Not built |
 | Camera: Scan | Nothing. Only the decoded barcode number reaches the app, and it is kept on the device | Nobody | Built |
-| Camera and picked photos: Add a batch | Nothing. Photos are kept in the app's storage on the device and deleted, while the app is open, a day after they are read or two days after they were added, whichever comes first; what was read from them stays with an unfinished batch, on the device only. Only a barcode read from them may go to the product lookup above | Nobody | Built (`batch-intake.md`) |
+| Camera and picked photos: Add a batch | Nothing. Photos and what was read from them are kept in the app's storage on the device only, and deleted while the app is open: a day after the batch is finished, or 3 days after an unfinished batch was last used. Only a barcode read from them may go to the product lookup above | Nobody | Built (`batch-intake.md`) |
 | Evidence crops | Nothing; only an approved crop may sync | Nobody, or iCloud for a crop | Not built |

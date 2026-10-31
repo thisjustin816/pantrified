@@ -254,6 +254,11 @@ struct BatchCaptureView: View {
                     .frame(minWidth: 44)
                     .accessibilityLabel(IntakeText.photoCount(intake.photos.count) + " taken")
             }
+            if let notice = intake.notice, intake.photos.isEmpty {
+                Text(notice)
+                    .font(.footnote)
+                    .multilineTextAlignment(.center)
+            }
             Text(IntakeText.photosStayHere)
                 .font(.caption)
                 .foregroundStyle(.secondary)

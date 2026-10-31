@@ -57,7 +57,9 @@ Competitive research reinforced the core execution hypothesis: Pantrified wins o
 - Bulk location acceptance has undo, and useful location corrections may inform future defaults.
 - Existing photos may be imported with the system Photos picker.
 - New captures are temporary app-owned files, not saved to Photos by default.
-- Full captures are deleted after processing plus a short recovery window of roughly one day.
+- Full captures are deleted after processing plus a short recovery window of roughly one day. Batch intake
+  keeps a finished batch's photos for that day; an unfinished batch is deleted entirely 3 days after it was
+  last used (`batch-intake.md`).
 - Only useful app-generated evidence crops, such as a printed-date crop, remain with an active package.
 - Evidence crops are removed when the package leaves active inventory. Eligible evidence crops may sync through CloudKit; full captures remain device-local.
 - Arbitrary/raw user images do not sync.

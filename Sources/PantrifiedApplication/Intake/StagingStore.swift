@@ -32,8 +32,6 @@ public struct StagedPhoto: Sendable, Hashable, Codable, Identifiable {
     public let sequence: Int
     public let capturedAt: Date
     public let contentDigest: String?
-    /// When the store kept it. A picked photo may have been taken long before.
-    public let stagedAt: Date
     public internal(set) var observation: PhotoObservation?
     /// Reads started and not cancelled. Counted before each read, so a read that crashes the app or
     /// is stopped by the system counts as well as one that fails.
@@ -46,10 +44,10 @@ public struct StagedPhoto: Sendable, Hashable, Codable, Identifiable {
 
 extension StagedPhoto {
     private enum CodingKeys: String, CodingKey {
-        case id, fileName, source, sequence, capturedAt, contentDigest, stagedAt, observation, readAttempts, couldNotRead, fileRemoved
+        case id, fileName, source, sequence, capturedAt, contentDigest, observation, readAttempts, couldNotRead, fileRemoved
     }
 
-    /// A record from before `stagedAt` was kept counts as staged when it was taken.
+    /// Fields added after the first records default to their starting values.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(IntakePhotoID.self, forKey: .id)
@@ -58,7 +56,6 @@ extension StagedPhoto {
         sequence = try container.decode(Int.self, forKey: .sequence)
         capturedAt = try container.decode(Date.self, forKey: .capturedAt)
         contentDigest = try container.decodeIfPresent(String.self, forKey: .contentDigest)
-        stagedAt = try container.decodeIfPresent(Date.self, forKey: .stagedAt) ?? capturedAt
         observation = try container.decodeIfPresent(PhotoObservation.self, forKey: .observation)
         readAttempts = try container.decodeIfPresent(Int.self, forKey: .readAttempts) ?? 0
         couldNotRead = try container.decodeIfPresent(Bool.self, forKey: .couldNotRead) ?? false
@@ -72,13 +69,13 @@ public enum BatchPhase: String, Sendable, Hashable, Codable {
     /// Done was tapped; photos are being read.
     case processing
     case reviewing
-    /// Nothing is left to review. The record is kept for the recovery window.
+    /// Nothing is left to review. The record and its photos are kept for the recovery window.
     case finished
 }
 
-/// One batch of photos and, once read, its review. It is kept until the person adds or discards
-/// everything in it, across crashes and relaunches. Its photo files are deleted a recovery window
-/// after they were read, or at once when the batch is discarded.
+/// One batch of photos and, once read, its review, kept across crashes and relaunches. It is deleted
+/// with its photo files a recovery window after it is finished, `unfinishedBatchLifetime` after it
+/// was last used if it is not finished, or at once when it is discarded.
 public struct IntakeBatch: Sendable, Hashable, Codable, Identifiable {
     public let id: IntakeBatchID
     public let space: SpaceID
@@ -88,9 +85,41 @@ public struct IntakeBatch: Sendable, Hashable, Codable, Identifiable {
     public internal(set) var processedAt: Date?
     public internal(set) var finishedAt: Date?
     public internal(set) var review: IntakeReview?
+    /// The last time the person used the batch: opened it, took or removed a photo, changed the
+    /// review or added from it. An unfinished batch expires a set time after this.
+    public internal(set) var lastActivityAt: Date
     var nextSequence = 0
 
     public var livePhotos: [StagedPhoto] { photos.filter { !$0.fileRemoved } }
+
+    init(id: IntakeBatchID, space: SpaceID, startedAt: Date) {
+        self.id = id
+        self.space = space
+        self.startedAt = startedAt
+        lastActivityAt = startedAt
+    }
+}
+
+extension IntakeBatch {
+    private enum CodingKeys: String, CodingKey {
+        case id, space, startedAt, photos, phase, processedAt, finishedAt, review, lastActivityAt, nextSequence
+    }
+
+    /// A record from before activity was kept counts as last used when its newest photo was taken.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(IntakeBatchID.self, forKey: .id)
+        space = try container.decode(SpaceID.self, forKey: .space)
+        startedAt = try container.decode(Date.self, forKey: .startedAt)
+        photos = try container.decode([StagedPhoto].self, forKey: .photos)
+        phase = try container.decode(BatchPhase.self, forKey: .phase)
+        processedAt = try container.decodeIfPresent(Date.self, forKey: .processedAt)
+        finishedAt = try container.decodeIfPresent(Date.self, forKey: .finishedAt)
+        review = try container.decodeIfPresent(IntakeReview.self, forKey: .review)
+        lastActivityAt = try container.decodeIfPresent(Date.self, forKey: .lastActivityAt)
+            ?? photos.map(\.capturedAt).max() ?? startedAt
+        nextSequence = try container.decode(Int.self, forKey: .nextSequence)
+    }
 }
 
 public enum StagingError: Error, Sendable, Equatable {
@@ -124,11 +153,12 @@ public enum StagingLoadProblem: Sendable, Equatable {
 /// written before the record that names it; a file no record names is removed by `sweep`.
 public actor StagingStore {
     public static let manifestName = "batches.json"
-    /// About a day, the recovery window in docs/product-decisions.md.
+    /// About a day, the recovery window in docs/product-decisions.md: how long a finished batch, with
+    /// its photos, stays for Undo and recovery.
     public static let defaultRecoveryWindow: TimeInterval = 24 * 60 * 60
-    /// The longest a photo file is kept after it was staged, read or not. What was read from it stays
-    /// with the batch until the batch is finished or discarded.
-    public static let photoFileLimit: TimeInterval = 2 * 24 * 60 * 60
+    /// How long an unfinished batch is kept after the person last used it. After that the whole
+    /// batch is deleted: photos, what was read from them and the review.
+    public static let unfinishedBatchLifetime: TimeInterval = 3 * 24 * 60 * 60
     public static let maximumPhotoBytes = 40 * 1_024 * 1_024
     static let photoExtensions: Set<String> = ["jpg", "heic", "png"]
 
@@ -149,6 +179,8 @@ public actor StagingStore {
     /// When a damaged batch list was set aside. Until a recovery window after it, photo files no
     /// batch names are kept, because the lost batch named them.
     private var setAsideAt: Date?
+    /// An unfinished batch expired and the person has not been told yet.
+    private var unfinishedExpired = false
     /// What went wrong reading the batch list in this launch, for the screen to say once.
     public private(set) var loadProblem: StagingLoadProblem?
 
@@ -157,13 +189,15 @@ public actor StagingStore {
         self.time = time
         self.recoveryWindow = recoveryWindow
         let load = Self.load(files: files, now: time.now())
-        (loaded, batches, setAsideAt, readOnly, loadProblem) = (load.loaded, load.batches, load.setAsideAt, load.readOnly, load.problem)
+        (loaded, batches, setAsideAt, unfinishedExpired, readOnly, loadProblem) =
+            (load.loaded, load.batches, load.setAsideAt, load.unfinishedExpired, load.readOnly, load.problem)
     }
 
     private struct Manifest: Codable {
         var version = StagingStore.manifestVersion
         var batches: [IntakeBatch]
         var setAsideAt: Date?
+        var unfinishedExpired = false
     }
 
     /// Reads a batch on its own, so one that cannot be understood does not lose the others.
@@ -176,6 +210,7 @@ public actor StagingStore {
         var version: Int
         var batches: [Lenient]
         var setAsideAt: Date?
+        var unfinishedExpired: Bool?
     }
 
     /// The outcome of reading the batch list.
@@ -183,6 +218,7 @@ public actor StagingStore {
         var loaded = true
         var batches: [IntakeBatch] = []
         var setAsideAt: Date?
+        var unfinishedExpired = false
         var readOnly = false
         var problem: StagingLoadProblem?
 
@@ -198,10 +234,10 @@ public actor StagingStore {
         }
         let batches = stored.batches.compactMap(\.batch)
         if stored.version > manifestVersion {
-            return Load(batches: batches, setAsideAt: stored.setAsideAt, readOnly: true, problem: .newerVersion)
+            return Load(batches: batches, setAsideAt: stored.setAsideAt, unfinishedExpired: stored.unfinishedExpired ?? false, readOnly: true, problem: .newerVersion)
         }
         if batches.count < stored.batches.count { return setAside(data, keeping: batches, files: files, now: now) }
-        return Load(batches: batches, setAsideAt: stored.setAsideAt)
+        return Load(batches: batches, setAsideAt: stored.setAsideAt, unfinishedExpired: stored.unfinishedExpired ?? false)
     }
 
     /// Keeps a copy of a damaged list and writes the batches that could be read. When either write
@@ -222,7 +258,8 @@ public actor StagingStore {
     private func ensureLoaded() -> Bool {
         if !loaded {
             let load = Self.load(files: files, now: time.now())
-            (loaded, batches, setAsideAt, readOnly, loadProblem) = (load.loaded, load.batches, load.setAsideAt, load.readOnly, load.problem)
+            (loaded, batches, setAsideAt, unfinishedExpired, readOnly, loadProblem) =
+            (load.loaded, load.batches, load.setAsideAt, load.unfinishedExpired, load.readOnly, load.problem)
         }
         return loaded
     }
@@ -230,6 +267,15 @@ public actor StagingStore {
     /// Whether changes can be written: the list was read and no newer version wrote it.
     private func writable() throws(StagingError) {
         guard ensureLoaded(), !readOnly else { throw .unavailable }
+    }
+
+    /// Says once that an unfinished batch was deleted because it was not used for
+    /// `unfinishedBatchLifetime`.
+    public func takeExpiryNotice() -> Bool {
+        guard ensureLoaded(), !readOnly, unfinishedExpired else { return false }
+        unfinishedExpired = false
+        try? save()
+        return true
     }
 
     /// Says what went wrong reading the batch list, once.
@@ -260,7 +306,11 @@ public actor StagingStore {
     /// The unfinished batch to carry on with, or a new one.
     public func open(in space: SpaceID) throws(StagingError) -> IntakeBatch {
         try writable()
-        if let existing = unfinished(in: space) { return existing }
+        if let existing = unfinished(in: space), let index = index(existing.id) {
+            batches[index].lastActivityAt = time.now()
+            try save()
+            return batches[index]
+        }
         let batch = IntakeBatch(id: IntakeBatchID(), space: space, startedAt: time.now())
         batches.append(batch)
         try save()
@@ -291,10 +341,11 @@ public actor StagingStore {
         do { try files.write(data, to: name) } catch { throw .storage }
         let photo = StagedPhoto(
             id: photoID, fileName: name, source: source, sequence: batches[index].nextSequence,
-            capturedAt: capturedAt ?? time.now(), contentDigest: digest, stagedAt: time.now()
+            capturedAt: capturedAt ?? time.now(), contentDigest: digest
         )
         batches[index].photos.append(photo)
         batches[index].nextSequence += 1
+        batches[index].lastActivityAt = time.now()
         do {
             try save()
         } catch {
@@ -312,6 +363,7 @@ public actor StagingStore {
         guard batches[index].phase == .capturing else { throw .notCapturing }
         guard let position = batches[index].photos.firstIndex(where: { $0.id == photo }) else { throw .unknownPhoto }
         let removed = batches[index].photos.remove(at: position)
+        batches[index].lastActivityAt = time.now()
         try save()
         try? files.remove(removed.fileName)
     }
@@ -378,7 +430,7 @@ public actor StagingStore {
         batch(id)?.photos.compactMap(\.observation) ?? []
     }
 
-    /// Stores the review made once every photo was read, and starts the recovery window. A batch
+    /// Stores the review made once every photo was read. A batch
     /// that already has a review keeps it, with the person's edits: grouping runs once per batch.
     @discardableResult
     public func finishRecognition(_ id: IntakeBatchID, review: IntakeReview) throws(StagingError) -> IntakeReview {
@@ -406,6 +458,7 @@ public actor StagingStore {
         let result = try change(&review)
         let before = batches[index]
         batches[index].review = review
+        batches[index].lastActivityAt = time.now()
         if review.isFinished {
             if batches[index].phase != .finished {
                 batches[index].phase = .finished
@@ -437,11 +490,8 @@ public actor StagingStore {
 
     /// Deletes what is due, and returns how many photo files were deleted:
     ///
-    /// - photo files a recovery window after their batch was read, and every photo file
-    ///   `photoFileLimit` after it was staged, read or not;
-    /// - a batch still capturing a recovery window after its last photo is moved on to reading, so
-    ///   an abandoned capture does not keep photos indefinitely;
-    /// - finished batches a recovery window after they finished;
+    /// - an unfinished batch, entirely, `unfinishedBatchLifetime` after its last activity;
+    /// - a finished batch, with its photos, a recovery window after it finished;
     /// - photo files no batch names, left by a crash between writing a file and recording it, once
     ///   no damaged batch list is set aside;
     /// - a damaged batch list set aside a recovery window ago.
@@ -458,27 +508,17 @@ public actor StagingStore {
             setAsideAt = nil
             changed = true
         }
-        for index in batches.indices {
-            let read = batches[index].processedAt.map { now.timeIntervalSince($0) >= recoveryWindow } ?? false
-            for photo in batches[index].photos.indices where !batches[index].photos[photo].fileRemoved {
-                guard read || now.timeIntervalSince(batches[index].photos[photo].stagedAt) >= Self.photoFileLimit else { continue }
-                doomed.append(batches[index].photos[photo].fileName)
-                batches[index].photos[photo].fileRemoved = true
-                changed = true
-            }
-            let lastPhoto = batches[index].photos.map(\.capturedAt).max() ?? batches[index].startedAt
-            if batches[index].phase == .capturing, !batches[index].photos.isEmpty, now.timeIntervalSince(lastPhoto) >= recoveryWindow {
-                batches[index].phase = .processing
-                changed = true
-            }
-        }
         let expired = batches.filter { batch in
-            guard batch.phase == .finished, let finished = batch.finishedAt else { return false }
-            return now.timeIntervalSince(finished) >= recoveryWindow
+            if batch.phase == .finished {
+                guard let finished = batch.finishedAt else { return false }
+                return now.timeIntervalSince(finished) >= recoveryWindow
+            }
+            return now.timeIntervalSince(batch.lastActivityAt) >= Self.unfinishedBatchLifetime
         }
         if !expired.isEmpty {
             let ids = Set(expired.map(\.id))
             for batch in expired { doomed += batch.photos.filter { !$0.fileRemoved }.map(\.fileName) }
+            if expired.contains(where: { $0.phase != .finished }) { unfinishedExpired = true }
             batches.removeAll { ids.contains($0.id) }
             changed = true
         }
@@ -513,7 +553,7 @@ public actor StagingStore {
     private func save() throws(StagingError) {
         try writable()
         do {
-            let data = try JSONEncoder().encode(Manifest(batches: batches, setAsideAt: setAsideAt))
+            let data = try JSONEncoder().encode(Manifest(batches: batches, setAsideAt: setAsideAt, unfinishedExpired: unfinishedExpired))
             try files.write(data, to: Self.manifestName)
         } catch {
             throw .storage

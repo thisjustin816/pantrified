@@ -5,7 +5,9 @@ import PantrifiedDomain
 /// The words batch intake shows, in one place so they stay plain and consistent.
 enum IntakeText {
     /// What the batch screen says about photos. Must match the camera usage description and PRIVACY.md.
-    static let photosStayHere = "Photos stay on this iPhone and are never saved to your photo library. They're deleted a day after they're read or two days after they're added, whichever comes first."
+    static let photosStayHere = "Photos stay on this iPhone and are never saved to your photo library. While Pantrified is open, it deletes them a day after you finish this batch, or 3 days after you last use it."
+
+    static let expired = "An unfinished batch was deleted after 3 days without use."
 
     static let damagedBatch = "A batch couldn't be opened because its record was damaged. Its photos are deleted within a day."
 

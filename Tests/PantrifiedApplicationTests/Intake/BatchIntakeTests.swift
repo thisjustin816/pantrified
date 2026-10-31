@@ -118,31 +118,59 @@ struct StagingStoreTests {
         #expect(await store.batch(batch)?.photos.isEmpty == true)
     }
 
-    @Test("photo files are deleted a day after reading, but the review stays until the batch is done")
-    func recoveryWindow() async throws {
+    @Test("an unfinished batch is deleted entirely three days after it was last used, and kept until then")
+    func unfinishedExpiry() async throws {
         let world = IntakeWorld()
         let store = world.launch()
         let batch = try await world.stage(["rice", "beans"], in: store)
         _ = try await world.process(batch, store)
 
-        world.time.advance(hours: 23)
+        world.time.advance(hours: 71)
         #expect(try await store.sweep() == 0)
         #expect(world.files.photoNames.count == 2)
+        #expect(await world.launch().batch(batch)?.review != nil)
 
         world.time.advance(hours: 1)
         #expect(try await store.sweep() == 2)
         #expect(world.files.photoNames.isEmpty)
-        let kept = try #require(await store.batch(batch))
-        #expect(kept.photos.allSatisfy { $0.fileRemoved })
-        #expect(kept.review?.summaries.count == 2)
-
-        // Days later, an unreviewed batch is still there to finish.
-        world.time.advance(hours: 24 * 6)
-        try await store.sweep()
-        #expect(await world.launch().unfinished(in: world.space)?.id == batch)
+        #expect(await store.batch(batch) == nil)
+        #expect(await world.launch().all.isEmpty)
+        // The next open says so once and starts a new, empty batch.
+        #expect(await store.takeExpiryNotice())
+        #expect(await world.launch().takeExpiryNotice() == false)
+        let fresh = try await store.open(in: world.space)
+        #expect(fresh.id != batch)
+        #expect(fresh.photos.isEmpty)
     }
 
-    @Test("a finished batch is removed a day after it finished")
+    @Test("using a batch starts its three days again: opening it, taking a photo, removing one or changing the review")
+    func activityResetsExpiry() async throws {
+        let world = IntakeWorld()
+        let store = world.launch()
+        let batch = try await world.stage(["rice", "beans"], in: store)
+        func survivesTwoDaysAfter(_ use: () async throws -> Void) async throws {
+            world.time.advance(hours: 48)
+            try await use()
+            world.time.advance(hours: 48)
+            try await store.sweep()
+            #expect(await store.batch(batch) != nil)
+        }
+        try await survivesTwoDaysAfter { _ = try await store.open(in: world.space) }
+        try await survivesTwoDaysAfter { try await store.stage(Data("rice".utf8), fileExtension: "jpg", source: .camera, in: batch) }
+        try await survivesTwoDaysAfter {
+            let photo = try #require(await store.batch(batch)?.photos.last)
+            try await store.removePhoto(photo.id, from: batch)
+        }
+        let review = try await world.process(batch, store)
+        try await survivesTwoDaysAfter { try await store.updateReview(batch) { try $0.setName("Rice", for: review.summaries[0].id) } }
+
+        // Reading on its own is not use: launch resume reads without the person.
+        world.time.advance(hours: 72)
+        try await store.sweep()
+        #expect(await store.batch(batch) == nil)
+    }
+
+    @Test("a finished batch keeps its photos for a day after it finished, then it is removed with them")
     func finishedBatch() async throws {
         let world = IntakeWorld()
         let store = world.launch()
@@ -150,8 +178,12 @@ struct StagingStoreTests {
         let review = try await world.process(batch, store)
         try await store.updateReview(batch) { $0.delete(Set(review.summaries.map(\.id))) }
         #expect(await store.batch(batch)?.phase == .finished)
-        world.time.advance(hours: 25)
-        try await store.sweep()
+        world.time.advance(hours: 23)
+        #expect(try await store.sweep() == 0)
+        #expect(world.files.photoNames.count == 1)
+        world.time.advance(hours: 2)
+        #expect(try await store.sweep() == 1)
+        #expect(world.files.photoNames.isEmpty)
         #expect(await store.batch(batch) == nil)
         #expect(await world.launch().all.isEmpty)
     }
@@ -164,42 +196,6 @@ struct StagingStoreTests {
         try await store.discard(batch)
         #expect(world.files.photoNames.isEmpty)
         #expect(await world.launch().all.isEmpty)
-    }
-
-    @Test("a capture left alone for a day is moved on to reading, and its photos do not stay past two days")
-    func abandonedCapture() async throws {
-        let world = IntakeWorld()
-        let store = world.launch()
-        let batch = try await world.stage(["rice"], in: store)
-        world.time.advance(hours: 25)
-        try await store.sweep()
-        #expect(await store.batch(batch)?.phase == .processing)
-        #expect(world.files.photoNames.count == 1)
-
-        world.time.advance(hours: 23)
-        #expect(try await store.sweep() == 1)
-        #expect(world.files.photoNames.isEmpty)
-        #expect(await store.batch(batch)?.photos.allSatisfy(\.fileRemoved) == true)
-    }
-
-    @Test("a photo file is deleted two days after it was staged even when the batch is never read")
-    func photoFileLimit() async throws {
-        let world = IntakeWorld()
-        let store = world.launch()
-        let batch = try await store.open(in: world.space).id
-        // Taken long ago, as a picked photo may be: the limit runs from when it was added.
-        try await store.stage(Data("rice".utf8), fileExtension: "jpg", source: .imported,
-                              capturedAt: world.time.now().addingTimeInterval(-30 * day), in: batch)
-        try await store.startProcessing(batch)
-        #expect(try await store.sweep() == 0)
-
-        world.time.advance(hours: 47)
-        #expect(try await store.sweep() == 0)
-        world.time.advance(hours: 1)
-        #expect(try await store.sweep() == 1)
-        #expect(world.files.photoNames.isEmpty)
-        // What was read stays under the batch's own rule: until it is finished or discarded.
-        #expect(await world.launch().batch(batch) != nil)
     }
 
     @Test("sweeping removes photo files no batch names, and never a file the store did not make")

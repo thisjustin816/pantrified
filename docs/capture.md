@@ -45,9 +45,9 @@ closing the form cancels the lookup.
 Access is read again when the app returns to the foreground, so turning the camera on in Settings and coming
 back starts it. The usage description (`NSCameraUsageDescription`, set in `project.yml`) covers both camera
 screens: "Pantrified uses the camera to scan barcodes and to take photos of the food you add, so it can read
-their labels on this iPhone. Photos stay on this iPhone and are never saved to your photo library. While
-Pantrified is open, it deletes them a day after reading them or two days after they were added, whichever
-comes first. What it read stays with a batch until you add or discard it." The scanner itself takes no photos; the photos are batch intake's
+their labels on this iPhone. Photos and what is read from them stay on this iPhone and are never saved to
+your photo library. Pantrified deletes them, when it is open, a day after you finish a batch or 3 days after
+you last used an unfinished one." The scanner itself takes no photos; the photos are batch intake's
 (`batch-intake.md`). The Asking state's own text, "Pantrified uses the camera only to read barcodes", is
 still the scanner's wording and is an open owner decision in `batch-intake.md`.
 
