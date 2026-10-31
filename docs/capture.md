@@ -155,24 +155,11 @@ adding food still works. If it is abused, register a new key and ship a build wi
 it), which is git-ignored and included by the target's configuration, so it overrides the project-level empty
 value. Do not commit a key.
 
-**For TestFlight builds.** These files belong to the TestFlight pipeline and are left for that work:
-
-1. The owner registers a key at <https://api.data.gov/signup/> and adds it as an Environment secret
-   `FDC_API_KEY` of the `testflight` Environment (**Settings > Environments > testflight**).
-2. In `.github/workflows/testflight.yml`, the **Sign, archive and upload** step's `env` gains
-   `FDC_API_KEY: ${{ secrets.FDC_API_KEY }}`.
-3. In `Scripts/upload-testflight.sh`, after `archive_settings=(CURRENT_PROJECT_VERSION="$version")`:
-
-   ```bash
-   # The FoodData Central key the app reads from its Info.plist; without it, lookup is off.
-   if [[ -n ${FDC_API_KEY:-} ]]; then
-     archive_settings+=("FDC_API_KEY=$FDC_API_KEY")
-   fi
-   ```
-
-   xcodebuild prints command-line build settings in its log; GitHub masks secret values there.
-4. `docs/testflight.md` lists the seventh secret, and `Scripts/tests/test_upload_testflight.sh` covers the
-   setting being passed when present and absent when empty.
+**For TestFlight builds.** Register a key at <https://api.data.gov/signup/> and add it as an Environment
+secret `FDC_API_KEY` of the `testflight` Environment (**Settings > Environments > testflight**). The upload
+workflow passes it to `Scripts/upload-testflight.sh`, which writes it into `Config/Signing.local.xcconfig`
+for the archive, checks that the archived app carries it, and removes the file on exit. `docs/testflight.md`
+describes the secret.
 
 A build without the secret still works; lookup is simply off.
 

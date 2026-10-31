@@ -95,6 +95,12 @@ app = os.path.join(archive, "Products", "Applications", "Pantrified.app")
 os.makedirs(app)
 info = {"CFBundleIdentifier": "com.thisjustin816.Pantrified", "CFBundleShortVersionString": "0.1",
         "CFBundleVersion": version, "CFBundleIconName": "AppIcon", "ITSAppUsesNonExemptEncryption": False}
+# Xcode copies FDC_API_KEY from the target's xcconfig into the Info.plist; the stand-in does the same.
+info["FoodDataCentralAPIKey"] = ""
+if os.path.exists("Config/Signing.local.xcconfig"):
+    for line in open("Config/Signing.local.xcconfig"):
+        if line.startswith("FDC_API_KEY = "):
+            info["FoodDataCentralAPIKey"] = line.rstrip("\n").split(" = ", 1)[1]
 info.update(dict(item.split("=", 1) for item in os.environ.get("STUB_INFO", "").split(",") if item))
 plistlib.dump(info, open(os.path.join(app, "Info.plist"), "wb"), fmt=plistlib.FMT_BINARY)
 open(os.path.join(app, "Assets.car"), "wb").write(b"car")
@@ -139,6 +145,7 @@ run() {
       APP_STORE_CONNECT_KEY_ID="${KEY_ID-$key_id}" APP_STORE_CONNECT_ISSUER_ID="${ISSUER_ID-$issuer_id}" \
       ${TESTFLIGHT_VARIANT+TESTFLIGHT_VARIANT="$TESTFLIGHT_VARIANT"} \
       ${TESTFLIGHT_UPLOAD+TESTFLIGHT_UPLOAD="$TESTFLIGHT_UPLOAD"} \
+      ${FDC_API_KEY+FDC_API_KEY="$FDC_API_KEY"} \
       ${STUB_ARCHIVE_FAILS+STUB_ARCHIVE_FAILS=1} ${STUB_UPLOAD_FAILS+STUB_UPLOAD_FAILS=1} \
       ${STUB_INFO+STUB_INFO="$STUB_INFO"} \
       ./Scripts/upload-testflight.sh
@@ -164,7 +171,7 @@ assert_quiet() {
   argv="$(tr '\0' ' ' <"$work/stub/argv")"
   # The second line of each PEM is key material; the key used may be the mismatched one.
   for secret in "$certificate" "$profile" "$(sed -n 2p <<<"${SIGNING_KEY-$signing_key}")" \
-    "$(sed -n 2p "$work/api.p8")"; do
+    "$(sed -n 2p "$work/api.p8")" "${FDC_API_KEY-}"; do
     [ -n "$secret" ] || continue
     if grep -qF -- "$secret" <<<"$argv"; then fail "$when: a secret appears in a command's arguments"; fi
     if grep -qF -- "$secret" "$work/out"; then fail "$when: a secret appears in the output"; fi
@@ -198,6 +205,40 @@ assert_quiet "after an upload"
 reset
 RUN_ATTEMPT=2 run || fail "a retried upload should succeed"
 grep -qx 'build=57.2' "$work/stub/output" || fail "a retried run does not add its attempt"
+
+# Without a lookup key the build says lookup is off, and the archive's key is empty.
+reset
+run || fail "a build without a lookup key should succeed"
+if grep -q 'FDC_API_KEY' "$work/stub/xcconfig-at-archive"; then fail "a build without a key sets one"; fi
+grep -q 'Product lookup: no key' "$work/out" || fail "a build without a key does not say lookup is off"
+
+# A lookup key reaches the archive through the xcconfig, never a command line or the output.
+fdc_test_key=AbCdEf0123456789_-AbCdEf0123456789AbCd
+reset
+FDC_API_KEY="$fdc_test_key" run || fail "a build with a lookup key should succeed: $(tail -5 "$work/out")"
+grep -qx "FDC_API_KEY = $fdc_test_key" "$work/stub/xcconfig-at-archive" || fail "the key is not in the archive's xcconfig"
+grep -q 'Product lookup: key included' "$work/out" || fail "a build with a key does not say so"
+FDC_API_KEY="$fdc_test_key" assert_clean "after an upload with a lookup key"
+FDC_API_KEY="$fdc_test_key" assert_quiet "after an upload with a lookup key"
+
+# A key that is not one plain word is refused before anything runs, and is not echoed.
+for bad in 'short' 'has space 0123456789abcdef' 'new
+line0123456789abcdef' 'semi;colon0123456789abcdef' "$(printf 'x%.0s' $(seq 129))"; do
+  reset
+  if FDC_API_KEY="$bad" run; then fail "the lookup key '${bad:0:12}' should be refused"; fi
+  grep -q 'FDC_API_KEY is not a plausible' "$work/out" || fail "a bad lookup key is refused without saying why"
+  [ ! -s "$work/stub/argv" ] || fail "commands ran with a bad lookup key"
+  if grep -qF -- "$bad" "$work/out"; then fail "a bad lookup key is echoed"; fi
+  assert_clean "after refusing a bad lookup key"
+done
+
+# An archive that lost the key must fail, so a build never ships with lookup silently off.
+reset
+if FDC_API_KEY="$fdc_test_key" STUB_INFO=FoodDataCentralAPIKey=wrong run; then
+  fail "an archive without the key that was set should fail"
+fi
+grep -q 'FoodDataCentralAPIKey is not the key' "$work/out" || fail "a lost key is not reported"
+if grep -q altool "$work/stub/argv"; then fail "an archive that lost the key is uploaded"; fi
 
 # The evaluation variant.
 reset

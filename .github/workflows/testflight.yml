@@ -121,6 +121,7 @@ jobs:
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          FDC_API_KEY: ${{ secrets.FDC_API_KEY }}
         run: ./Scripts/upload-testflight.sh
       # The build is already uploaded, so notes that fail to post are reported, not fatal.
       - name: Set What to Test

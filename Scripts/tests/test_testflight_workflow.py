@@ -13,10 +13,13 @@ import appstoreconnect  # noqa: E402
 WORKFLOW = (ROOT / ".github" / "workflows" / "testflight.yml").read_text()
 SCRIPT = (ROOT / "Scripts" / "upload-testflight.sh").read_text()
 DOC = (ROOT / "docs" / "testflight.md").read_text()
-SECRETS = {
+SIGNING_SECRETS = {
     "APPLE_DISTRIBUTION_PRIVATE_KEY", "APPLE_DISTRIBUTION_CERTIFICATE_BASE64", "APPLE_PROVISIONING_PROFILE_BASE64",
     "APP_STORE_CONNECT_KEY_ID", "APP_STORE_CONNECT_ISSUER_ID", "APP_STORE_CONNECT_PRIVATE_KEY",
 }
+# Optional: the FoodData Central key ships inside the app, and a build without it just has lookup off.
+OPTIONAL_SECRETS = {"FDC_API_KEY"}
+SECRETS = SIGNING_SECRETS | OPTIONAL_SECRETS
 
 
 def jobs():
@@ -114,12 +117,21 @@ class TriggerTests(unittest.TestCase):
 
 
 class SecretTests(unittest.TestCase):
-    def test_the_workflow_script_and_docs_name_the_same_six_secrets(self):
+    def test_the_workflow_script_and_docs_name_the_same_secrets(self):
         self.assertEqual(set(re.findall(r"secrets\.([A-Za-z0-9_]+)", WORKFLOW)), SECRETS)
-        required = re.search(r"(?s)required=\((.*?)\)", SCRIPT).group(1).split()
-        self.assertTrue(SECRETS <= set(required))
+        required = set(re.search(r"(?s)required=\((.*?)\)", SCRIPT).group(1).split())
+        self.assertTrue(SIGNING_SECRETS <= required)
+        self.assertFalse(OPTIONAL_SECRETS & required, "an optional secret must not stop a run when it is absent")
         for name in SECRETS:
             self.assertIn(f"| `{name}` |", DOC)
+
+    def test_the_lookup_key_is_validated_before_anything_runs_and_never_on_a_command_line(self):
+        validation = SCRIPT.index("FDC_API_KEY:-")
+        self.assertLess(validation, SCRIPT.index("mktemp -d"))
+        self.assertIn("'FDC_API_KEY = %s\\n' \"$fdc_key\" >>Config/Signing.local.xcconfig", SCRIPT)
+        for line in SCRIPT.splitlines():
+            if "FDC_API_KEY" in line or "fdc_key" in line:
+                self.assertNotIn("archive_settings", line, "the key must not reach xcodebuild's command line")
 
     def test_every_use_of_secrets_is_one_named_secret_under_its_own_name(self):
         allowed = {f"{name}: ${{{{ secrets.{name} }}}}" for name in SECRETS}
