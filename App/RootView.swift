@@ -23,22 +23,24 @@ struct RootView: View {
 private struct MainTabs: View {
     let model: PantryModel
 
+    @State private var selection = StartScreen.current.tab
+
     var body: some View {
-        TabView {
-            Tab("Today", systemImage: "sun.max") {
-                TodayView(model: model)
+        TabView(selection: $selection) {
+            Tab("Today", systemImage: "sun.max", value: AppTab.today) {
+                TodayView(model: model, startsAdding: StartScreen.current.addingFood)
             }
-            Tab("Food", systemImage: "carrot") {
+            Tab("Food", systemImage: "carrot", value: AppTab.food) {
                 FoodView(model: model)
             }
-            Tab("Meals", systemImage: "fork.knife") {
+            Tab("Meals", systemImage: "fork.knife", value: AppTab.meals) {
                 PlaceholderView(title: "Meals", detail: "Meals that use what you have will appear here.")
             }
-            Tab("List", systemImage: "cart") {
+            Tab("List", systemImage: "cart", value: AppTab.list) {
                 PlaceholderView(title: "List", detail: "Your shared shopping list will appear here.")
             }
             #if DEBUG || EVALUATION
-            Tab("Evaluate", systemImage: "checklist") {
+            Tab("Evaluate", systemImage: "checklist", value: AppTab.evaluate) {
                 EvaluationView()
             }
             #endif

@@ -7,7 +7,12 @@ struct TodayView: View {
     let model: PantryModel
 
     @Environment(\.scenePhase) private var scenePhase
-    @State private var adding = false
+    @State private var adding: Bool
+
+    init(model: PantryModel, startsAdding: Bool = false) {
+        self.model = model
+        _adding = State(initialValue: startsAdding)
+    }
 
     var body: some View {
         NavigationStack {
