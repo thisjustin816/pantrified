@@ -1,0 +1,56 @@
+name: Screenshots
+
+# Takes screenshots of the app's screens on a simulator, so a change to a screen can be looked at
+# without a Mac. Run it by hand from the Actions tab on any branch; the images upload as an
+# artifact. A change to the capture itself runs it too, so the capture cannot break unnoticed.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/screenshots.yml'
+      - 'Scripts/capture-screenshots.sh'
+      - 'App/Launch/ScreenshotScenario.swift'
+      - 'App/Launch/StartScreen.swift'
+
+permissions:
+  contents: read
+
+jobs:
+  screenshots:
+    name: Screenshots of Today, Food and Add food
+    runs-on: ${{ vars.MACOS_RUNNER || 'xcode-27' }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate the Xcode project
+        run: make generate
+      # A Debug build, which holds the sample-data mode the script starts the app in. The derived
+      # data path is fixed so the script knows where the app is.
+      - name: Build
+        run: |
+          set -o pipefail
+          xcodebuild -project Pantrified.xcodeproj -scheme Pantrified \
+            -destination "platform=iOS Simulator,name=$(./Scripts/select-simulator.sh)" \
+            -derivedDataPath build/DerivedData build 2>&1 | tee build.log
+      - name: Take the screenshots
+        run: ./Scripts/capture-screenshots.sh build/DerivedData/Build/Products/Debug-iphonesimulator/Pantrified.app screenshots
+      - name: Upload the screenshots
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: screenshots
+          path: screenshots/*.png
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Upload the build log
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: screenshots-build-log
+          path: build.log
+          retention-days: 7

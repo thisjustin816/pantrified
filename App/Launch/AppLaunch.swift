@@ -21,8 +21,16 @@ final class AppLaunch {
     private let files: @Sendable () throws -> StoreFiles
     private let undoWindow: Duration
 
+    /// The app's own data, or in a Debug screenshot run a throwaway store.
+    static let defaultFiles: @Sendable () throws -> StoreFiles = {
+        #if DEBUG
+        if let scenario = ScreenshotScenario.current { return try scenario.freshFiles() }
+        #endif
+        return try StoreFiles.applicationSupport()
+    }
+
     init(
-        files: @escaping @Sendable () throws -> StoreFiles = { try StoreFiles.applicationSupport() },
+        files: @escaping @Sendable () throws -> StoreFiles = AppLaunch.defaultFiles,
         undoWindow: Duration = .seconds(8)
     ) {
         self.files = files
@@ -44,6 +52,9 @@ final class AppLaunch {
                 guidance: Self.guidance(), time: time
             )
             try await pantry.prepare()
+            #if DEBUG
+            if let scenario = ScreenshotScenario.current { try await scenario.seed(pantry) }
+            #endif
             let model = PantryModel(pantry: pantry, undoWindow: undoWindow)
             await model.load()
             state = .ready(model)

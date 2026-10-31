@@ -9,30 +9,29 @@ struct EntryRow: View {
     let showsLocation: Bool
     let act: (PackageAction) -> Void
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     private var canOpen: Bool { entry.package.openedAt == nil }
     private var otherLocations: [StorageLocation] { locations.filter { $0.id != entry.package.location } }
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(entry.package.name)
-                    .font(.headline)
-                let detail = AttentionText.detail(for: entry, showsLocation: showsLocation)
-                if !detail.isEmpty {
-                    Text(detail)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+        // Beside the text at ordinary sizes. At accessibility sizes there is no room beside it, so
+        // the badge goes underneath rather than being squeezed until its words break.
+        Group {
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) {
+                    summary
+                    badge
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline) {
+                    summary
+                    Spacer(minLength: 8)
+                    badge
                 }
             }
-            Spacer(minLength: 8)
-            if let badge = AttentionText.badge(entry.assessment.state) {
-                Text(badge)
-                    .font(.caption.bold())
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(badgeColor.opacity(0.18), in: Capsule())
-            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
         .swipeActions(edge: .leading) {
             if canOpen {
@@ -65,6 +64,31 @@ struct EntryRow: View {
         .accessibilityAction(named: "Used up") { act(.usedUp) }
         .accessibilityAction(named: "Discard") { act(.discard(reason: nil)) }
         .accessibilityAction(named: "Opened") { if canOpen { act(.opened) } }
+    }
+
+    private var summary: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(entry.package.name)
+                .font(.headline)
+            let detail = AttentionText.detail(for: entry, showsLocation: showsLocation)
+            if !detail.isEmpty {
+                Text(detail)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var badge: some View {
+        if let text = AttentionText.badge(entry.assessment.state) {
+            Text(text)
+                .font(.caption.bold())
+                .lineLimit(1)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(badgeColor.opacity(0.18), in: Capsule())
+        }
     }
 
     private var badgeColor: Color {
