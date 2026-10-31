@@ -96,8 +96,8 @@ public final class PersistentReplicaStateStore: ReplicaStateStore, @unchecked Se
     private let space: SpaceID
     private let backend: any StorageBackend
     private let lock = NSLock()
-    /// The state the backend holds, guarded by `lock`. After a failed write it is unknown, since
-    /// the write may have committed, and it is read again before the next save.
+    /// The state the backend holds, guarded by `lock`. After a failed write that storage does not
+    /// show as committed it is unknown, and it is read again before the next save.
     private var base = Base.unknown
 
     public init(space: SpaceID, backend: any StorageBackend) {
@@ -125,6 +125,13 @@ public final class PersistentReplicaStateStore: ReplicaStateStore, @unchecked Se
                 do {
                     try backend.write(batch)
                 } catch {
+                    // A write can commit and still report failure. Reading back tells the two
+                    // apart, so the replica adopts a state that was stored rather than keeping
+                    // one that storage no longer holds.
+                    if let stored = try? ReplicaRowMapping.state(from: backend.replicaRows(in: space)), stored == state {
+                        base = .stored(state)
+                        return
+                    }
                     base = .unknown
                     throw error
                 }

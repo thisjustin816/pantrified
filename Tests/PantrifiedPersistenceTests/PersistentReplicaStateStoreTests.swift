@@ -99,25 +99,21 @@ struct PersistentReplicaStateStoreTests {
         #expect(try reopened(backend) == third)
     }
 
-    @Test("a save that committed but reported failure leaves the store consistent for the next save")
-    func unconfirmedSaveStaysConsistent() throws {
+    @Test("a save that committed but reported failure is confirmed by reading it back, so the replica adopts it")
+    func committedSaveIsConfirmed() throws {
         let backend = FaultyBackend(InMemoryStorageBackend())
         let store = PersistentReplicaStateStore(space: space, backend: backend)
         var pushed = sampleState()
         try store.save(pushed)
-        let queued = try #require(pushed.outbox.first)
+        pushed.outbox.remove(try #require(pushed.outbox.first))
 
         backend.reportFailureAfterCommit(true)
-        pushed.outbox.remove(queued)
-        #expect(throws: InducedFailure.self) { try store.save(pushed) }
+        try store.save(pushed)
         backend.reportFailureAfterCommit(false)
 
-        // The replica keeps its previous state after a failed save, so it saves that state again.
-        var retried = pushed
-        retried.outbox.insert(queued)
-        retried = adding("Rice", to: retried)
-        try store.save(retried)
-        #expect(try reopened(backend) == retried)
+        let next = adding("Rice", to: pushed)
+        try store.save(next)
+        #expect(try reopened(backend) == next)
     }
 
     @Test("concurrent saves of different Spaces into one backend all persist")

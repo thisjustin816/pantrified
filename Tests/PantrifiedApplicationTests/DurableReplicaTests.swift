@@ -149,6 +149,21 @@ struct DurableReplicaTests {
         #expect(try b.reloaded()?.records[id] == odd)
     }
 
+    @Test("a put-away whose write commits but reports failure is stored once, as the replica holds it", arguments: TestStorage.allCases)
+    func committedPutAwayIsAdopted(storage: TestStorage) async throws {
+        let world = World()
+        let device = try StoredDevice.make(world, storage: storage)
+
+        device.backend.reportFailureAfterCommit(true)
+        let id = try await device.putAway("Milk")
+        device.backend.reportFailureAfterCommit(false)
+        _ = try await device.putAway("Eggs")
+
+        #expect(try device.reloaded() == device.store.lastStored)
+        #expect(try await device.restarted().replica.package(id)?.name == "Milk")
+        #expect(await device.replica.pendingCount == 2)
+    }
+
     @Test("a restarted replica keeps issuing stamps after the ones it stored", arguments: TestStorage.allCases)
     func clockSurvivesRestart(storage: TestStorage) async throws {
         let world = World()
