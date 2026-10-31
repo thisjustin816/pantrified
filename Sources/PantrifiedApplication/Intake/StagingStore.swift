@@ -35,14 +35,18 @@ public struct StagedPhoto: Sendable, Hashable, Codable, Identifiable {
     /// When the store kept it. A picked photo may have been taken long before.
     public let stagedAt: Date
     public internal(set) var observation: PhotoObservation?
-    public internal(set) var failedAttempts = 0
+    /// Reads started and not cancelled. Counted before each read, so a read that crashes the app or
+    /// is stopped by the system counts as well as one that fails.
+    public internal(set) var readAttempts = 0
+    /// Read too many times without a result. It is kept with nothing read from it.
+    public internal(set) var couldNotRead = false
     /// The file has been deleted; what was read from it may still be in the review.
     public internal(set) var fileRemoved = false
 }
 
 extension StagedPhoto {
     private enum CodingKeys: String, CodingKey {
-        case id, fileName, source, sequence, capturedAt, contentDigest, stagedAt, observation, failedAttempts, fileRemoved
+        case id, fileName, source, sequence, capturedAt, contentDigest, stagedAt, observation, readAttempts, couldNotRead, fileRemoved
     }
 
     /// A record from before `stagedAt` was kept counts as staged when it was taken.
@@ -56,7 +60,8 @@ extension StagedPhoto {
         contentDigest = try container.decodeIfPresent(String.self, forKey: .contentDigest)
         stagedAt = try container.decodeIfPresent(Date.self, forKey: .stagedAt) ?? capturedAt
         observation = try container.decodeIfPresent(PhotoObservation.self, forKey: .observation)
-        failedAttempts = try container.decodeIfPresent(Int.self, forKey: .failedAttempts) ?? 0
+        readAttempts = try container.decodeIfPresent(Int.self, forKey: .readAttempts) ?? 0
+        couldNotRead = try container.decodeIfPresent(Bool.self, forKey: .couldNotRead) ?? false
         fileRemoved = try container.decodeIfPresent(Bool.self, forKey: .fileRemoved) ?? false
     }
 }
@@ -333,27 +338,40 @@ public actor StagingStore {
     }
 
     /// Keeps what was read from a photo. Only the first observation of a photo is kept, so a photo
-    /// read twice, as after a relaunch, changes nothing. Returns whether it was kept.
+    /// read twice, as after a relaunch, changes nothing. `couldNotRead` marks an empty observation
+    /// kept for a photo that was tried too many times. Returns whether it was kept.
     @discardableResult
-    public func record(_ observation: PhotoObservation, in id: IntakeBatchID) throws(StagingError) -> Bool {
+    public func record(_ observation: PhotoObservation, couldNotRead: Bool = false, in id: IntakeBatchID) throws(StagingError) -> Bool {
         try writable()
         guard let index = index(id) else { throw .unknownBatch }
         guard let position = batches[index].photos.firstIndex(where: { $0.id == observation.photo }) else { throw .unknownPhoto }
         guard batches[index].photos[position].observation == nil else { return false }
         batches[index].photos[position].observation = observation
+        batches[index].photos[position].couldNotRead = couldNotRead
         try save()
         return true
     }
 
-    /// Counts a failed read. Returns the number of failures so far.
+    /// Counts a read as started, before it starts. Returns the number of reads started so far.
     @discardableResult
-    public func recordFailure(of photo: IntakePhotoID, in id: IntakeBatchID) throws(StagingError) -> Int {
+    public func beginRead(_ photo: IntakePhotoID, in id: IntakeBatchID) throws(StagingError) -> Int {
         try writable()
         guard let index = index(id) else { throw .unknownBatch }
         guard let position = batches[index].photos.firstIndex(where: { $0.id == photo }) else { throw .unknownPhoto }
-        batches[index].photos[position].failedAttempts += 1
+        batches[index].photos[position].readAttempts += 1
         try save()
-        return batches[index].photos[position].failedAttempts
+        return batches[index].photos[position].readAttempts
+    }
+
+    /// Takes back the count of a read that was cancelled, such as by closing the batch, since that
+    /// says nothing about the photo.
+    public func cancelRead(_ photo: IntakePhotoID, in id: IntakeBatchID) throws(StagingError) {
+        try writable()
+        guard let index = index(id) else { throw .unknownBatch }
+        guard let position = batches[index].photos.firstIndex(where: { $0.id == photo }) else { throw .unknownPhoto }
+        guard batches[index].photos[position].readAttempts > 0 else { return }
+        batches[index].photos[position].readAttempts -= 1
+        try save()
     }
 
     public func observations(in id: IntakeBatchID) -> [PhotoObservation] {

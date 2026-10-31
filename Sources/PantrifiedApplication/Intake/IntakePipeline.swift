@@ -43,8 +43,8 @@ public struct IntakePipeline: Sendable {
     private let proposer: IntakeProposer
     /// Photos read at the same time. Small, because each read holds a full photo in memory.
     private let concurrency: Int
-    /// A photo that fails this many times is kept with nothing read from it, so one bad file
-    /// cannot stop a batch.
+    /// A photo whose reads fail or stop this many times is kept with nothing read from it, so one bad
+    /// file cannot stop a batch.
     static let attemptsPerPhoto = 2
     /// Lookups per pass, to stay well inside the shared key's hourly limit.
     static let lookupsPerPass = 40
@@ -109,28 +109,28 @@ public struct IntakePipeline: Sendable {
         return try await store.finishRecognition(id, review: review)
     }
 
-    /// Reads one photo, trying again after a failure. Failures are counted in the store, so the
-    /// limit holds across relaunches.
+    /// Reads one photo, trying again after a failure. Each attempt is counted in the store before it
+    /// starts, so the limit holds across relaunches and also counts a read that crashed the app: a
+    /// photo that crashes the reader every time is kept as unreadable instead of stopping every launch.
     private func read(_ photo: StagedPhoto, in id: IntakeBatchID) async throws {
         while true {
             try Task.checkCancellation()
             guard let url = await store.url(of: photo.id, in: id) else { return }
-            let reading: PhotoReading?
+            guard try await store.beginRead(photo.id, in: id) <= Self.attemptsPerPhoto else {
+                try await store.record(observation(photo, PhotoReading()), couldNotRead: true, in: id)
+                return
+            }
+            let reading: PhotoReading
             do {
                 reading = try await recognizer.read(url)
             } catch is CancellationError {
+                try? await store.cancelRead(photo.id, in: id)
                 throw CancellationError()
             } catch {
-                reading = nil
+                continue
             }
-            if let reading {
-                try await store.record(observation(photo, reading), in: id)
-                return
-            }
-            if try await store.recordFailure(of: photo.id, in: id) >= Self.attemptsPerPhoto {
-                try await store.record(observation(photo, PhotoReading()), in: id)
-                return
-            }
+            try await store.record(observation(photo, reading), in: id)
+            return
         }
     }
 

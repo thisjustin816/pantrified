@@ -83,6 +83,34 @@ actor FakeRecognizer: PhotoRecognizer {
     }
 }
 
+/// Stands for a read that takes the app down with it: reading a photo whose bytes are `crash` never
+/// returns, as if the process had died inside the recognizer. Other photos read as `FakeRecognizer`.
+actor CrashingRecognizer: PhotoRecognizer {
+    private let files: MemoryStagingFiles
+    private var stuck: [CheckedContinuation<Void, Never>] = []
+    private(set) var reads: [String] = []
+
+    init(files: MemoryStagingFiles) { self.files = files }
+
+    var crashes: Int { stuck.count }
+
+    func read(_ file: URL) async throws -> PhotoReading {
+        let key = try files.read(file.lastPathComponent).map { String(decoding: $0, as: UTF8.self) } ?? ""
+        reads.append(key)
+        if key == "crash" { await withCheckedContinuation { stuck.append($0) } }
+        return IntakeFixture.readings[key] ?? PhotoReading()
+    }
+}
+
+/// Waits, without sleeping, until `condition` holds, yielding to other tasks in between.
+func eventually(_ condition: @Sendable () async -> Bool) async -> Bool {
+    for _ in 0..<100_000 {
+        if await condition() { return true }
+        await Task.yield()
+    }
+    return false
+}
+
 /// A lookup with set answers per barcode, counting calls.
 actor FakeLookup: ProductLookupService {
     private var answers: [GTIN: ProductLookupResult]

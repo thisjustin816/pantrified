@@ -429,6 +429,44 @@ struct BatchIntakeTests {
         #expect(review.summaries[1].notes.contains(.noName))
     }
 
+    @Test("a photo that crashes the reader is counted before each read, and after two crashes it is kept as unreadable", .timeLimit(.minutes(1)))
+    func crashingPhoto() async throws {
+        let world = IntakeWorld()
+        let batch = try await world.stage(["rice", "crash", "beans"], in: world.launch())
+        try await world.launch().startProcessing(batch)
+
+        for launch in 1...2 {
+            let store = world.launch()
+            let recognizer = CrashingRecognizer(files: world.files)
+            let pipeline = IntakePipeline(store: store, recognizer: recognizer, lookup: nil, concurrency: 1)
+            let run = Task { try await pipeline.process(batch, locations: world.locations, defaultLocation: nil) }
+            #expect(await eventually { await recognizer.crashes == 1 })
+            _ = run  // Never finishes: the process died here.
+            #expect(await world.launch().batch(batch)?.photos[1].readAttempts == launch)
+        }
+
+        let store = world.launch()
+        let recognizer = CrashingRecognizer(files: world.files)
+        let review = try await IntakePipeline(store: store, recognizer: recognizer, lookup: nil, concurrency: 1)
+            .process(batch, locations: world.locations, defaultLocation: nil)
+        #expect(await recognizer.reads == ["beans"])
+        #expect(review.summaries.count == 3)
+        #expect(await store.batch(batch)?.photos[1].couldNotRead == true)
+        #expect(await store.batch(batch)?.photos[0].couldNotRead == false)
+    }
+
+    @Test("closing while a photo is being read does not count against it")
+    func cancelledReadNotCounted() async throws {
+        let world = IntakeWorld()
+        let store = world.launch()
+        let batch = try await world.stage(["rice"], in: store)
+        let interrupted = FakeRecognizer(files: world.files, readings: IntakeFixture.readings, cancelAfter: 0)
+        await #expect(throws: CancellationError.self) {
+            _ = try await world.pipeline(store, recognizer: interrupted).process(batch, locations: world.locations, defaultLocation: nil)
+        }
+        #expect(await store.batch(batch)?.photos[0].readAttempts == 0)
+    }
+
     // MARK: Lookups
 
     @Test("lookups fill names, a miss is final, and offline defers the pass to later")

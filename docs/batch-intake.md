@@ -150,6 +150,7 @@ progress:
 |---|---|
 | Killed while taking photos | The batch opens again in the camera with every photo kept |
 | Killed while reading | Photos already read are kept; the next launch, or opening the batch, reads the rest |
+| A photo crashes the reader | Each read is counted before it starts, so the crash counts. After two reads that did not finish, the photo is kept as "could not read" and the rest go on; the reading screens also offer Discard |
 | Killed during review | Every edit is kept; the batch opens again in the review |
 | Killed during Add or its Undo | Recorded before it starts and finished on the next launch, without adding twice |
 | Add fails | Nothing is saved and nothing is left to finish; the candidates stay |

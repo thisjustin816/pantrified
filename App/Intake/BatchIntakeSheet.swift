@@ -10,6 +10,7 @@ struct BatchIntakeSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var intake: IntakeModel?
     @State private var addingByHand = false
+    @State private var confirmingDiscard = false
 
     var body: some View {
         Group {
@@ -38,7 +39,7 @@ struct BatchIntakeSheet: View {
         case .capturing:
             BatchCaptureView(intake: intake, addByHand: { addingByHand = true }, close: { dismiss() })
         case .reading(let progress):
-            ReadingView(progress: progress, close: { dismiss() })
+            ReadingView(progress: progress, close: { dismiss() }, discard: { discard(intake) })
         case .readingStopped:
             NavigationStack {
                 ContentUnavailableView {
@@ -50,17 +51,27 @@ struct BatchIntakeSheet: View {
                         .buttonStyle(.borderedProminent)
                     Button("Add by Hand") { addingByHand = true }
                         .buttonStyle(.bordered)
+                    Button("Discard Photos", role: .destructive) { confirmingDiscard = true }
+                        .buttonStyle(.bordered)
                 }
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Close") { dismiss() }
                     }
                 }
+                .discardConfirmation(isPresented: $confirmingDiscard) { discard(intake) }
             }
         case .reviewing:
             IntakeReviewView(intake: intake, addByHand: { addingByHand = true }, close: { dismiss() })
         case .unavailable:
             unavailable(intake.unavailableDetail)
+        }
+    }
+
+    private func discard(_ intake: IntakeModel) {
+        Task {
+            await intake.discard()
+            dismiss()
         }
     }
 
@@ -84,6 +95,15 @@ struct BatchIntakeSheet: View {
 }
 
 extension View {
+    /// Asks before deleting a batch's photos while they are being read.
+    func discardConfirmation(isPresented: Binding<Bool>, discard: @escaping () -> Void) -> some View {
+        confirmationDialog("Discard this batch?", isPresented: isPresented, titleVisibility: .visible) {
+            Button("Discard Photos", role: .destructive, action: discard)
+        } message: {
+            Text("The photos and everything read from them are deleted now. Nothing is added.")
+        }
+    }
+
     /// Tells the person about a failure once.
     func intakeProblemAlert(_ intake: IntakeModel) -> some View {
         alert(
@@ -101,6 +121,9 @@ extension View {
 private struct ReadingView: View {
     let progress: IntakeProgress
     let close: () -> Void
+    let discard: () -> Void
+
+    @State private var confirmingDiscard = false
 
     var body: some View {
         NavigationStack {
@@ -120,9 +143,13 @@ private struct ReadingView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close", action: close)
+                    Menu("Close", systemImage: "xmark") {
+                        Button("Keep for Later", systemImage: "tray.and.arrow.down", action: close)
+                        Button("Discard Photos", systemImage: "trash", role: .destructive) { confirmingDiscard = true }
+                    }
                 }
             }
+            .discardConfirmation(isPresented: $confirmingDiscard, discard: discard)
         }
     }
 }
