@@ -141,7 +141,7 @@ private struct ScanView: View {
         opensSettings: Bool = false,
         retries: Bool = false
     ) -> some View {
-        ContentUnavailableView {
+        let view = ContentUnavailableView {
             Label(title, systemImage: systemImage)
         } description: {
             Text(detail)
@@ -163,6 +163,11 @@ private struct ScanView: View {
                 Button("Add by hand") { finish(nil) }
                     .buttonStyle(.borderedProminent)
             }
+        }
+        // At the largest text sizes the message and buttons can be taller than the sheet.
+        return ViewThatFits(in: .vertical) {
+            view
+            ScrollView { view }
         }
     }
 
