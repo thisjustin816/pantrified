@@ -56,6 +56,49 @@ or `L` as `1`. A word is never turned into digits.
 When text holds several dates, a use-by date is preferred, then best-by, sell-by, freeze-by, an
 unlabeled date and a packed date. Among equal labels the earliest wins.
 
+## Reading dates from photos
+
+`PrintedDateRecognition` (domain) is the engine a photo flow will use. It takes the text recognized
+in one or more photos of the same package, as `RecognizedText`, and returns the plausible readings,
+or the one to propose. It knows nothing about cameras or images, and it is tested on Linux.
+
+- **Bounded input.** Recognized text is untrusted. `RecognizedText` takes at most 256 lines per photo,
+  drops a line longer than 200 bytes of UTF-8 whole rather than cutting it (a cut could turn a date
+  into a different one), and stops at 16,384 bytes per photo. At most 8 photos are read per package.
+  Digits must be ASCII digits; other digits are not read as a date.
+- **One photo or several.** Each photo's lines are joined with line breaks, so a label on one line
+  labels a date on the next, and parsed on its own, so a label in one photo never labels a date in
+  another. Readings from all the photos are pooled and the preferred one is chosen as above, so a
+  use-by date in one photo wins over a best-by date in another.
+- **Plausible dates only.** A date more than two years before, or ten years after, the time the
+  photos were taken is not read. Both readings of an ambiguous date must be plausible, or neither is
+  offered. This is checked before choosing, so an implausible use-by date does not hide a plausible
+  best-by date.
+- **Proposals only.** The readings go to `PackageDraft.apply(_:)`, which proposes the preferred date
+  as recognized, holds an ambiguous one as a pending choice, and never replaces a date the person
+  confirmed or cleared.
+
+`TextRecognizer` (app target, `App/Recognition/`) runs Vision's `VNRecognizeTextRequest` on one still
+image the caller owns, a `CGImage` or a `CVPixelBuffer`, and returns its lines as `RecognizedText`,
+bounded as they are taken from Vision's results. It uses the accurate level, because dates are
+often small or dot-matrix print that the fast level misses, with language correction off, because
+it turns codes such as `5DEC26` into words. Vision runs on the device; the recognizer keeps no
+reference to the image, the request or the results after it returns, and writes, logs and sends
+nothing. It blocks while Vision works, so a caller runs it off the main thread. Lines come back in
+the order Vision returns them.
+
+**Not built.** Nothing calls the recognizer yet: there is no photo capture, photo import or
+grouping of photos into packages, and the camera still reads only barcodes (`capture.md`). How
+photos are taken, kept and deleted is being designed, and the privacy policy, the camera usage
+description and the App Privacy answers change when that flow is built, not before.
+
+**Verified where.** Linux `swift test` covers the engine: the bounds and that each fails without its
+guard, labels across lines and photos, the photo limit, plausibility and its edges, ambiguity, the
+order hint and the draft rules. The app's hosted tests run the recognizer on the simulator against
+text the test draws, through a `CGImage` and a pixel buffer, and check that the engine proposes the
+date. Real packaging, photos from a device, lighting, curved labels, embossed or dot-matrix print
+and Vision's behavior on a device are not verified.
+
 ## Owner decisions
 
 1. **A month and year is the last day of that month**, and the reading is marked as month precision.
