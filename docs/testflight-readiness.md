@@ -5,10 +5,11 @@ What is in place for an upload, what only the owner can decide, and what data le
 ## In place
 
 - **Privacy manifest:** `App/PrivacyInfo.xcprivacy` declares no tracking, no tracking domains, no collected
-  data types and no accessed API types. The code calls no required-reason API. Its only network code is
-  the FoodData Central product lookup (`docs/capture.md`), which sends a scanned barcode and the app's key
-  to answer that one request and is not linked to the person by the app; whether App Store Connect's App
-  Privacy answers list it is decided below.
+  data types and no accessed API types. The code calls no required-reason API; the time a rate-limited
+  lookup may resume is kept in a small file read without file date APIs or `UserDefaults`. Its only network
+  code is the FoodData Central product lookup (`docs/capture.md`), which sends a scanned barcode and the
+  app's key to answer that one request and is not linked to the person by the app; whether App Store
+  Connect's App Privacy answers list it is decided below.
 - **Manifest lint:** `Scripts/verify-privacy-manifest.py` checks the manifest's structure, such as a
   purpose on each collected data type and a reason on each accessed API type, and that tracking and
   tracking domains agree.
@@ -66,7 +67,7 @@ data types change when the flow is built.
 | Flow | What leaves the device | To whom | Status |
 |---|---|---|---|
 | Household sync | Inventory, shopping list, consumer profiles and approved evidence crops | Apple iCloud, and the participants of a shared Space | Engine built against a fake transport; no CloudKit code |
-| Product lookup | A scanned barcode number, in up to four lengths with leading zeros, and the app's api.data.gov key, with the device's IP address as for any request. No name, household data or device details | USDA FoodData Central at api.nal.usda.gov, keyed through api.data.gov | Built; on only in a build with a key, which the upload workflow passes when the `FDC_API_KEY` Environment secret is set |
+| Product lookup | A scanned barcode number, in up to four lengths with leading zeros, and the app's api.data.gov key, with the device's IP address as for any request. No name, household data or device details. One request per lookup, paced to the service's per-IP rate limit and paused after it refuses one | USDA FoodData Central at api.nal.usda.gov, keyed through api.data.gov | Built; on only in a build with a key, which the upload workflow passes when the `FDC_API_KEY` Environment secret is set |
 | Recipe discovery | To be decided when built | Edamam | Not built |
 | Generation on the device | Nothing | Nobody | Built; the on-device model needs a device with Apple Intelligence |
 | Generation in the cloud | The Make Something request context: selected foods, restrictions and preferences | Apple Private Cloud Compute | Not built |

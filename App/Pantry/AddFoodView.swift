@@ -26,6 +26,8 @@ struct AddFoodView: View {
         case suggested(ProductSuggestion)
         case notFound
         case failed
+        /// Lookups are paused after a rate limit; holds the note to show.
+        case paused(String)
     }
 
     init(model: PantryModel, barcode: GTIN? = nil) {
@@ -159,6 +161,8 @@ struct AddFoodView: View {
             Text("No product found for this barcode. Enter a name.")
         case .failed:
             Text("Couldn't look this up. Enter a name.")
+        case .paused(let note):
+            Text(note)
         }
     }
 
@@ -175,6 +179,8 @@ struct AddFoodView: View {
             lookup = .notFound
         case .failed(.cancelled)?, nil:
             lookup = .off
+        case .failed(.rateLimited(let resumesAt))?:
+            lookup = .paused(LookupText.paused(until: resumesAt, now: Date()))
         case .failed?:
             lookup = .failed
         }

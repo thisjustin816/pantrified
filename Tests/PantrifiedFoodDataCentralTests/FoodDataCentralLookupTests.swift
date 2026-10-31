@@ -318,7 +318,7 @@ struct FoodDataCentralLookupTests {
     @Test("each status maps to what the person is told", arguments: [
         (401, ProductLookupResult.failed(.keyRejected)),
         (403, .failed(.keyRejected)),
-        (429, .failed(.rateLimited)),
+        (429, .failed(.rateLimited(resumesAt: nil))),
         (400, .failed(.providerError)),
         (404, .failed(.providerError)),
         (500, .failed(.providerError)),
@@ -341,7 +341,27 @@ struct FoodDataCentralLookupTests {
         let invalid = #"{"error": {"code": "API_KEY_INVALID", "message": "An invalid api_key was supplied."}}"#
         let limited = #"{"error": {"code": "OVER_RATE_LIMIT", "message": "You have exceeded your rate limit."}}"#
         #expect(try await lookUp(FixedTransport(status: 403, json: invalid)) == .failed(.keyRejected))
-        #expect(try await lookUp(FixedTransport(status: 429, json: limited)) == .failed(.rateLimited))
+        #expect(try await lookUp(FixedTransport(status: 429, json: limited)) == .failed(.rateLimited(resumesAt: nil)))
+    }
+
+    @Test("the rate limit headers of an answer are passed on with its result")
+    func rateLimitReported() async throws {
+        let json = #"{"foods": [{"description": "Cola", "gtinUpc": "036000291452"}]}"#
+        let limited = FixedTransport(.success(HTTPReply(status: 429, body: Data(), retryAfter: 90, rateLimitRemaining: 0)))
+        let answered = FixedTransport(.success(HTTPReply(status: 200, body: Data(json.utf8), rateLimitRemaining: 3_593)))
+        let plain = FixedTransport(.success(HTTPReply(status: 200, body: Data(json.utf8))))
+        let offline = FixedTransport(.failure(.offline))
+        func reported(_ transport: FixedTransport) async throws -> ReportedLookup {
+            try await #require(FoodDataCentralLookup(apiKey: "key", transport: transport)).lookUpReportingRateLimit(cola)
+        }
+
+        #expect(try await reported(limited) == ReportedLookup(
+            .failed(.rateLimited(resumesAt: nil)), rateLimit: RateLimitReport(remaining: 0, retryAfter: 90)
+        ))
+        #expect(try await reported(answered) == ReportedLookup(found("Cola"), rateLimit: RateLimitReport(remaining: 3_593)))
+        #expect(try await reported(plain) == ReportedLookup(found("Cola")))
+        #expect(try await reported(offline) == ReportedLookup(.failed(.offline)))
+        #expect(try await lookUp(limited) == .failed(.rateLimited(resumesAt: nil)))
     }
 
     @Test("transport failures map to offline, timed out, cancelled or a provider error", arguments: [

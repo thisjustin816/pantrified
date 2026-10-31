@@ -38,11 +38,15 @@ key. It contains nothing about you, your household or your other food, and
 the app sets a fixed app name and language on it instead of
 your device's details. Like any internet request, it reveals your device's IP
 address to the service. The app keeps no cookies or cache from it and logs
-nothing about it. The service's handling of requests is covered by
+nothing about it. The service limits how many requests can come from one IP
+address each hour. When it asks the app to slow down, the app stops sending
+lookups for a while and saves on your device only the time when they may
+resume, so that a restart does not send requests the service would refuse.
+The service's handling of requests is covered by
 [api.data.gov](https://api.data.gov/) and the
 [FoodData Central API guide](https://fdc.nal.usda.gov/api-guide). If the lookup
-finds nothing or cannot connect, you enter the name yourself. Scanning works
-without a network connection.
+finds nothing, cannot connect or is paused, you enter the name yourself.
+Scanning works without a network connection.
 
 ## Information processed on your device
 
