@@ -33,7 +33,14 @@ fail to post, the upload still counts; add the text in App Store Connect.
 
 ## Secrets
 
-Repository secrets (**Settings > Secrets and variables > Actions**), not Environment secrets:
+Environment secrets of the `testflight` Environment (**Settings > Environments > testflight**). The upload
+job names that Environment, which is how it receives them; a job that does not name it gets nothing. The
+tag job does not name it and holds no secrets.
+
+The Environment is set up so that runs go unattended: no required reviewers, and deployment branches
+limited to `main` and `feature/*` (**Selected branches and tags**), with administrator bypass off. A run
+from any other branch, a tag or a fork is refused before it reaches the secrets, so a manual run from a
+branch named outside `feature/` will not work.
 
 | Secret | Value |
 |---|---|
@@ -75,9 +82,10 @@ Keep this workflow as the only source of build numbers.
 
 ## Accepted risk
 
-The secrets are repository secrets, so any workflow run from any branch of this repository can read them,
-and XcodeGen comes from Homebrew unpinned in the same job. The owner is the only person with access and
-accepts this.
+There is no approval step. Any workflow that runs from `main` or a `feature/*` branch and names the
+`testflight` Environment can read the secrets, and a workflow file on a branch can be changed by whoever can
+push to it, so anything that can push such a branch holds the secrets. XcodeGen also comes from Homebrew
+unpinned in the same job. The owner is the only person with access and accepts this.
 
 ## If a secret may have leaked
 

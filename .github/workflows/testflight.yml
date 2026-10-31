@@ -40,6 +40,10 @@ jobs:
         github.event.workflow_run.event == 'push' &&
         github.event.workflow_run.head_branch == 'main' &&
         github.event.workflow_run.head_repository.full_name == github.repository)
+    # The six signing secrets are Environment secrets of `testflight`. A job sees an Environment's
+    # secrets only when it names the Environment, and the Environment's deployment-branch rule decides
+    # which branches may use them.
+    environment: testflight
     runs-on: ${{ vars.MACOS_RUNNER || 'xcode-27' }}
     timeout-minutes: 75
     permissions:

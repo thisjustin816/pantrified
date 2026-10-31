@@ -54,6 +54,21 @@ def run_blocks(text):
     return blocks
 
 
+class EnvironmentTests(unittest.TestCase):
+    def test_the_upload_job_names_the_testflight_environment_and_the_tag_job_does_not(self):
+        upload, tag = jobs()["upload"], jobs()["tag"]
+        self.assertEqual(re.findall(r"(?m)^    environment: (\S+)$", upload), ["testflight"])
+        self.assertNotIn("environment:", tag)
+        self.assertNotIn("secrets.", tag)
+
+    def test_the_docs_say_where_the_secrets_live_and_how_the_environment_is_set_up(self):
+        self.assertIn("Environment secrets of the `testflight` Environment", DOC)
+        self.assertNotIn("not Environment secrets", DOC)
+        self.assertNotIn("The secrets are repository secrets", DOC)
+        for phrase in ("no required reviewers", "`main` and `feature/*`", "administrator bypass off"):
+            self.assertIn(phrase, DOC)
+
+
 class TriggerTests(unittest.TestCase):
     def test_it_runs_by_hand_or_after_the_ios_build_on_main(self):
         on_block = re.search(r"(?ms)^on:\n(.*?)^\S", WORKFLOW).group(1)
