@@ -84,9 +84,9 @@ enum ReplicaRowMapping {
 /// the last state stored, as one batch, so a save either stores the whole new state or leaves the
 /// previous one.
 ///
-/// One store, and one replica, owns a Space at a time. Writes merge records into what is stored,
-/// so a second writer cannot erase a record, but the queue, tags and clock it writes would
-/// replace the owner's.
+/// One store, and one replica, owns a Space at a time. A second writer cannot erase a record,
+/// since writes merge into what is stored, and a loaded clock still follows every stored stamp,
+/// but the server tags and change token a second writer stores replace the owner's.
 public final class PersistentReplicaStateStore: ReplicaStateStore, @unchecked Sendable {
     private enum Base {
         case unknown
