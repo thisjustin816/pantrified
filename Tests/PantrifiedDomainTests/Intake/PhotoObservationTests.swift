@@ -169,7 +169,9 @@ struct LabelTextTests {
 
     @Test("a date label on the line above its date is read with the date")
     func labelAbove() {
-        let readings = LineDateReader().readings(in: [Fixture.line("BEST BY", row: 0.1), Fixture.line("12/25/2026", row: 0.16)])
+        let readings = PrintedDateRecognition().readings(
+            in: [Fixture.line("12/25/2026", row: 0.16), Fixture.line("BEST BY", row: 0.1)], takenAt: Fixture.start
+        )
         let preferred = PrintedDateParser.preferred(readings)
         #expect(preferred?.label == .bestBy)
     }

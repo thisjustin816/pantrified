@@ -1,34 +1,17 @@
 import Foundation
 
-/// Reads printed dates from the lines recognized in one photo. The seam where a fuller date engine
-/// can replace the parser; whatever reads the dates, they are only ever proposals.
+/// Reads printed dates from the lines recognized in one photo. `PrintedDateRecognition` is the
+/// reader; the protocol lets tests and a later engine stand in. Whatever reads the dates, they are
+/// only ever proposals.
 public protocol PrintedDateReader: Sendable {
-    func readings(in lines: [RecognizedTextLine]) -> [PrintedDateReading]
+    func readings(in lines: [RecognizedTextLine], takenAt time: Date) -> [PrintedDateReading]
 }
 
-/// Runs `PrintedDateParser` over each line and over each line joined to the one after it, in reading
-/// order, so a label printed on the line above its date ("BEST BY" over "12 05 26") is still read.
-public struct LineDateReader: PrintedDateReader {
-    private let parser: PrintedDateParser
-    private let hint: DateOrderHint
-
-    public init(parser: PrintedDateParser = PrintedDateParser(), hint: DateOrderHint = .unknown) {
-        self.parser = parser
-        self.hint = hint
-    }
-
-    public func readings(in lines: [RecognizedTextLine]) -> [PrintedDateReading] {
-        let ordered = LabelText.readingOrder(lines).map(\.text)
-        var seen: Set<PrintedDateReading> = []
-        var readings: [PrintedDateReading] = []
-        func add(_ found: [PrintedDateReading]) {
-            for reading in found where seen.insert(reading).inserted { readings.append(reading) }
-        }
-        for (index, line) in ordered.enumerated() {
-            add(parser.parse(line, hint: hint))
-            if index + 1 < ordered.count { add(parser.parse(line + " " + ordered[index + 1], hint: hint)) }
-        }
-        return readings
+extension PrintedDateRecognition: PrintedDateReader {
+    /// The photo's lines in reading order, so a label printed above its date is read with it, and
+    /// only dates plausible for when the photo was taken.
+    public func readings(in lines: [RecognizedTextLine], takenAt time: Date) -> [PrintedDateReading] {
+        readings(in: [RecognizedLines(lines: LabelText.readingOrder(lines).map(\.text))], at: time)
     }
 }
 

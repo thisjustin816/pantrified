@@ -146,7 +146,7 @@ public struct PhotoGrouper: Sendable {
     public init(
         policy: GroupingPolicy = .standard,
         distance: any ImageDistance = EuclideanImageDistance(),
-        dates: any PrintedDateReader = LineDateReader()
+        dates: any PrintedDateReader = PrintedDateRecognition()
     ) {
         self.policy = policy
         self.distance = distance
@@ -297,7 +297,7 @@ public struct PhotoGrouper: Sendable {
         return ordered.map { observation in
             let tokens = LabelText.significantTokens(of: observation)
             let products = observation.products
-            let isDateOnly = tokens.isEmpty && products.isEmpty && !dates.readings(in: observation.lines).isEmpty
+            let isDateOnly = tokens.isEmpty && products.isEmpty && !dates.readings(in: observation.lines, takenAt: observation.capturedAt).isEmpty
             let amounts = LabelText.variantAmounts(of: observation)
             return Photo(
                 observation: observation, tokens: tokens, products: products, isDateOnly: isDateOnly,

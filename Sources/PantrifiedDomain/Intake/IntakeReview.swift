@@ -4,7 +4,7 @@ import Foundation
 public struct IntakeProposer: Sendable {
     private let dates: any PrintedDateReader
 
-    public init(dates: any PrintedDateReader = LineDateReader()) {
+    public init(dates: any PrintedDateReader = PrintedDateRecognition()) {
         self.dates = dates
     }
 
@@ -26,7 +26,7 @@ public struct IntakeProposer: Sendable {
         }
         result.name = best?.name
 
-        let readings = own.flatMap { dates.readings(in: $0.lines) }
+        let readings = own.flatMap { dates.readings(in: $0.lines, takenAt: $0.capturedAt) }
         if let preferred = PrintedDateParser.preferred(readings) {
             switch preferred.value {
             case .resolved(let date, _):
