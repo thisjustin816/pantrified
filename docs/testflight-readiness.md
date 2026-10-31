@@ -26,7 +26,10 @@ What is in place for an upload, what only the owner can decide, and what data le
 1. **Export compliance.** The app uses only the encryption the operating system provides: HTTPS to
    services, iCloud and the Keychain, and no cryptography of its own. `ITSAppUsesNonExemptEncryption` is not
    set, so App Store Connect asks for the answer on each build. The answer is the owner's.
-2. **App icon.** The app has none. An upload needs one, and its design is the open branding decision.
+2. **App icon.** `App/Assets.xcassets/AppIcon.appiconset` holds one 1024 by 1024 PNG with no transparency,
+   chosen by the owner. `Scripts/verify-app-icon.py` checks the size and the absence of an alpha channel in
+   the source, and that each archived app carries the compiled catalog and the icon name. It cannot show how
+   the icon looks in the tinted and dark home screen styles, so check those on a device or simulator.
 3. **Privacy policy and App Privacy answers.** External TestFlight testing and an App Store listing ask for
    a privacy policy URL and for App Privacy answers. The table below lists the facts they depend on.
 4. **Usage descriptions.** Camera and photo access need purpose strings when capture is added.

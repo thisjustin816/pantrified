@@ -64,3 +64,9 @@ jobs:
           python3 -I Scripts/tests/test_verify_required_reason_apis.py
           python3 -I Scripts/verify-privacy-manifest.py App/PrivacyInfo.xcprivacy
           python3 -I Scripts/verify-required-reason-apis.py App/PrivacyInfo.xcprivacy App Sources
+      - name: Test the app icon check and check the icon
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          python3 -I Scripts/tests/test_verify_app_icon.py
+          python3 -I Scripts/verify-app-icon.py App/Assets.xcassets/AppIcon.appiconset
