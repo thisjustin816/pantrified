@@ -44,6 +44,15 @@ jobs:
       - name: Generate the Xcode project
         id: generate
         run: make generate
+      # testflight.yml passes this project from the job that runs XcodeGen to the signing job, which
+      # refuses one that runs scripts or does not fit in a job output. Checking here shows the refusal
+      # on a pull request instead of on a signed run.
+      - name: Check the project for the TestFlight signing job
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          python3 -I Scripts/testflight-project.py check Pantrified.xcodeproj
+          GITHUB_OUTPUT="$RUNNER_TEMP/project-output" python3 -I Scripts/testflight-project.py pack Pantrified.xcodeproj
       - name: Build
         run: |
           set -o pipefail
