@@ -33,6 +33,9 @@ See GitHub issue #1 for the pilot and completion criteria.
 
 ## Documentation
 
+- [Privacy policy](PRIVACY.md)
+- [Support](SUPPORT.md)
+
 - [`docs/product-decisions.md`](docs/product-decisions.md) — canonical accepted product decisions and remaining open decisions.
 - [`docs/architecture.md`](docs/architecture.md) — implementation architecture constraints and the first vertical slice.
 - [`docs/ai-runtime.md`](docs/ai-runtime.md) — Apple Foundation Models/PCC runtime and fallback boundary.
