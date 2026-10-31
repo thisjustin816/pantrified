@@ -10,6 +10,10 @@ struct StartScreen {
     var addingFood = false
     /// False in a screenshot run, so the tab bar looks as it does in the App Store build.
     var showsEvaluation = true
+    /// False in a screenshot run, so the keyboard does not cover the Add food form.
+    var focusesName = true
+    /// True in a screenshot run of Add food, which opens with an example filled in.
+    var fillsAddFoodExample = false
 
     static var current: StartScreen {
         #if DEBUG

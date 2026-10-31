@@ -38,13 +38,26 @@ struct ScreenshotScenarioTests {
         #expect(StartScreen().addingFood == false)
     }
 
-    @Test("a screenshot run hides the Evaluate tab; the app otherwise shows it where it is built in")
-    func evaluationTabIsHiddenInScreenshots() {
+    @Test("a screenshot run hides the Evaluate tab and keeps the keyboard down; a normal launch does neither")
+    func screenshotRunLooksLikeTheStoreBuild() {
         for screen in ["today", "food", "add"] {
             let start = ScreenshotScenario(arguments: ["Pantrified", "-pantrified-scenario", "sample", "-pantrified-screen", screen])?.startScreen
             #expect(start?.showsEvaluation == false)
+            #expect(start?.focusesName == false)
         }
         #expect(StartScreen().showsEvaluation == true)
+        #expect(StartScreen().focusesName == true)
+    }
+
+    @Test("only the add screen opens Add food with an example filled in")
+    func exampleOnlyOnTheAddScreen() {
+        func fills(_ screen: String) -> Bool? {
+            ScreenshotScenario(arguments: ["Pantrified", "-pantrified-scenario", "sample", "-pantrified-screen", screen])?.startScreen.fillsAddFoodExample
+        }
+        #expect(fills("add") == true)
+        #expect(fills("today") == false)
+        #expect(fills("food") == false)
+        #expect(StartScreen().fillsAddFoodExample == false)
     }
 
     @Test("the sample food shows past guidance, use soon with and without a date, fine and unknown")

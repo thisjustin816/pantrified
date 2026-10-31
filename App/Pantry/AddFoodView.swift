@@ -17,6 +17,17 @@ struct AddFoodView: View {
     @State private var saving = false
     @FocusState private var nameFocused: Bool
 
+    init(model: PantryModel) {
+        self.model = model
+        // A screenshot run opens with an example in the form; a normal launch opens it empty.
+        let example = StartScreen.current.fillsAddFoodExample
+        _name = State(initialValue: example ? "Greek yogurt" : "")
+        _quantity = State(initialValue: example ? .full : .unknown)
+        _hasDate = State(initialValue: example)
+        _label = State(initialValue: example ? .bestBy : .useBy)
+        _day = State(initialValue: example ? Date().addingTimeInterval(10 * 86_400) : Date())
+    }
+
     private static let labels: [PrintedDateLabel] = [.useBy, .bestBy, .sellBy, .freezeBy, .packed]
     /// 1 January 2000 to 31 December 2099, the days a printed date can name.
     private static let days = Date(timeIntervalSince1970: 946_684_800)...Date(timeIntervalSince1970: 4_102_358_400)
@@ -77,7 +88,7 @@ struct AddFoodView: View {
             }
             .onAppear {
                 if location == nil { location = locations.first?.id }
-                nameFocused = true
+                nameFocused = StartScreen.current.focusesName
             }
             .problemAlert(model)
         }
