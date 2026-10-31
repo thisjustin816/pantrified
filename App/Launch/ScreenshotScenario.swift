@@ -23,9 +23,9 @@ struct ScreenshotScenario {
 
     var startScreen: StartScreen {
         switch screen {
-        case .today: StartScreen(tab: .today, addingFood: false)
-        case .food: StartScreen(tab: .food, addingFood: false)
-        case .add: StartScreen(tab: .today, addingFood: true)
+        case .today: StartScreen(tab: .today, addingFood: false, showsEvaluation: false)
+        case .food: StartScreen(tab: .food, addingFood: false, showsEvaluation: false)
+        case .add: StartScreen(tab: .today, addingFood: true, showsEvaluation: false)
         }
     }
 

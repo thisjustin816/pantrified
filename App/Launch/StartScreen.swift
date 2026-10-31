@@ -8,6 +8,8 @@ enum AppTab: Hashable {
 struct StartScreen {
     var tab: AppTab = .today
     var addingFood = false
+    /// False in a screenshot run, so the tab bar looks as it does in the App Store build.
+    var showsEvaluation = true
 
     static var current: StartScreen {
         #if DEBUG

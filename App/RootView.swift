@@ -40,8 +40,10 @@ private struct MainTabs: View {
                 PlaceholderView(title: "List", detail: "Your shared shopping list will appear here.")
             }
             #if DEBUG || EVALUATION
-            Tab("Evaluate", systemImage: "checklist", value: AppTab.evaluate) {
-                EvaluationView()
+            if StartScreen.current.showsEvaluation {
+                Tab("Evaluate", systemImage: "checklist", value: AppTab.evaluate) {
+                    EvaluationView()
+                }
             }
             #endif
         }

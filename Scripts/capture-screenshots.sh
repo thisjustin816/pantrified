@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Takes screenshots of the app's screens on a simulator: each screen in light and dark mode, at the
-# default text size and at the largest accessibility size, on sample food.
+# Takes screenshots of the app's screens on the largest iPhone simulator, the 6.9-inch size App
+# Store Connect asks for: each screen in light and dark mode, at the default text size and at the
+# largest accessibility size, on sample food and without the Debug-only Evaluate tab.
 #
 # Usage: capture-screenshots.sh APP_BUNDLE OUTPUT_DIR
 #
@@ -17,7 +18,11 @@ out="$2"
 [ -d "$app" ] || { echo "error: no such app bundle: $app" >&2; exit 1; }
 
 here="$(cd "$(dirname "$0")" && pwd)"
-name="$("$here/select-simulator.sh")"
+# The newest "iPhone <number> Pro Max", whose screen is the 6.9-inch size App Store Connect asks
+# for; the model select-simulator.sh picks when none is listed.
+name="$(xcrun simctl list devices available 2>/dev/null |
+  sed -n 's/^ *\(iPhone [0-9][0-9]* Pro Max\) (.*/\1/p' | sort -uV | tail -n 1)"
+[ -n "$name" ] || name="$("$here/select-simulator.sh")"
 udid="$(xcrun simctl list devices available | sed -n "s/^ *$name (\\([0-9A-F-]\\{36\\}\\)).*/\\1/p" | head -n 1)"
 [ -n "$udid" ] || { echo "error: no available simulator named $name" >&2; exit 1; }
 bundle="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")"
@@ -56,4 +61,6 @@ xcrun simctl terminate "$udid" "$bundle" 2>/dev/null || true
 xcrun simctl ui "$udid" appearance light
 xcrun simctl ui "$udid" content_size large
 xcrun simctl status_bar "$udid" clear || true
-ls -l "$out"
+for image in "$out"/*.png; do
+  echo "$(basename "$image"): $(sips -g pixelWidth -g pixelHeight "$image" | awk '/pixel/ {printf "%s ", $2}')"
+done
