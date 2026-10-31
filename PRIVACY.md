@@ -1,0 +1,75 @@
+# Pantrified Privacy Policy
+
+Last updated: October 30, 2026
+
+Pantrified is an iPhone app for managing household food, developed by Justin
+Beeson. This policy covers the current early beta, including TestFlight builds.
+Features are still being developed, so an installed build may not offer every
+feature described in the project's plans.
+
+## Information the app collects
+
+The current app does not send personal information to the developer. It does not
+require a Pantrified account and contains no advertising, analytics, tracking,
+or third-party crash-reporting SDKs.
+
+## Information processed on your device
+
+The app's local storage is designed to hold food inventory, storage locations,
+shopping items, preferences and other household records. When a build supports
+saving these records, they stay in the app's private storage on your device.
+The developer cannot access that storage.
+
+Recipe generation available in evaluation builds uses Apple's on-device
+language model. Requests and results are processed on your device; the app does
+not send them to the developer or a remote model service.
+
+The current beta does not implement household cloud synchronization, remote
+product or recipe lookups, cloud model generation, camera or photo capture,
+Reminders export, or in-app purchases. This policy must be updated when features
+that change data handling are introduced.
+
+## Apple services and beta feedback
+
+iOS may include local app data in device backups according to your Apple
+settings. Apple handles App Store and TestFlight downloads and may collect
+diagnostics according to its terms and your settings.
+
+When you use TestFlight, Apple may share beta diagnostics and feedback you
+choose to send with the developer. Feedback may include your comments,
+screenshots, contact information and technical details about the app and device.
+The developer uses that information to investigate problems and improve the app.
+Pantrified does not operate a separate diagnostics collection service.
+
+See [Apple's privacy policy](https://www.apple.com/legal/privacy/) for information
+about Apple's services.
+
+## Keeping and deleting data
+
+Local records remain on your device until you remove them through an available
+app feature or delete the app. Using iOS's Delete App option removes the app's
+local data from the device. Copies in device backups are managed separately
+through your Apple settings. Offloading the app preserves its data.
+
+Support requests and beta feedback are kept as needed to investigate and respond
+to the issue. GitHub and Apple manage records held by their services under their
+own policies.
+
+## Support and contact
+
+For support or privacy questions, use the
+[Pantrified issue tracker](https://github.com/thisjustin816/pantrified/issues).
+Information you provide is used to respond to your request. GitHub issues are
+public: do not include private household records, dietary or health information,
+personal photos, credentials, or other information you do not want published.
+Beta testers can use TestFlight's feedback feature instead of opening a public
+issue.
+
+GitHub operates the issue tracker under its
+[privacy statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement).
+
+## Changes to this policy
+
+When the app's data handling changes, this policy and its revision date will be
+updated. The current policy is available in the
+[Pantrified repository](https://github.com/thisjustin816/pantrified/blob/main/PRIVACY.md).
