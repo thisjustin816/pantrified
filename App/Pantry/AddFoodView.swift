@@ -3,9 +3,11 @@ import PantrifiedApplication
 import PantrifiedDomain
 
 /// Adds one food by hand. Only the name and where it goes are needed; how much and a date on the
-/// package are optional, because unknown is a fine state.
+/// package are optional, because unknown is a fine state. Opened from a scan, it carries the
+/// barcode and may suggest a name from a product lookup, which the person checks before adding.
 struct AddFoodView: View {
     let model: PantryModel
+    let barcode: GTIN?
 
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
@@ -15,10 +17,20 @@ struct AddFoodView: View {
     @State private var label: PrintedDateLabel = .useBy
     @State private var day = Date()
     @State private var saving = false
+    @State private var lookup = LookupState.off
     @FocusState private var nameFocused: Bool
 
-    init(model: PantryModel) {
+    private enum LookupState: Equatable {
+        case off
+        case looking
+        case suggested(ProductSuggestion)
+        case notFound
+        case failed
+    }
+
+    init(model: PantryModel, barcode: GTIN? = nil) {
         self.model = model
+        self.barcode = barcode
         // A screenshot run opens with an example in the form; a normal launch opens it empty.
         let example = StartScreen.current.fillsAddFoodExample
         _name = State(initialValue: example ? "Greek yogurt" : "")
@@ -36,15 +48,32 @@ struct AddFoodView: View {
     private var canAdd: Bool {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && location != nil && !saving
     }
+    /// The name is the lookup's suggestion, unchanged by the person.
+    private var nameIsSuggested: Bool {
+        if case .suggested(let suggestion) = lookup { return name == suggestion.name }
+        return false
+    }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("What is it?") {
+                Section {
                     TextField("Name", text: $name)
                         .focused($nameFocused)
                         .textInputAutocapitalization(.sentences)
                         .submitLabel(.done)
+                } header: {
+                    Text("What is it?")
+                } footer: {
+                    lookupNote
+                }
+                if let barcode {
+                    Section {
+                        LabeledContent("Barcode", value: barcode.issuedForm)
+                            .monospacedDigit()
+                    } footer: {
+                        Text("A barcode names the product, not this package. It's kept with this food on this device.")
+                    }
                 }
                 Section("Where does it go?") {
                     Picker("Where", selection: $location) {
@@ -90,6 +119,7 @@ struct AddFoodView: View {
                 if location == nil { location = locations.first?.id }
                 nameFocused = StartScreen.current.focusesName
             }
+            .task { await lookUpName() }
             .problemAlert(model)
         }
     }
@@ -103,7 +133,50 @@ struct AddFoodView: View {
             let parts = Calendar.current.dateComponents([.year, .month, .day], from: day)
             printed = PrintedDate.onDay(label, year: parts.year ?? 0, month: parts.month ?? 0, day: parts.day ?? 0)
         }
-        let food = NewFood(name: name, location: location, quantity: quantity, printedDate: printed)
+        let food = NewFood(
+            name: name, nameSource: nameIsSuggested ? .lookup : .person, location: location,
+            quantity: quantity, printedDate: printed, barcode: barcode
+        )
         if await model.add(food) { dismiss() }
+    }
+
+    @ViewBuilder
+    private var lookupNote: some View {
+        switch lookup {
+        case .off:
+            EmptyView()
+        case .looking:
+            Label {
+                Text("Looking up this barcode with USDA FoodData Central. You can add the food without waiting.")
+            } icon: {
+                ProgressView()
+            }
+        case .suggested(let suggestion):
+            if nameIsSuggested {
+                Label("Name suggested by \(suggestion.source). Check it before adding.", systemImage: "info.circle")
+            }
+        case .notFound:
+            Text("No product found for this barcode. Enter a name.")
+        case .failed:
+            Text("Couldn't look this up. Enter a name.")
+        }
+    }
+
+    /// Fills an empty name with the lookup's suggestion. A name the person has started typing is
+    /// never replaced, and leaving the form cancels the lookup.
+    private func lookUpName() async {
+        guard let barcode, model.looksUpProducts, lookup == .off else { return }
+        lookup = .looking
+        switch await model.lookUp(barcode) {
+        case .found(let suggestion)?:
+            lookup = .suggested(suggestion)
+            if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { name = suggestion.name }
+        case .notFound?:
+            lookup = .notFound
+        case .failed(.cancelled)?, nil:
+            lookup = .off
+        case .failed?:
+            lookup = .failed
+        }
     }
 }

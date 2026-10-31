@@ -26,10 +26,20 @@ final class PantryModel {
     private let pantry: Pantry
     private let undoWindow: Duration
     private var undoExpiry: Task<Void, Never>?
+    /// Nil when product lookup is off, such as in a build without a FoodData Central key.
+    private let lookup: (any ProductLookupService)?
 
-    init(pantry: Pantry, undoWindow: Duration = .seconds(8)) {
+    init(pantry: Pantry, undoWindow: Duration = .seconds(8), lookup: (any ProductLookupService)? = nil) {
         self.pantry = pantry
         self.undoWindow = undoWindow
+        self.lookup = lookup
+    }
+
+    var looksUpProducts: Bool { lookup != nil }
+
+    /// What the product lookup suggests for a scanned barcode, or nil when lookup is off.
+    func lookUp(_ barcode: GTIN) async -> ProductLookupResult? {
+        await lookup?.lookUp(barcode)
     }
 
     func load() async {

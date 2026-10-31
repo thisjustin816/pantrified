@@ -7,6 +7,7 @@ struct FoodView: View {
     let model: PantryModel
 
     @State private var adding = false
+    @State private var scanning = false
 
     var body: some View {
         NavigationStack {
@@ -20,11 +21,15 @@ struct FoodView: View {
             .navigationTitle("Food")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
+                    Button("Scan", systemImage: "barcode.viewfinder") { scanning = true }
+                }
+                ToolbarItem(placement: .primaryAction) {
                     Button("Add food", systemImage: "plus") { adding = true }
                 }
             }
             .navigationDestination(for: PackageID.self) { PackageDetailView(model: model, id: $0) }
             .sheet(isPresented: $adding) { AddFoodView(model: model) }
+            .sheet(isPresented: $scanning) { ScanSheet(model: model) }
             .pantryChrome(model)
         }
     }
