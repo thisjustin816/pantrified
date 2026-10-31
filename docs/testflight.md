@@ -67,12 +67,17 @@ secrets, before then.
    secrets match each other and the app signs, passes its checks and exports.
 3. Run it with **upload** on, or let the next push to `main` upload.
 4. Wait for Apple to process the build, then add it to the Internal Testers group in App Store Connect.
-   Automatic distribution is off, so nothing reaches testers until then.
+   Turn on **Enable automatic distribution** for that group (**Apps > Pantrified > TestFlight > Internal
+   Testing > Internal Testers**) and each processed build reaches it on its own; with it off, nothing
+   reaches testers until a build is added by hand.
 
-Not yet confirmed for Pantrified: that the Developer-role key may upload and set What to Test, and that
-`testFlightInternalTestingOnly` survives an `altool` upload. After the first evaluation upload, check in
-App Store Connect that the build cannot be added to an external group. Never add an evaluation build to an
-external group.
+Confirmed by the first upload, version 0.1 build 4, from `main` on the `xcode-27` runner: signing and export
+work, and the Developer-role key can upload with `altool` and set What to Test, so that key needs no wider
+role.
+
+Not yet confirmed: that `testFlightInternalTestingOnly` survives an `altool` upload. After the first
+evaluation upload, check in App Store Connect that the build cannot be added to an external group. Never add
+an evaluation build to an external group.
 
 ## Build numbers
 
