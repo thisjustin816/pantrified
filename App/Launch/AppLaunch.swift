@@ -49,7 +49,7 @@ final class AppLaunch {
             let replica = try store.replica(for: space, transport: OfflineTransport(), time: time)
             let pantry = Pantry(
                 space: space, inventory: replica, locations: store.locations,
-                guidance: Self.guidance(), time: time
+                evidence: store.productEvidence, guidance: Self.guidance(), time: time
             )
             try await pantry.prepare()
             #if DEBUG

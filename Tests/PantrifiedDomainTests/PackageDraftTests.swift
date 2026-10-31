@@ -73,8 +73,8 @@ struct DraftProposalTests {
     func barcodeIsEvidence() {
         var a = makeDraft()
         var b = makeDraft()
-        a.barcode = "0123456789012"
-        b.barcode = "0123456789012"
+        a.barcode = GTIN("036000291452")
+        b.barcode = GTIN("036000291452")
 
         #expect(a.id != b.id)
     }

@@ -30,4 +30,5 @@ public final class LocalStore: @unchecked Sendable {
 
     public var locations: PersistentLocations { PersistentLocations(backend: backend) }
     public var ingredientLinks: PersistentIngredientLinks { PersistentIngredientLinks(backend: backend) }
+    public var productEvidence: PersistentProductEvidence { PersistentProductEvidence(backend: backend) }
 }

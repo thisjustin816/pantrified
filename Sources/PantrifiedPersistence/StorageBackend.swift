@@ -76,6 +76,7 @@ public struct LocalRowKind: RawRepresentable, Sendable, Hashable {
 
     public static let location = LocalRowKind(rawValue: "location")
     public static let ingredientLink = LocalRowKind(rawValue: "ingredientLink")
+    public static let packageBarcode = LocalRowKind(rawValue: "packageBarcode")
 }
 
 /// Identifies a device-local row: its kind, its Space, and the entity's app-owned key.

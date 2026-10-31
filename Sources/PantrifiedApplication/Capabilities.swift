@@ -43,6 +43,14 @@ public protocol StorageGuidanceRepository: Sendable {
     func guidance(for package: Package) async throws -> StorageGuidance?
 }
 
+/// Barcodes read from packages, kept on this device as product evidence, per Space. A barcode
+/// names a product, so it is kept beside the package it was read from and never identifies one.
+public protocol ProductEvidenceStore: Sendable {
+    func barcode(of package: PackageID, in space: SpaceID) async throws -> GTIN?
+    /// Stores every barcode or none of them. Recording the same barcode again stores nothing new.
+    func record(_ barcodes: [PackageID: GTIN], in space: SpaceID) async throws
+}
+
 /// User-confirmed equivalences between recipe ingredients and inventory names, per Space.
 public protocol IngredientLinkRepository: Sendable {
     func links(in space: SpaceID) async throws -> Set<IngredientLink>

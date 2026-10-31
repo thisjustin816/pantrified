@@ -20,7 +20,7 @@ private struct Fixture {
         inventory = InMemoryInventory()
         locations = InMemoryLocations(locationsBySpace: [space: [fridge, pantry]])
         resolver = ResolveMissingIngredients(
-            putAway: PutAway(inventory: inventory, locations: locations, time: FixedTime(t0))
+            putAway: PutAway(inventory: inventory, locations: locations, evidence: InMemoryProductEvidence(), time: FixedTime(t0))
         )
     }
 

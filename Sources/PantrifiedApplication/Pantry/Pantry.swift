@@ -3,16 +3,35 @@ import PantrifiedDomain
 
 /// A food the person adds by hand. Quantity and date are optional: unknown is a valid state.
 public struct NewFood: Sendable, Hashable {
+    /// Where the name came from. A name a product lookup suggested and the person left as it was
+    /// is kept as a suggestion, so it does not count as a name the person decided.
+    public enum NameSource: Sendable, Hashable {
+        case person
+        case lookup
+    }
+
     public var name: String
+    public var nameSource: NameSource
     public var location: LocationID
     public var quantity: Quantity
     public var printedDate: PrintedDate?
+    /// The barcode scanned from the package, kept as product evidence.
+    public var barcode: GTIN?
 
-    public init(name: String, location: LocationID, quantity: Quantity = .unknown, printedDate: PrintedDate? = nil) {
+    public init(
+        name: String,
+        nameSource: NameSource = .person,
+        location: LocationID,
+        quantity: Quantity = .unknown,
+        printedDate: PrintedDate? = nil,
+        barcode: GTIN? = nil
+    ) {
         self.name = name
+        self.nameSource = nameSource
         self.location = location
         self.quantity = quantity
         self.printedDate = printedDate
+        self.barcode = barcode
     }
 }
 
@@ -38,6 +57,7 @@ public struct Pantry: Sendable {
         space: SpaceID,
         inventory: any InventoryRepository,
         locations: any StorageLocationStore,
+        evidence: any ProductEvidenceStore,
         guidance: any StorageGuidanceRepository,
         time: any TimeSource,
         policy: AttentionPolicy = AttentionPolicy()
@@ -45,7 +65,7 @@ public struct Pantry: Sendable {
         self.space = space
         self.locations = locations
         useSoon = UseSoon(inventory: inventory, locations: locations, guidance: guidance, time: time, policy: policy)
-        putAway = PutAway(inventory: inventory, locations: locations, time: time)
+        putAway = PutAway(inventory: inventory, locations: locations, evidence: evidence, time: time)
         actions = PackageActions(inventory: inventory, locations: locations, time: time)
     }
 
@@ -68,16 +88,20 @@ public struct Pantry: Sendable {
         return PantrySnapshot(locations: known, entries: entries.sorted(by: Self.mostUrgentFirst))
     }
 
-    /// Puts one food away and returns its ID. A name that is empty or only spaces is refused.
+    /// Puts one food away and returns its ID. A name that is empty or only spaces is refused. A
+    /// barcode that cannot be kept does not fail the add, because the food itself was saved.
     @discardableResult
     public func add(_ food: NewFood) async throws -> PackageID {
         guard !food.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw PantryError.nameRequired }
-        var draft = PackageDraft(spaceID: space)
-        draft.name.confirm(food.name)
+        var draft = PackageDraft(spaceID: space, barcode: food.barcode)
+        switch food.nameSource {
+        case .person: draft.name.confirm(food.name)
+        case .lookup: draft.name.propose(food.name)
+        }
         draft.location = food.location
         draft.quantity.confirm(food.quantity)
         if let date = food.printedDate { draft.printedDate.confirm(date) }
-        try await putAway.putAway([draft])
+        _ = try await putAway.putAway([draft])
         return draft.id
     }
 

@@ -93,3 +93,35 @@ public struct PersistentIngredientLinks: IngredientLinkRepository {
         try backend.write(batch)
     }
 }
+
+/// Barcodes read from packages, kept on this device per Space under the package's ID. They never
+/// enter the replica's records, so they are not synchronized.
+public struct PersistentProductEvidence: ProductEvidenceStore {
+    private let backend: any StorageBackend
+
+    public init(backend: any StorageBackend) {
+        self.backend = backend
+    }
+
+    public func barcode(of package: PackageID, in space: SpaceID) async throws -> GTIN? {
+        let entity = package.rawValue.uuidString
+        guard let row = try backend.localRows(of: .packageBarcode, in: space).first(where: { $0.key.entity == entity }) else {
+            return nil
+        }
+        guard case .map(let fields) = try StoredValueCoding.value(from: row.payload),
+              case .string(let digits)? = fields["gtin"],
+              digits.count == 14, let gtin = GTIN(digits)
+        else { throw PersistenceError.corrupt("an unreadable package barcode") }
+        return gtin
+    }
+
+    public func record(_ barcodes: [PackageID: GTIN], in space: SpaceID) async throws {
+        guard !barcodes.isEmpty else { return }
+        var batch = StorageBatch()
+        for (package, gtin) in barcodes {
+            let key = LocalRowKey(kind: .packageBarcode, space: space, entity: package.rawValue.uuidString)
+            batch.localWrites[key] = .put(StoredValueCoding.encode(.map(["gtin": .string(gtin.digits)])))
+        }
+        try backend.write(batch)
+    }
+}

@@ -68,6 +68,25 @@ actor InMemoryInventory: InventoryRepository {
     }
 }
 
+/// Barcodes kept beside packages, with a switch to fail every write.
+actor InMemoryProductEvidence: ProductEvidenceStore {
+    private(set) var barcodes: [SpaceID: [PackageID: GTIN]] = [:]
+    private(set) var writes = 0
+    var failWrites = false
+
+    func setFailWrites(_ value: Bool) { failWrites = value }
+
+    func barcode(of package: PackageID, in space: SpaceID) async throws -> GTIN? {
+        barcodes[space]?[package]
+    }
+
+    func record(_ new: [PackageID: GTIN], in space: SpaceID) async throws {
+        if failWrites { throw FakeFailure() }
+        writes += 1
+        barcodes[space, default: [:]].merge(new) { $1 }
+    }
+}
+
 struct InMemoryLocations: StorageLocationRepository {
     let locationsBySpace: [SpaceID: [StorageLocation]]
 
