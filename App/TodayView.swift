@@ -29,6 +29,7 @@ struct TodayView: View {
                     Button("Add food", systemImage: "plus") { adding = true }
                 }
             }
+            .navigationDestination(for: PackageID.self) { PackageDetailView(model: model, id: $0) }
             .sheet(isPresented: $adding) { AddFoodView(model: model) }
             .pantryChrome(model)
         }
