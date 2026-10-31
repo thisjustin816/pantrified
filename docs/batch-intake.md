@@ -154,11 +154,16 @@ progress:
 | Killed during Add or its Undo | Recorded before it starts and finished on the next launch, without adding twice |
 | Add fails | Nothing is saved and nothing is left to finish; the candidates stay |
 
-**Deleting.** Photo files are deleted about a day (24 hours) after they were read. The review, with
-what was read from the photos (text lines, codes and feature prints) and the person's edits, stays until
-everything in it is added or deleted, then for one more day, so a batch is never lost before the person
-finishes it. A batch still in the camera a day after its last photo is read anyway, so abandoned photos
-do not stay indefinitely. **Discard** deletes the photos and the batch at once. Photo files no batch
+**Deleting.** Photo files are deleted a day (24 hours, `StagingStore.defaultRecoveryWindow`) after their
+batch was read, and every photo file two days (`StagingStore.photoFileLimit`) after it was added, read or
+not, so a batch whose reading never finishes cannot keep its photos. Picked photos count from when they
+were added, not when they were taken. Deleting runs while the app is open: at launch, whenever the app
+becomes active, and when the batch screen opens; an app that stays closed deletes them the next time it
+opens. The review, with what was read from the photos (text lines, codes and feature prints) and the
+person's edits, stays until everything in it is added or deleted, then for one more day, so a batch is
+never lost before the person finishes it; this holds after its photo files are gone. A batch still in the
+camera a day after its last photo is moved on to reading. **Discard** deletes the photos and the batch at
+once. Photo files no batch
 names, left by a crash between writing a file and recording it, are removed. Times come from the store's
 own records, never from file dates, so no required-reason API is used.
 

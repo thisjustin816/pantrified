@@ -166,7 +166,7 @@ struct StagingStoreTests {
         #expect(await world.launch().all.isEmpty)
     }
 
-    @Test("a capture left alone for a day is moved on to reading, so its photos do not stay indefinitely")
+    @Test("a capture left alone for a day is moved on to reading, and its photos do not stay past two days")
     func abandonedCapture() async throws {
         let world = IntakeWorld()
         let store = world.launch()
@@ -175,6 +175,31 @@ struct StagingStoreTests {
         try await store.sweep()
         #expect(await store.batch(batch)?.phase == .processing)
         #expect(world.files.photoNames.count == 1)
+
+        world.time.advance(hours: 23)
+        #expect(try await store.sweep() == 1)
+        #expect(world.files.photoNames.isEmpty)
+        #expect(await store.batch(batch)?.photos.allSatisfy(\.fileRemoved) == true)
+    }
+
+    @Test("a photo file is deleted two days after it was staged even when the batch is never read")
+    func photoFileLimit() async throws {
+        let world = IntakeWorld()
+        let store = world.launch()
+        let batch = try await store.open(in: world.space).id
+        // Taken long ago, as a picked photo may be: the limit runs from when it was added.
+        try await store.stage(Data("rice".utf8), fileExtension: "jpg", source: .imported,
+                              capturedAt: world.time.now().addingTimeInterval(-30 * day), in: batch)
+        try await store.startProcessing(batch)
+        #expect(try await store.sweep() == 0)
+
+        world.time.advance(hours: 47)
+        #expect(try await store.sweep() == 0)
+        world.time.advance(hours: 1)
+        #expect(try await store.sweep() == 1)
+        #expect(world.files.photoNames.isEmpty)
+        // What was read stays under the batch's own rule: until it is finished or discarded.
+        #expect(await world.launch().batch(batch) != nil)
     }
 
     @Test("sweeping removes photo files no batch names, and never a file the store did not make")

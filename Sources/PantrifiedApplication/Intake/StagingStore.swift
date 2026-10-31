@@ -32,10 +32,33 @@ public struct StagedPhoto: Sendable, Hashable, Codable, Identifiable {
     public let sequence: Int
     public let capturedAt: Date
     public let contentDigest: String?
+    /// When the store kept it. A picked photo may have been taken long before.
+    public let stagedAt: Date
     public internal(set) var observation: PhotoObservation?
     public internal(set) var failedAttempts = 0
     /// The file has been deleted; what was read from it may still be in the review.
     public internal(set) var fileRemoved = false
+}
+
+extension StagedPhoto {
+    private enum CodingKeys: String, CodingKey {
+        case id, fileName, source, sequence, capturedAt, contentDigest, stagedAt, observation, failedAttempts, fileRemoved
+    }
+
+    /// A record from before `stagedAt` was kept counts as staged when it was taken.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(IntakePhotoID.self, forKey: .id)
+        fileName = try container.decode(String.self, forKey: .fileName)
+        source = try container.decode(PhotoSource.self, forKey: .source)
+        sequence = try container.decode(Int.self, forKey: .sequence)
+        capturedAt = try container.decode(Date.self, forKey: .capturedAt)
+        contentDigest = try container.decodeIfPresent(String.self, forKey: .contentDigest)
+        stagedAt = try container.decodeIfPresent(Date.self, forKey: .stagedAt) ?? capturedAt
+        observation = try container.decodeIfPresent(PhotoObservation.self, forKey: .observation)
+        failedAttempts = try container.decodeIfPresent(Int.self, forKey: .failedAttempts) ?? 0
+        fileRemoved = try container.decodeIfPresent(Bool.self, forKey: .fileRemoved) ?? false
+    }
 }
 
 public enum BatchPhase: String, Sendable, Hashable, Codable {
@@ -98,6 +121,9 @@ public actor StagingStore {
     public static let manifestName = "batches.json"
     /// About a day, the recovery window in docs/product-decisions.md.
     public static let defaultRecoveryWindow: TimeInterval = 24 * 60 * 60
+    /// The longest a photo file is kept after it was staged, read or not. What was read from it stays
+    /// with the batch until the batch is finished or discarded.
+    public static let photoFileLimit: TimeInterval = 2 * 24 * 60 * 60
     public static let maximumPhotoBytes = 40 * 1_024 * 1_024
     static let photoExtensions: Set<String> = ["jpg", "heic", "png"]
 
@@ -260,7 +286,7 @@ public actor StagingStore {
         do { try files.write(data, to: name) } catch { throw .storage }
         let photo = StagedPhoto(
             id: photoID, fileName: name, source: source, sequence: batches[index].nextSequence,
-            capturedAt: capturedAt ?? time.now(), contentDigest: digest
+            capturedAt: capturedAt ?? time.now(), contentDigest: digest, stagedAt: time.now()
         )
         batches[index].photos.append(photo)
         batches[index].nextSequence += 1
@@ -393,7 +419,8 @@ public actor StagingStore {
 
     /// Deletes what is due, and returns how many photo files were deleted:
     ///
-    /// - photo files a recovery window after their batch was read;
+    /// - photo files a recovery window after their batch was read, and every photo file
+    ///   `photoFileLimit` after it was staged, read or not;
     /// - a batch still capturing a recovery window after its last photo is moved on to reading, so
     ///   an abandoned capture does not keep photos indefinitely;
     /// - finished batches a recovery window after they finished;
@@ -414,12 +441,12 @@ public actor StagingStore {
             changed = true
         }
         for index in batches.indices {
-            if let processed = batches[index].processedAt, now.timeIntervalSince(processed) >= recoveryWindow {
-                for photo in batches[index].photos.indices where !batches[index].photos[photo].fileRemoved {
-                    doomed.append(batches[index].photos[photo].fileName)
-                    batches[index].photos[photo].fileRemoved = true
-                    changed = true
-                }
+            let read = batches[index].processedAt.map { now.timeIntervalSince($0) >= recoveryWindow } ?? false
+            for photo in batches[index].photos.indices where !batches[index].photos[photo].fileRemoved {
+                guard read || now.timeIntervalSince(batches[index].photos[photo].stagedAt) >= Self.photoFileLimit else { continue }
+                doomed.append(batches[index].photos[photo].fileName)
+                batches[index].photos[photo].fileRemoved = true
+                changed = true
             }
             let lastPhoto = batches[index].photos.map(\.capturedAt).max() ?? batches[index].startedAt
             if batches[index].phase == .capturing, !batches[index].photos.isEmpty, now.timeIntervalSince(lastPhoto) >= recoveryWindow {

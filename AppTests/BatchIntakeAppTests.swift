@@ -42,13 +42,14 @@ private struct Harness {
 @Suite("Batch intake in the app")
 @MainActor
 struct BatchIntakeAppTests {
-    @Test("the camera usage description says photos are kept about a day and never saved to the photo library")
+    @Test("the camera usage description says when photos are deleted and that they are never saved to the photo library")
     func usageDescription() {
         let text = Bundle.main.object(forInfoDictionaryKey: "NSCameraUsageDescription") as? String ?? ""
         #expect(text.contains("scan barcodes"))
-        #expect(text.contains("about a day"))
+        #expect(text.contains("two days after they were added"))
         #expect(text.contains("never saved to your photo library"))
-        #expect(IntakeText.photosStayHere.contains("about a day"))
+        #expect(text.contains("until you add or discard it"))
+        #expect(IntakeText.photosStayHere.contains("two days after they're added"))
         #expect(IntakeText.photosStayHere.contains("never saved to your photo library"))
     }
 
