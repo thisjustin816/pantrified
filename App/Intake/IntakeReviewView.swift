@@ -219,10 +219,18 @@ struct CandidateCard: View {
     let edit: () -> Void
 
     @ScaledMetric(relativeTo: .body) private var thumbnailSize: CGFloat = 64
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    /// Photo beside the text, or above it at accessibility sizes so the name keeps the full width.
+    private var layout: AnyLayout {
+        typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: 12))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 12) {
+            layout {
                 photo
                 VStack(alignment: .leading, spacing: 6) {
                     nameRow
@@ -253,7 +261,7 @@ struct CandidateCard: View {
 
     private var photo: some View {
         ZStack(alignment: .bottomTrailing) {
-            Thumbnail(image: summary.photos.first.flatMap { intake.thumbnails[$0] }, size: thumbnailSize)
+            Thumbnail(image: summary.photos.first.flatMap { intake.thumbnails[$0] }, size: min(thumbnailSize, 96))
             if summary.photos.count > 1 {
                 Text("\(summary.photos.count)")
                     .font(.caption2.bold())
