@@ -54,6 +54,7 @@ See GitHub issue #1 for the pilot and completion criteria.
 - [`docs/testflight.md`](docs/testflight.md): the TestFlight upload workflow, its secrets and the first run.
 - [`docs/evaluation.md`](docs/evaluation.md): the on-device model evaluation, what it measures and where it is compiled.
 - [`docs/storage-guidance.md`](docs/storage-guidance.md): the bundled USDA FoodKeeper snapshot, its conversion rules and how foods are matched to it.
+- [`docs/market-research.md`](docs/market-research.md): what the market research concluded, and what it means for capture, the AI runtime, positioning and measurement.
 
 ## Implementation handoff
 

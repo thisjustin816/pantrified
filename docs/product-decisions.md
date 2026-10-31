@@ -171,7 +171,7 @@ Competitive research reinforced the core execution hypothesis: Pantrified wins o
 
 ## v1 sequencing / validation priority
 
-Competitive research completed October 23, 2026 supports proceeding, but identifies inventory-maintenance friction as the highest-risk assumption. The first implementation milestone is therefore a real-household vertical slice that proves:
+Competitive research completed October 23, 2026 supports proceeding, but identifies inventory-maintenance friction as the highest-risk assumption (see [`market-research.md`](market-research.md)). The first implementation milestone is therefore a real-household vertical slice that proves:
 
 `capture → fast correction/put-away → immediate use-soon/meal value → use/cook → easy reconciliation → repeat`
 
