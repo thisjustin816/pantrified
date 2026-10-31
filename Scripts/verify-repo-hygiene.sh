@@ -15,7 +15,8 @@ while IFS= read -r -d '' path; do
   case "$path" in
     *.xcodeproj/*) fail "generated Xcode project is tracked: $path" ;;
     Config/Signing.local.xcconfig) fail "per-developer signing settings are tracked: $path" ;;
-    *.p12 | *.p8 | *.cer | *.mobileprovision | *.certSigningRequest | *.pem | *.key)
+    *.p12 | *.p8 | *.cer | *.mobileprovision | *.provisionprofile | *.certSigningRequest | *.pem | *.key | \
+      *.keychain | *.keychain-db)
       fail "signing material is tracked: $path" ;;
     .env | .env.* | */.env | */.env.*) fail "environment file is tracked: $path" ;;
   esac

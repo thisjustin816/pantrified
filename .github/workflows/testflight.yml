@@ -1,0 +1,205 @@
+name: TestFlight
+
+# Builds the app signed for App Store distribution and, when asked, uploads it to App Store Connect.
+# Run by hand from main only. The setup it needs and the first run are in docs/testflight-upload.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: 'release, or evaluation for a build with the Evaluation tab (internal testing only)'
+        type: choice
+        options: [release, evaluation]
+        default: release
+        required: true
+      upload:
+        description: 'Upload to App Store Connect. Clear it to build, sign and check the app without uploading'
+        type: boolean
+        default: true
+        required: true
+
+run-name: TestFlight ${{ inputs.variant }} build, upload ${{ inputs.upload }}
+
+permissions:
+  contents: read
+
+# One signed build at a time, and an upload is never cancelled halfway.
+concurrency:
+  group: testflight
+  cancel-in-progress: false
+
+jobs:
+  # Fails before the Environment asks for approval, so a run from another ref never waits for one.
+  # The Environment's deployment branch rule enforces the same thing for the secrets.
+  main-only:
+    name: Refuse refs other than main
+    runs-on: ubuntu-24.04
+    permissions: {}
+    timeout-minutes: 2
+    steps:
+      - name: Check the ref
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [ "$REF" != refs/heads/main ]; then
+            echo "::error::TestFlight builds run only from main. Dispatch the workflow on main."
+            exit 1
+          fi
+
+  signed-build:
+    name: Signed build and upload
+    needs: main-only
+    if: github.ref == 'refs/heads/main'
+    environment: testflight
+    runs-on: ${{ vars.MACOS_RUNNER || 'xcode-27' }}
+    timeout-minutes: 60
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      VARIANT: ${{ inputs.variant }}
+      UPLOAD: ${{ inputs.upload }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      # Every secret is passed to this step so a missing one fails the run before anything is built.
+      - name: Check the ref, the inputs and the secrets
+        env:
+          APPLE_DISTRIBUTION_CERTIFICATE_BASE64: ${{ secrets.APPLE_DISTRIBUTION_CERTIFICATE_BASE64 }}
+          APPLE_DISTRIBUTION_PRIVATE_KEY: ${{ secrets.APPLE_DISTRIBUTION_PRIVATE_KEY }}
+          APPLE_PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: python3 -I Scripts/testflight.py check
+      - name: Work out the variant, version and build number
+        id: info
+        run: |
+          python3 -I Scripts/testflight.py build-info
+          {
+            echo "SIGNING_DIR=$RUNNER_TEMP/testflight-signing"
+            echo "KEYCHAIN=$RUNNER_TEMP/testflight-signing.keychain-db"
+            echo "BUILD_DIR=$RUNNER_TEMP/testflight-build"
+          } >>"$GITHUB_ENV"
+      - name: Show toolchain
+        run: xcodebuild -version
+      # Third-party tools run before any signing material is on the runner.
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate the Xcode project
+        run: make generate
+      - name: Write the app target's signing settings
+        run: python3 -I Scripts/testflight.py xcconfig Config/Signing.local.xcconfig
+      - name: Install the signing identity and the profile
+        env:
+          APPLE_DISTRIBUTION_CERTIFICATE_BASE64: ${{ secrets.APPLE_DISTRIBUTION_CERTIFICATE_BASE64 }}
+          APPLE_DISTRIBUTION_PRIVATE_KEY: ${{ secrets.APPLE_DISTRIBUTION_PRIVATE_KEY }}
+          APPLE_PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          python3 -I Scripts/testflight.py prepare "$SIGNING_DIR"
+          ./Scripts/testflight-keychain.sh setup "$SIGNING_DIR" "$KEYCHAIN"
+      - name: Signed ${{ steps.info.outputs.label }} archive
+        id: archive
+        env:
+          BUILD_NUMBER: ${{ steps.info.outputs.build_number }}
+          ARCHIVE_PATH: ${{ runner.temp }}/testflight-build/${{ steps.info.outputs.archive_name }}.xcarchive
+          TEAM_ID: ${{ steps.info.outputs.team_id }}
+          SIGNING_IDENTITY: ${{ steps.info.outputs.signing_identity }}
+        run: |
+          set -o pipefail
+          mkdir -p "$BUILD_DIR"
+          ./Scripts/testflight-xcode.sh archive 2>&1 | tee "$BUILD_DIR/archive.log"
+      - name: Check the archived app
+        env:
+          APP: ${{ runner.temp }}/testflight-build/${{ steps.info.outputs.archive_name }}.xcarchive/Products/Applications/Pantrified.app
+          EVALUATION_TAB: ${{ steps.info.outputs.evaluation_tab }}
+          MARKETING_VERSION: ${{ steps.info.outputs.marketing_version }}
+          BUILD_NUMBER: ${{ steps.info.outputs.build_number }}
+        run: |
+          ./Scripts/verify-evaluation-gating.sh "$APP/Pantrified" "$EVALUATION_TAB"
+          python3 -I Scripts/verify-privacy-manifest.py App/PrivacyInfo.xcprivacy "$APP"
+          python3 -I Scripts/verify-app-icon.py App/Assets.xcassets/AppIcon.appiconset "$APP"
+          python3 -I Scripts/verify-export-compliance.py project.yml "$APP"
+          python3 -I Scripts/testflight.py verify-app "$APP" --version "$MARKETING_VERSION" --build "$BUILD_NUMBER"
+      - name: Export the signed ${{ steps.info.outputs.label }} app
+        env:
+          ARCHIVE_PATH: ${{ runner.temp }}/testflight-build/${{ steps.info.outputs.archive_name }}.xcarchive
+          EXPORT_PATH: ${{ runner.temp }}/testflight-build/export
+          EXPORT_OPTIONS: ${{ runner.temp }}/testflight-build/ExportOptions.plist
+        run: |
+          set -o pipefail
+          python3 -I Scripts/testflight.py export-options "$EXPORT_OPTIONS"
+          ./Scripts/testflight-xcode.sh export 2>&1 | tee "$BUILD_DIR/export.log"
+      - name: Check the signature of the exported app
+        env:
+          IPA_PATH: ${{ runner.temp }}/testflight-build/export/Pantrified.ipa
+          INSPECT_DIR: ${{ runner.temp }}/testflight-build/inspect
+          MARKETING_VERSION: ${{ steps.info.outputs.marketing_version }}
+          BUILD_NUMBER: ${{ steps.info.outputs.build_number }}
+        run: |
+          app="$(./Scripts/testflight-xcode.sh inspect)"
+          python3 -I Scripts/verify-export-compliance.py project.yml "$app"
+          python3 -I Scripts/testflight.py verify-app "$app" --version "$MARKETING_VERSION" --build "$BUILD_NUMBER" \
+            --entitlements "$INSPECT_DIR/entitlements.plist" --codesign "$INSPECT_DIR/codesign.txt"
+      # The key is written in its own step so the upload's processes never hold it in their environment.
+      - name: Write the App Store Connect key
+        if: inputs.upload
+        env:
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: python3 -I Scripts/testflight.py write-api-key "$SIGNING_DIR"
+      - name: Upload the ${{ steps.info.outputs.label }} build to App Store Connect
+        id: upload
+        if: inputs.upload
+        env:
+          IPA_PATH: ${{ runner.temp }}/testflight-build/export/Pantrified.ipa
+          APP_APPLE_ID: ${{ steps.info.outputs.app_apple_id }}
+          BUNDLE_ID: ${{ steps.info.outputs.bundle_id }}
+          MARKETING_VERSION: ${{ steps.info.outputs.marketing_version }}
+          BUILD_NUMBER: ${{ steps.info.outputs.build_number }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          API_PRIVATE_KEYS_DIR: ${{ runner.temp }}/testflight-signing/private_keys
+        run: |
+          set -o pipefail
+          ./Scripts/testflight-xcode.sh upload 2>&1 | tee "$BUILD_DIR/upload.log"
+      # xcodebuild prints thousands of long command lines, so the failure is hard to find in the
+      # raw log. Repeat only the diagnostics, once, at the end.
+      - name: Summarize failures
+        if: failure()
+        run: |
+          {
+            echo '### Signing and upload diagnostics'
+            echo '```'
+            grep -hE ' error: |ERROR|BUILD FAILED|ARCHIVE FAILED|EXPORT FAILED|\*\* .* FAILED' \
+              "$BUILD_DIR"/*.log 2>/dev/null | sort -u | head -80
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+      # Runs however the job ended, including on cancellation.
+      - name: Remove the keychain, the signing material and the build
+        if: always()
+        run: |
+          status=0
+          if [ -n "${SIGNING_DIR:-}" ]; then
+            ./Scripts/testflight-keychain.sh teardown "$SIGNING_DIR" "$KEYCHAIN" || status=1
+            python3 -I Scripts/testflight.py cleanup "$SIGNING_DIR" --xcconfig Config/Signing.local.xcconfig || status=1
+          fi
+          rm -rf "${BUILD_DIR:-$RUNNER_TEMP/testflight-build}" || status=1
+          exit "$status"
+      - name: Record the build
+        if: always() && steps.info.outcome == 'success'
+        env:
+          MARKETING_VERSION: ${{ steps.info.outputs.marketing_version }}
+          BUILD_NUMBER: ${{ steps.info.outputs.build_number }}
+          UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+        run: python3 -I Scripts/testflight.py record "$RUNNER_TEMP/testflight-record/build.json"
+      # The record names the variant, version, build, commit and upload result; it holds no secret,
+      # no signing material and no app binary, because artifacts of a public repository are public.
+      - name: Upload the build record
+        if: always() && steps.info.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ steps.info.outputs.artifact_name }}
+          path: ${{ runner.temp }}/testflight-record/build.json
+          if-no-files-found: error
+          retention-days: 90
