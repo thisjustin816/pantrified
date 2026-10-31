@@ -79,16 +79,19 @@ inspect() {
 upload() {
   require IPA_PATH APP_APPLE_ID BUNDLE_ID MARKETING_VERSION BUILD_NUMBER \
     APP_STORE_CONNECT_KEY_ID APP_STORE_CONNECT_ISSUER_ID API_PRIVATE_KEYS_DIR
+  # Whitespace is dropped as testflight.py write-api-key drops it, so a secret stored with a trailing
+  # newline names the same file.
+  local key_id="${APP_STORE_CONNECT_KEY_ID//[[:space:]]/}" issuer_id="${APP_STORE_CONNECT_ISSUER_ID//[[:space:]]/}"
   # altool finds the key by this name in API_PRIVATE_KEYS_DIR; it takes no path to the key.
-  if [ ! -f "$API_PRIVATE_KEYS_DIR/AuthKey_$APP_STORE_CONNECT_KEY_ID.p8" ]; then
+  if [ ! -f "$API_PRIVATE_KEYS_DIR/AuthKey_$key_id.p8" ]; then
     echo "error: the App Store Connect key is not in API_PRIVATE_KEYS_DIR; run testflight.py write-api-key first" >&2
     exit 1
   fi
   # altool has no other way to take the key and issuer IDs, so they are arguments. Both are
-  # identifiers, masked in the log as secrets; the key itself stays in the file.
+  # identifiers, masked in the log as secrets, and neither authenticates without the key file.
   xcrun altool --upload-package "$IPA_PATH" -t ios --apple-id "$APP_APPLE_ID" --bundle-id "$BUNDLE_ID" \
     --bundle-short-version-string "$MARKETING_VERSION" --bundle-version "$BUILD_NUMBER" \
-    --apiKey "$APP_STORE_CONNECT_KEY_ID" --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID"
+    --apiKey "$key_id" --apiIssuer "$issuer_id"
 }
 
 if [ "$#" -ne 1 ]; then

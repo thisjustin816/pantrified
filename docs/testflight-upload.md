@@ -7,21 +7,29 @@ GitHub Environment. Pull requests and pushes never start it, and no other workfl
 ## What a run does
 
 1. A first job fails unless the run is on `main`. It runs before the Environment asks for approval.
-2. After approval, `Scripts/testflight.py check` fails unless the ref is `main`, the inputs are valid and each
-   of the six secrets below is set and well formed. It names each problem and never prints a value. It also
-   checks the profile against `Config/testflight.json` and the certificate: UUID, name, team, bundle
-   identifier, App Store type, TestFlight permission, expiry, and that the profile holds the certificate.
-3. XcodeGen generates the project. This and every other third-party tool runs before any signing material is
-   on the runner.
+2. A second job, with no secrets and outside the Environment, installs XcodeGen from Homebrew (unpinned),
+   generates the Xcode project, and passes it to the signing job as a job output, on a separate runner.
+   `Scripts/testflight-project.py` packs it there, and in the signing job checks its SHA-256, refuses
+   anything but plain files under `Pantrified.xcodeproj`, and fails if the project has a shell script build
+   phase, a build rule, an external build system target, scheme pre- or post-actions, a build setting that
+   replaces the compiler, linker or Swift driver, or a compiler plugin flag. The signing job installs no
+   third-party tool.
+3. In the signing job, after approval, `Scripts/testflight.py check` fails unless the ref is `main`, the
+   inputs are valid and each of the six secrets below is set and well formed. It names each problem and never
+   prints a value. It also checks the profile against `Config/testflight.json` and the certificate: UUID,
+   name, team, bundle identifier, App Store type, TestFlight permission, expiry, and that the profile holds
+   the certificate. The generated project is unpacked and checked next.
 4. `testflight.py xcconfig` writes `Config/Signing.local.xcconfig` (git-ignored) with manual signing, the team
    and the profile name, so only the app target gets the profile.
 5. `testflight.py prepare` writes the certificate and private key into a new directory in `$RUNNER_TEMP`
    (mode 0700, files 0600) and installs the profile as `<UUID>.mobileprovision` in
    `~/Library/MobileDevice/Provisioning Profiles` and `~/Library/Developer/Xcode/UserData/Provisioning Profiles`.
    `Scripts/testflight-keychain.sh setup` joins the certificate and key into a .p12 under a random one-time
-   password, imports it into a new keychain in `$RUNNER_TEMP` under another random password, lets codesign use
-   the key and puts the keychain first in the search list. Both passwords are masked in the log and never
-   appear on a command line. It fails unless the keychain holds exactly one valid Apple Distribution identity.
+   password and deletes the PEM key and the certificate file at once. It imports the .p12 into a new keychain
+   in `$RUNNER_TEMP` under another random password, with the key non-extractable (`-x`) and only
+   `/usr/bin/codesign` allowed to use it, sets the key's partition list for codesign, and puts the keychain
+   first in the search list. Both passwords are masked in the log and never appear on a command line. It
+   fails unless the keychain holds exactly one valid Apple Distribution identity.
 6. `Scripts/testflight-xcode.sh archive` archives the Release configuration with manual signing and the build
    number. No command passes `-allowProvisioningUpdates`, so Xcode cannot create or change certificates,
    profiles or identifiers in the team.
@@ -35,9 +43,9 @@ GitHub Environment. Pull requests and pushes never start it, and no other workfl
    `xcrun altool --upload-package` uploads the same .ipa that was checked.
 10. A last step, which runs however the job ends, restores the keychain search list, deletes the keychain,
     removes the certificate, keys, installed profiles, `Signing.local.xcconfig`, the archive and the .ipa.
-11. A build record (variant, version, build number, commit, run and upload result) is uploaded as an
-    artifact. It holds no secret and no app binary, because the artifacts and logs of a public repository are
-    public.
+11. A build record (variant, internal-only flag, version, build number, commit, run and upload result) is
+    written to the job summary and uploaded as an artifact. It holds no secret and no app binary, because
+    the artifacts and logs of a public repository are public.
 
 ## Inputs, variants and build numbers
 
@@ -59,6 +67,9 @@ number was ever uploaded by hand for the same version, raise `MARKETING_VERSION`
 ## What the owner sets up in GitHub
 
 ### The `testflight` Environment
+
+Create it **before** the workflow reaches `main`. If the workflow runs first, GitHub creates a `testflight`
+Environment with no protection rules, and the run proceeds without approval.
 
 In **Settings > Environments**, create an environment named `testflight` and set:
 
@@ -86,8 +97,23 @@ workflow reads any other secret or this page leaves one out.
 
 ### Variables
 
-None are required. `MACOS_RUNNER`, as for `ios-build.yml`, overrides the runner (default `xcode-27`). The
+None are required. `MACOS_RUNNER`, as for `ios-build.yml`, overrides the runner (default `xcode-27`, a
+GitHub-hosted runner). It must stay a GitHub-hosted runner, which is a fresh machine for each job: the
+cleanup step removes what the run wrote, but a self-hosted runner would keep anything a failed cleanup or a
+crash left behind, and would share the machine between the job that runs XcodeGen and the signing job. The
 identifiers below are not secret and live in `Config/testflight.json`.
+
+## What the guards protect
+
+The `main-only` job, the signing job's `if:` and the ref check in `testflight.py check` refuse a dispatch of
+the workflow as it is written. They do not stop a changed copy: anyone who can push a branch can edit the
+workflow on that branch, remove all three, and dispatch it there. The protection against that is the
+Environment's deployment branch rule, which withholds **Environment** secrets from any run whose ref is not
+`main`. Repository secrets are not covered by that rule, which is why the secrets must be Environment
+secrets.
+
+Before approving a deployment, open the run and confirm that its branch is `main` and its commit is the
+`main` commit you expect.
 
 ## Identifiers and signing material
 
@@ -120,8 +146,12 @@ app claims neither until an entitlements file adds them.
   ask on each build.
 - **Testers:** the workflow only uploads. The Internal Testers group has automatic distribution off, so add a
   build to it by hand after App Store Connect finishes processing it.
-- **Internal-only evaluation builds:** the evaluation export sets `testFlightInternalTestingOnly`. Whether that
-  flag survives an upload made with altool is not confirmed; check the build in App Store Connect.
+- **Internal-only evaluation builds:** the evaluation export sets `testFlightInternalTestingOnly`, and the build
+  record and job summary show `internal_only: true`. Whether the flag survives an upload made with altool is
+  not confirmed. After the first evaluation upload, open the build in App Store Connect's TestFlight tab: an
+  internal-only build is labeled as such and cannot be added to an external group or submitted for review.
+  If it can be, the flag did not survive, and keeping evaluation builds out of external groups is up to
+  whoever distributes them.
 
 ## The first run
 
@@ -134,7 +164,11 @@ app claims neither until an entitlements file adds them.
    8 above passed. Nothing is uploaded.
 6. If the check step fails, its error names the secret and the rule it breaks. If the keychain step fails
    with a mismatch, the private key is not the certificate's key.
-7. Run again with **Upload** on. Then wait for App Store Connect to process the build and add it to the
+7. This run is also the first test of the non-extractable import and the partition list. If the archive
+   or export step then fails to sign, look in its log for `errSecInternalComponent`, "User interaction is
+   not allowed", or a codesign step that stops until the job times out: each means codesign could not use
+   the key without a prompt. Report it before changing the import options.
+8. Run again with **Upload** on. Then wait for App Store Connect to process the build and add it to the
    Internal Testers group.
 
 ## Limits
@@ -143,7 +177,11 @@ app claims neither until an entitlements file adds them.
   manual signing with this profile, the export and the upload. The scripts are tested on Linux with stand-ins
   for `security`, `openssl`, `xcodebuild`, `xcrun` and `codesign`.
 - The key ID and issuer ID are command-line arguments of `altool`, which has no other way to take them. They
-  are masked in the log. The private keys are only ever in files of mode 0600 and in the environment of the
-  steps that write them.
+  are masked in the log, and neither authenticates without the private key. The private keys are only ever in
+  files of mode 0600 and in the environment of the steps that write them.
+- The project check limits what a tampered project could run in the signing job, but it does not prove the
+  project is what XcodeGen would generate from `project.yml`: a compromised XcodeGen could still change
+  build settings that the check does not list. The checks on the signed app (bundle identifier, versions,
+  profile, entitlements and signature) run after the build.
 - Run logs of a public repository are public. They show the signing identity's name and the team ID, which
   are not secret.

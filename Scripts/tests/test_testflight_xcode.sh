@@ -103,6 +103,11 @@ for argument in altool --upload-package "$work/export/Pantrified.ipa" 6829003513
   has_argument "$argument" || fail "the upload does not pass $argument"
 done
 reset
+APP_STORE_CONNECT_KEY_ID=$'AB12CD34EF\n' APP_STORE_CONNECT_ISSUER_ID=$' 69a6de70-03db-47e3-e053-5b8c7c11a4d1\n' run upload ||
+  fail "a key ID or issuer ID stored with surrounding whitespace should still upload: $(cat "$work/out")"
+has_argument AB12CD34EF || fail "the key ID is not passed without whitespace"
+has_argument 69a6de70-03db-47e3-e053-5b8c7c11a4d1 || fail "the issuer ID is not passed without whitespace"
+reset
 rm "$work/keys/AuthKey_AB12CD34EF.p8"
 if run upload; then fail "an upload without the key file should fail"; fi
 if [ -s "$work/stub/argv" ]; then fail "altool runs without the key file"; fi

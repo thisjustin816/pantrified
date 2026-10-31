@@ -30,6 +30,11 @@ case "$1" in
       if [ "$1" = create-keychain ]; then
         : >"${!#}"
       fi
+      if [ "$1" = import ]; then
+        for file in private-key.pem certificate.der certificate.pem; do
+          [ ! -e "$(dirname "$2")/$file" ] || echo "$file" >>"$STUB_DIR/present-at-import"
+        done
+      fi
     done
     ;;
   list-keychains)
@@ -99,14 +104,19 @@ if grep -qE "$keychain_password|$p12_password" "$work/stub/argv"; then
 fi
 grep -q "^create-keychain -p $keychain_password $work/test.keychain-db$" "$work/stub/stdin" ||
   fail "the keychain is not created on standard input"
-grep -q "^import $work/material/signing.p12 -k $work/test.keychain-db -f pkcs12 -P $p12_password -T /usr/bin/codesign" \
-  "$work/stub/stdin" || fail "the identity is not imported on standard input"
+# The whole line, so an added option such as -A (any application may use the key) fails the test.
+expected_import="import $work/material/signing.p12 -k $work/test.keychain-db -f pkcs12 -x -P $p12_password -T /usr/bin/codesign"
+[ "$(grep -c '^import ' "$work/stub/stdin")" -eq 1 ] || fail "the identity is not imported exactly once"
+grep -qxF "$expected_import" "$work/stub/stdin" ||
+  fail "the identity is not imported non-extractable for codesign alone: $(grep '^import ' "$work/stub/stdin")"
 grep -q "^set-key-partition-list -S apple-tool:,apple:,codesign: -s -k $keychain_password " "$work/stub/stdin" ||
   fail "codesign is not given access to the key"
 [ "$(cat "$work/stub/p12-password-seen")" = "$p12_password" ] || fail "openssl did not get the .p12 password from a file"
 [ "$(head -n 1 "$work/stub/list")" = "$work/test.keychain-db" ] || fail "the keychain is not first in the search list"
 grep -qx /Users/runner/Library/Keychains/login.keychain-db "$work/stub/list" || fail "the login keychain left the search list"
-for leftover in signing.p12 p12-password certificate.pem; do
+[ ! -e "$work/stub/present-at-import" ] ||
+  fail "key material is still on disk when the keychain is built: $(cat "$work/stub/present-at-import")"
+for leftover in signing.p12 p12-password certificate.pem private-key.pem certificate.der; do
   [ ! -e "$work/material/$leftover" ] || fail "$leftover is left behind after setup"
 done
 
@@ -125,6 +135,7 @@ if run setup; then fail "a key that does not match the certificate should fail";
 grep -q APPLE_DISTRIBUTION_PRIVATE_KEY "$work/out" || fail "the mismatch message does not name the secret"
 [ ! -e "$work/test.keychain-db" ] || fail "a keychain is created after the .p12 failed"
 [ ! -e "$work/material/p12-password" ] || fail "the .p12 password file is left after a failure"
+[ ! -e "$work/material/private-key.pem" ] || fail "the private key is left after a failure"
 
 for identities in "     0 valid identities found" "$identity
   2) FEDCBA9876543210FEDCBA9876543210FEDCBA98 \"Apple Distribution: Other (ABCDE12345)\"" \

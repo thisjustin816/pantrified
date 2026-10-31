@@ -30,7 +30,8 @@ concurrency:
 
 jobs:
   # Fails before the Environment asks for approval, so a run from another ref never waits for one.
-  # The Environment's deployment branch rule enforces the same thing for the secrets.
+  # A changed copy of this file on another branch can drop this job; the Environment's deployment
+  # branch rule is what keeps each Environment secret on main (docs/testflight-upload.md).
   main-only:
     name: Refuse refs other than main
     runs-on: ubuntu-24.04
@@ -46,9 +47,34 @@ jobs:
             exit 1
           fi
 
+  # XcodeGen comes from Homebrew unpinned, so it runs here, on a runner that never holds a secret, and
+  # nothing it leaves behind reaches the signing job. The project goes to the signing job as a job
+  # output, checked for script phases and replacement build tools on both sides.
+  generate-project:
+    name: Generate the Xcode project
+    needs: main-only
+    runs-on: ${{ vars.MACOS_RUNNER || 'xcode-27' }}
+    timeout-minutes: 15
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    outputs:
+      project: ${{ steps.pack.outputs.project }}
+      project_sha256: ${{ steps.pack.outputs.project_sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate the Xcode project
+        run: make generate
+      - name: Check and pack the project
+        id: pack
+        run: python3 -I Scripts/testflight-project.py pack Pantrified.xcodeproj
+
   signed-build:
     name: Signed build and upload
-    needs: main-only
+    needs: [main-only, generate-project]
     if: github.ref == 'refs/heads/main'
     environment: testflight
     runs-on: ${{ vars.MACOS_RUNNER || 'xcode-27' }}
@@ -62,7 +88,7 @@ jobs:
         with:
           persist-credentials: false
       # Every secret is passed to this step so a missing one fails the run before anything is built.
-      - name: Check the ref, the inputs and the secrets
+      - name: Check the ref, the inputs and each secret
         env:
           APPLE_DISTRIBUTION_CERTIFICATE_BASE64: ${{ secrets.APPLE_DISTRIBUTION_CERTIFICATE_BASE64 }}
           APPLE_DISTRIBUTION_PRIVATE_KEY: ${{ secrets.APPLE_DISTRIBUTION_PRIVATE_KEY }}
@@ -82,11 +108,12 @@ jobs:
           } >>"$GITHUB_ENV"
       - name: Show toolchain
         run: xcodebuild -version
-      # Third-party tools run before any signing material is on the runner.
-      - name: Install XcodeGen
-        run: brew install xcodegen
-      - name: Generate the Xcode project
-        run: make generate
+      # This job installs no third-party tool. The project comes from the job above.
+      - name: Unpack and check the generated project
+        env:
+          PROJECT_ARCHIVE: ${{ needs.generate-project.outputs.project }}
+          PROJECT_SHA256: ${{ needs.generate-project.outputs.project_sha256 }}
+        run: python3 -I Scripts/testflight-project.py unpack Pantrified.xcodeproj
       - name: Write the app target's signing settings
         run: python3 -I Scripts/testflight.py xcconfig Config/Signing.local.xcconfig
       - name: Install the signing identity and the profile
@@ -189,12 +216,14 @@ jobs:
       - name: Record the build
         if: always() && steps.info.outcome == 'success'
         env:
+          INTERNAL_ONLY: ${{ steps.info.outputs.internal_only }}
           MARKETING_VERSION: ${{ steps.info.outputs.marketing_version }}
           BUILD_NUMBER: ${{ steps.info.outputs.build_number }}
           UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
         run: python3 -I Scripts/testflight.py record "$RUNNER_TEMP/testflight-record/build.json"
-      # The record names the variant, version, build, commit and upload result; it holds no secret,
-      # no signing material and no app binary, because artifacts of a public repository are public.
+      # The record names the variant, internal-only flag, version, build, commit and upload result. It
+      # holds no secret, no signing material and no app binary, because artifacts of a public repository
+      # are public.
       - name: Upload the build record
         if: always() && steps.info.outcome == 'success'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

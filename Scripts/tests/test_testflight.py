@@ -532,13 +532,16 @@ class RecordTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             summary = pathlib.Path(directory) / "summary.md"
             path = pathlib.Path(directory) / "record" / "build.json"
-            env = environ(MARKETING_VERSION="0.1", BUILD_NUMBER="12.1", UPLOAD_OUTCOME="skipped",
+            env = environ(VARIANT="evaluation", INTERNAL_ONLY="true", MARKETING_VERSION="0.1", BUILD_NUMBER="12.1",
+                          UPLOAD_OUTCOME="skipped",
                           GITHUB_SHA="abc123", GITHUB_RUN_ID="99", GITHUB_STEP_SUMMARY=str(summary))
             status, _ = run_main(["record", str(path)], env)
             self.assertEqual(status, 0)
             record = json.loads(path.read_text())
             text = path.read_text() + summary.read_text()
-        self.assertEqual(record["variant"], "release")
+        self.assertEqual(record["variant"], "evaluation")
+        self.assertEqual(record["internal_only"], "true")
+        self.assertIn("| internal_only | true |", text)
         self.assertEqual(record["build_number"], "12.1")
         self.assertEqual(record["upload"], "skipped")
         for name in CONFIG["required_secrets"]:
@@ -570,6 +573,13 @@ def steps(text):
     return re.split(r"\n      - ", text)
 
 
+def jobs(text):
+    """Returns each job's text by its ID, from the top-level jobs key to the end of the file."""
+    body = text.split("\njobs:\n", 1)[1]
+    parts = re.split(r"(?m)^  ([A-Za-z0-9_-]+):\n", body)
+    return {parts[index]: parts[index + 1] for index in range(1, len(parts), 2)}
+
+
 class WorkflowTests(unittest.TestCase):
     def test_it_runs_only_when_dispatched(self):
         on_block = re.search(r"(?ms)^on:\n(.*?)^\S", WORKFLOW).group(1)
@@ -579,11 +589,16 @@ class WorkflowTests(unittest.TestCase):
             self.assertNotIn(forbidden, WORKFLOW)
 
     def test_the_secrets_it_reads_are_the_required_ones(self):
+        # Every mention of the secrets context, in an expression or not, must be one of the six
+        # NAME: ${{ secrets.NAME }} lines; toJSON(secrets), secrets['X'] and secrets: inherit all fail.
+        allowed = {f"{name}: ${{{{ secrets.{name} }}}}" for name in CONFIG["required_secrets"]}
+        for line in WORKFLOW.splitlines():
+            if re.search(r"secrets", line, re.I):
+                self.assertIn(line.strip(), allowed, f"secrets used other than as a required secret: {line.strip()}")
         referenced = set(re.findall(r"secrets\.([A-Za-z0-9_]+)", WORKFLOW))
         self.assertEqual(referenced, set(CONFIG["required_secrets"]))
-        for name in re.findall(r"(\w+): \$\{\{ secrets\.(\w+) \}\}", WORKFLOW):
-            self.assertEqual(name[0], name[1], "a secret is passed under another name")
         self.assertNotIn("GITHUB_TOKEN", WORKFLOW)
+        self.assertNotIn("github.token", WORKFLOW)
 
     def test_the_check_step_receives_every_secret(self):
         check = [step for step in steps(WORKFLOW) if "testflight.py check" in step]
@@ -592,9 +607,28 @@ class WorkflowTests(unittest.TestCase):
             self.assertIn(f"{name}: ${{{{ secrets.{name} }}}}", check[0])
 
     def test_the_check_runs_before_anything_is_built(self):
-        order = [WORKFLOW.index(text) for text in
-                 ("testflight.py check", "brew install", "testflight.py prepare", "testflight-xcode.sh archive")]
+        signing = jobs(WORKFLOW)["signed-build"]
+        order = [signing.index(text) for text in ("testflight.py check", "testflight-project.py unpack",
+                                                  "testflight.py prepare", "testflight-xcode.sh archive")]
         self.assertEqual(order, sorted(order))
+
+    def test_xcodegen_runs_in_a_job_without_secrets_or_the_environment(self):
+        all_jobs = jobs(WORKFLOW)
+        self.assertEqual(list(all_jobs), ["main-only", "generate-project", "signed-build"])
+        generate = all_jobs["generate-project"]
+        self.assertIn("brew install xcodegen", generate)
+        self.assertIn("testflight-project.py pack", generate)
+        for job in ("main-only", "generate-project"):
+            self.assertNotRegex(all_jobs[job], r"secrets|environment:", job)
+
+    def test_the_signing_job_installs_no_third_party_tool(self):
+        signing = jobs(WORKFLOW)["signed-build"]
+        for tool in ("brew ", "xcodegen", "pip ", "pip3 ", "npm ", "gem ", "curl ", "wget ", "make generate"):
+            self.assertNotIn(tool, signing)
+        actions = re.findall(r"uses:\s*([\w.-]+/[\w.-]+)@", signing)
+        self.assertEqual(actions, ["actions/checkout", "actions/upload-artifact"])
+        self.assertIn("needs.generate-project.outputs.project }}", signing)
+        self.assertIn("needs.generate-project.outputs.project_sha256 }}", signing)
 
     def test_the_only_variable_is_the_runner(self):
         self.assertEqual(set(re.findall(r"vars\.([A-Za-z0-9_]+)", WORKFLOW)), {"MACOS_RUNNER"})
@@ -616,10 +650,13 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("persist-credentials: false", WORKFLOW)
 
     def test_the_signing_job_is_guarded_and_uses_the_environment(self):
-        self.assertIn(f"environment: {CONFIG['environment']}\n", WORKFLOW)
-        self.assertIn("needs: main-only", WORKFLOW)
-        self.assertIn("if: github.ref == 'refs/heads/main'", WORKFLOW)
-        self.assertIn('if [ "$REF" != refs/heads/main ]', WORKFLOW)
+        all_jobs = jobs(WORKFLOW)
+        signing = all_jobs["signed-build"]
+        self.assertRegex(signing, rf"(?m)^    environment: {CONFIG['environment']}$")
+        self.assertRegex(signing, r"(?m)^    needs: \[main-only, generate-project\]$")
+        self.assertRegex(signing, r"(?m)^    if: github\.ref == 'refs/heads/main'$")
+        self.assertIn('if [ "$REF" != refs/heads/main ]', all_jobs["main-only"])
+        self.assertRegex(all_jobs["generate-project"], r"(?m)^    needs: main-only$")
 
     def test_cleanup_always_runs_and_comes_before_the_artifact_upload(self):
         cleanup = [step for step in steps(WORKFLOW) if "testflight.py cleanup" in step]

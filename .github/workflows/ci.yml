@@ -77,5 +77,6 @@ jobs:
           PYTHONDONTWRITEBYTECODE: '1'
         run: |
           python3 -I Scripts/tests/test_testflight.py
+          python3 -I Scripts/tests/test_testflight_project.py
           python3 -I Scripts/tests/test_verify_export_compliance.py
           python3 -I Scripts/verify-export-compliance.py project.yml

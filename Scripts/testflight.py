@@ -460,6 +460,7 @@ def write_outputs(values, environ):
 def record(path, environ):
     fields = {
         "variant": environ.get("VARIANT", ""),
+        "internal_only": environ.get("INTERNAL_ONLY", ""),
         "marketing_version": environ.get("MARKETING_VERSION", ""),
         "build_number": environ.get("BUILD_NUMBER", ""),
         "upload_requested": environ.get("UPLOAD", ""),

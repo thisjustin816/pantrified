@@ -5,7 +5,9 @@
 # setup joins MATERIAL_DIR/certificate.der and MATERIAL_DIR/private-key.pem (written by
 # testflight.py prepare) into a .p12 under a random one-time password, imports it into a new
 # keychain at KEYCHAIN under another random password, lets codesign use the key, and puts the
-# keychain first in the search list. It saves the previous search list in MATERIAL_DIR.
+# keychain first in the search list. The PEM key and the certificate are deleted as soon as the .p12
+# is made, and the key is imported as non-extractable (-x) with only codesign allowed to use it.
+# It saves the previous search list in MATERIAL_DIR.
 # teardown restores that list and deletes the keychain.
 #
 # Both passwords are masked in the job log, reach openssl through a file and reach security on
@@ -49,7 +51,7 @@ new_password() {
 setup() {
   local certificate="$material/certificate.der" key="$material/private-key.pem"
   local p12="$material/signing.p12" p12_password_file="$material/p12-password"
-  local keychain_password p12_password identities count
+  local keychain_password p12_password identities count joined
   local -a original=()
 
   for file in "$certificate" "$key"; do
@@ -70,11 +72,16 @@ setup() {
   echo "::add-mask::$p12_password"
   printf '%s\n' "$p12_password" >"$p12_password_file"
 
-  openssl x509 -inform DER -in "$certificate" -out "$material/certificate.pem"
+  joined=0
   # The 3DES and SHA-1 choices are the ones every macOS version of security can import.
-  if ! openssl pkcs12 -export -inkey "$key" -in "$material/certificate.pem" -out "$p12" \
-    -passout "file:$p12_password_file" -name "Pantrified distribution" \
-    -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1 >/dev/null 2>&1; then
+  if openssl x509 -inform DER -in "$certificate" -out "$material/certificate.pem" &&
+    openssl pkcs12 -export -inkey "$key" -in "$material/certificate.pem" -out "$p12" \
+      -passout "file:$p12_password_file" -name "Pantrified distribution" \
+      -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1 >/dev/null 2>&1; then
+    joined=1
+  fi
+  rm -f "$key" "$certificate" "$material/certificate.pem"
+  if [ "$joined" -ne 1 ]; then
     rm -f "$p12" "$p12_password_file"
     echo "error: openssl could not join the certificate and private key; check that" \
       "APPLE_DISTRIBUTION_PRIVATE_KEY is the key of APPLE_DISTRIBUTION_CERTIFICATE_BASE64" >&2
@@ -91,10 +98,10 @@ setup() {
     "create-keychain -p $keychain_password $keychain" \
     "set-keychain-settings -t 3600 $keychain" \
     "unlock-keychain -p $keychain_password $keychain" \
-    "import $p12 -k $keychain -f pkcs12 -P $p12_password -T /usr/bin/codesign -T /usr/bin/security" \
+    "import $p12 -k $keychain -f pkcs12 -x -P $p12_password -T /usr/bin/codesign" \
     "set-key-partition-list -S apple-tool:,apple:,codesign: -s -k $keychain_password $keychain" |
     security -i >/dev/null
-  rm -f "$p12" "$p12_password_file" "$material/certificate.pem"
+  rm -f "$p12" "$p12_password_file"
 
   if [ ! -f "$keychain" ]; then
     echo "error: security did not create $keychain" >&2
