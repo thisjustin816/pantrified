@@ -6,13 +6,17 @@ import PantrifiedDomain
 enum QuantityText {
     static func label(_ quantity: Quantity) -> String? {
         switch quantity {
-        case .unknown: nil
-        case .full: "Full"
-        case .aboutHalf: "About half"
-        case .low: "Almost gone"
+        case .unknown:
+            return nil
+        case .full:
+            return "Full"
+        case .aboutHalf:
+            return "About half"
+        case .low:
+            return "Almost gone"
         case .exact(let amount, let unit):
             let number = amount.formatted(.number.precision(.fractionLength(0...2)))
-            unit.isEmpty ? number : "\(number) \(unit)"
+            return unit.isEmpty ? number : "\(number) \(unit)"
         }
     }
 }
