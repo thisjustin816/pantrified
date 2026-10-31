@@ -8,7 +8,8 @@ import PantrifiedDomain
 /// Reads one staged photo with Vision, on the device, in one pass: its text (with the same request
 /// as `TextRecognizer`), its product barcodes and QR codes, and an image feature print for telling
 /// photos of the same package apart. Nothing is written, logged or sent, and a link in a QR code is
-/// only classified, never opened. The work runs off the main thread.
+/// only classified, never opened. The work runs off the main thread, at the caller's priority, and
+/// stops between steps when the caller is cancelled.
 struct VisionPhotoRecognizer: PhotoRecognizer {
     struct Unreadable: Error {}
 
@@ -18,7 +19,8 @@ struct VisionPhotoRecognizer: PhotoRecognizer {
 
     func read(_ file: URL) async throws -> PhotoReading {
         try Task.checkCancellation()
-        return try await Task.detached(priority: .utility) { try Self.readNow(file) }.value
+        let work = Task.detached(priority: Task.currentPriority) { try Self.readNow(file) }
+        return try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
     }
 
     static func readNow(_ file: URL) throws -> PhotoReading {
@@ -31,6 +33,7 @@ struct VisionPhotoRecognizer: PhotoRecognizer {
             kCGImageSourceShouldCacheImmediately: true,
         ]
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { throw Unreadable() }
+        try Task.checkCancellation()
 
         let text = TextRecognizer.makeRequest()
         let codes = VNDetectBarcodesRequest()
@@ -41,6 +44,7 @@ struct VisionPhotoRecognizer: PhotoRecognizer {
         print.imageCropAndScaleOption = .scaleFill
         let handler = VNImageRequestHandler(cgImage: image, orientation: .up, options: [:])
         try handler.perform([text, codes])
+        try Task.checkCancellation()
         // Grouping works without a feature print, so a failure here loses only that signal.
         let featurePrint = (try? handler.perform([print])) == nil ? nil : print.results?.first.flatMap(values)
 

@@ -29,6 +29,37 @@ enum IntakeText {
         "Reading photo \(min(progress.read + 1, max(progress.total, 1))) of \(max(progress.total, 1))"
     }
 
+    /// The last few photos at Done.
+    static func readingLeft(_ count: Int) -> String {
+        switch count {
+        case 0: "Grouping your photos"
+        case 1: "Reading 1 more photo"
+        default: "Reading \(count) more photos"
+        }
+    }
+
+    /// The live count while photos are taken. Says it is not final.
+    static func soFar(_ count: Int) -> String {
+        count == 1 ? "1 package so far" : "\(count) packages so far"
+    }
+
+    static func pause(_ pause: ReadingPause) -> String {
+        switch pause {
+        case .warm: "Reading waits while this iPhone is warm."
+        case .lowPower: "Reading waits in Low Power Mode, or until you tap Done."
+        case .inBackground: "Reading waits until Pantrified is open."
+        }
+    }
+
+    static func state(_ state: PhotoReadState) -> String {
+        switch state {
+        case .waiting: "waiting to be read"
+        case .reading: "being read"
+        case .read: "read"
+        case .couldNotRead: "couldn't be read"
+        }
+    }
+
     static func photoCount(_ count: Int) -> String {
         count == 1 ? "1 photo" : "\(count) photos"
     }

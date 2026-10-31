@@ -91,7 +91,7 @@ public struct IntakeReview: Sendable, Hashable, Codable {
     private var history: [[IntakeCandidate]] = []
 
     static let historyLimit = 40
-    public static let maximumLookupAttempts = 3
+    public static let maximumLookupAttempts = LookupAnswer.maximumAttempts
 
     private enum CodingKeys: String, CodingKey {
         case space, candidates, observations, lookups, looksUp, pendingAdd, pendingUndo
@@ -250,11 +250,7 @@ public struct IntakeReview: Sendable, Hashable, Codable {
         var seen: Set<GTIN> = []
         return reviewing.compactMap { candidate -> GTIN? in
             guard let barcode = candidate.barcode, !candidate.nameDecided, seen.insert(barcode).inserted else { return nil }
-            switch lookups[barcode] {
-            case nil, .deferred?: return barcode
-            case .failed(let attempts)?: return attempts < Self.maximumLookupAttempts ? barcode : nil
-            case .found?, .notFound?: return nil
-            }
+            return LookupAnswer.needsAsking(lookups[barcode]) ? barcode : nil
         }
     }
 
@@ -262,13 +258,12 @@ public struct IntakeReview: Sendable, Hashable, Codable {
 
     /// Keeps a lookup's answer. A failure or a deferral never replaces an answer already found.
     public mutating func record(_ answer: LookupAnswer, for barcode: GTIN) {
-        switch (lookups[barcode], answer) {
-        case (.found?, .failed), (.notFound?, .failed), (.found?, .deferred), (.notFound?, .deferred): return
-        case (.failed?, .deferred): return
-        case (.failed(let before)?, .failed(let now)): lookups[barcode] = .failed(attempts: max(before, now) + 1)
-        case (_, .failed): lookups[barcode] = .failed(attempts: 1)
-        default: lookups[barcode] = answer
-        }
+        lookups[barcode] = LookupAnswer.combining(lookups[barcode], with: answer)
+    }
+
+    /// Takes the answers already kept for the batch, which were combined as they arrived.
+    public mutating func useLookups(_ answers: [GTIN: LookupAnswer]) {
+        lookups.merge(answers) { _, kept in kept }
     }
 
     // MARK: The person's changes, each undoable

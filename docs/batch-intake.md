@@ -1,8 +1,10 @@
 # Batch intake
 
 The core capture flow. Take a photo of each thing you brought home, or pick photos you already took,
-tap Done, check the list Pantrified made, and tap Add all. Nothing is recognized live: photos are read
-after Done, on the device, and grouped into one candidate per package. Barcodes and QR codes are
+tap Done, check the list Pantrified made, and tap Add all. Each photo is read on the device as soon as
+it is kept, while the camera stays open, and grouped with the photos read so far; barcodes are looked
+up as soon as they are read. At Done only the last one to three photos are usually left, so the list
+shows at once. The camera preview itself is never analyzed. Barcodes and QR codes are
 shortcuts for information that needs no image reading; the dedicated barcode scanner (`capture.md`)
 stays as it is beside this.
 
@@ -16,9 +18,14 @@ recognizer, screens) and `App/Recognition/TextRecognizer.swift` (the shared text
 ```text
 Today or Food → Add a batch
   → camera: tap the shutter for each photo (front, barcode, date), as fast as you like;
-    a strip shows what was taken; the photo button adds photos from the library
+    a strip shows what was taken and whether each is read; "9 packages so far" counts
+    what is read; the photo button adds photos from the library
+      (behind it: each kept photo is read, one at a time at low priority; the photos read
+       so far are grouped again; each new barcode is looked up, at most 2 at once)
   → Done
-  → "Reading photo 3 of 12" (on the device; closing keeps everything)
+  → 1 to 3 photos left: the list so far at once, with "Reading 2 more photos",
+      not changeable until they are read (a second or two, unmeasured)
+    more left: "Reading photo 9 of 30" (closing keeps everything; reading goes on)
   → review: one card per package, each proposed field saying where it came from
   → Add all (or select some and Add)
   → "Added 9 foods", with Undo while the batch is open
@@ -35,8 +42,8 @@ name opens the editor.
 
 ## What is read from a photo
 
-`VisionPhotoRecognizer` reads each staged photo once, two at a time, off the main thread, scaled to at
-most 3,000 pixels on its longest side:
+`VisionPhotoRecognizer` reads each staged photo once, off the main thread, scaled to at most 3,000
+pixels on its longest side (when and how many at once is under "Timing and ordering"):
 
 - **Text**, with `TextRecognizer.makeRequest()`: accurate level, language correction off, English.
   Each line keeps its box and Vision's confidence.
@@ -55,6 +62,57 @@ failures.
 
 Dates are read by `PrintedDateRecognition` (`date-recognition.md`) over each photo's lines in reading
 order, so a label above its date is read with it. An ambiguous date stays a pending choice.
+
+## Timing and ordering
+
+`IntakePipeline` is one actor for the whole app, so the batch screen and the launch's resume never
+read a batch twice at once. Its rules (`ReadingPolicy` and `LookupPolicy`, pure and tested):
+
+| When | Reads at once | Why |
+|---|---|---|
+| Camera open | 1, at utility priority | The shutter and preview keep the processor. The person takes photos faster than they are read only in bursts, and the reading catches up between packages |
+| Camera open, thermal state serious or critical, or Low Power Mode | 0 (waits) | Reading is optional work while the camera runs; it carries on when the state clears or at Done |
+| After Done | 2, at user-initiated priority | The person is waiting. Each read holds one decoded photo, so 2 bounds memory |
+| After Done, serious or critical | 1 | Finish without making the heat worse |
+| After Done, Low Power Mode | 2 | The work is the same either way; finishing sooner lets the phone rest sooner |
+| App in the background | 0 (waits) | iOS may stop the work, and a read stopped by the system would count against the photo |
+
+A cancelled read keeps its slot until it ends, so the most decoded photos in memory for reading is the
+number of slots. Every attempt is counted in the store before it starts; a read cancelled by closing the
+batch is taken back.
+
+**Grouping as photos arrive.** After each read, `LiveGrouping` runs `PhotoGrouper` again over every
+observation read so far, unchanged. Grouping is a pure function of the set of observations, so the
+review, made once when the last photo is read, is the one-shot grouping of the whole batch whatever
+order the readings arrived in. Results before that are shown only as the tentative count. Two photos
+with different barcodes, or whose labels differ in a distinguishing word or amount, are never in one
+group at any step, because those refusals do not depend on the rest of the batch. Tests check both
+over 300 seeded arrival orders of a batch with front, barcode and date photos, a duplicate, a photo of
+two products, near-identical products and a doubtful pair, and through the pipeline over 12 orders. A
+candidate whose newest photo is three shots or 15 seconds old (`SettlingPolicy`) gets a filled check on
+its thumbnails, as a hint only.
+
+**Cost.** Grouping 120 photos scores 7,140 pairs; grouping again after each of 120 arrivals scores
+287,980 pairs in all. A test holds both counts, so a change that makes grouping costlier fails. On the
+Linux CI machine the 120 arrivals took about 1.1 seconds in a release build and 2.3 to 3.3 seconds in a
+debug build, about 23 ms for the last grouping. A phone has not been measured.
+
+**Done.** With at most 3 photos left (`ReadingPolicy.fewLeft`) the list of what is read so far shows at
+once with "Reading 2 more photos". It cannot be changed until the review exists: the store refuses every
+review change before the review is made, and the screen disables the list, Undo, Select and Add all. The
+review is made once, after the last read, and a batch that already has a review keeps it, so an edit
+can never be lost to a regroup and the final grouping is always the one-shot grouping. Holding the list
+for the last one to three reads was chosen over reconciling edits with a regroup, which would need
+stable candidate identities across groupings and could still move an edited photo. With more photos
+left, the reading screen shows "Reading photo 9 of 30"; closing it keeps the batch and the reading goes
+on while the app runs, or resumes at the next launch.
+
+**Measuring reading on a phone.** Per-photo Vision time has never been measured. A Debug build (run
+from Xcode on the phone) shows a line under the camera controls, "Read 12 photos: last 0.84 s, mean
+0.91 s, slowest 1.30 s", from `ReadTiming.swift`; Release builds compile none of it. Take 20 to 30
+photos of real groceries at a normal pace and note whether the strip keeps up, then tap Done and note
+how many photos are left. If reading falls behind while shooting, raising `ReadingPolicy.whileCapturing`
+is the first thing to try, watching the shutter's responsiveness and the thermal state.
 
 ## Grouping
 
@@ -180,20 +238,23 @@ until it is deleted with the batch. Nothing in it is read except the image and t
 ## What leaves the device
 
 Only a barcode, in the FoodData Central lookup, exactly as for the scanner (`capture.md`), in a build
-with a key. Every lookup goes through the injected `ProductLookupService`, so a rate-limit decorator
-around it applies here too. Lookups run after reading, one at a time, at most 40 a pass, and each
-distinct barcode is asked once. A miss is final. When the device is offline or the service answers
-"rate limited", the rest of the pass is deferred, not failed: cards say "Barcode lookups are paused
-for now", the barcodes stay on their candidates, and the next pass (opening the batch, or the next
-launch) asks again. Other failures are tried again up to three times. None of this blocks review or
-adding. Photos, recognized text and feature prints never leave the device, and nothing about a batch
+with a key. Every lookup goes through the injected `ProductLookupService`, so the paced decorator
+around it (`PacedProductLookup`) applies here too. A barcode is looked up as soon as a photo showing it
+is read, while photos are still being taken, at most 2 at once (below the decorator's own 3) and at most
+40 a pass; a pass starts when the batch opens and again at Done. Each distinct barcode is asked once a
+pass, and a miss is final. Answers are kept by barcode on the batch, apart from grouping, so they attach
+to whichever candidate shows that barcode. When the device is offline or the service answers "rate
+limited", including the decorator's own pause, the rest of the pass is deferred, not failed: cards say
+"Barcode lookups are paused for now", and the next pass asks again. Other failures are tried again on
+later passes up to three times. Discarding or closing the camera cancels lookups in flight. None of
+this blocks taking photos, review or adding. Photos, recognized text and feature prints never leave the device, and nothing about a batch
 syncs.
 
 ## Verified where
 
 | Level | What runs |
 |---|---|
-| Linux `swift test` | Bounds and hostile text; code classification and Digital Links; label words, names, amounts and stated storage; grouping: same product twice, similar products with different barcodes, front without barcode then barcode, a photo of several products, no text, duplicates, date photos, near-identical products (baking soda and powder, whole and skim milk, 2% and 1%, sizes, flavours), chaining, a common brand, order independence, a 140-photo batch; the review's proposals, provenance, merge, split, delete, bulk location, counts, undo and coding; the staging lifecycle and its deletion rules; reading, idempotent reprocessing, bounded concurrency, unreadable photos and lookups; Add all, Undo and partial adds; and kill and resume while capturing, reading, reviewing, adding and undoing |
+| Linux `swift test` | Bounds and hostile text; code classification and Digital Links; label words, names, amounts and stated storage; grouping: same product twice, similar products with different barcodes, front without barcode then barcode, a photo of several products, no text, duplicates, date photos, near-identical products (baking soda and powder, whole and skim milk, 2% and 1%, sizes, flavours), chaining, a common brand, order independence, a 140-photo batch; the review's proposals, provenance, merge, split, delete, bulk location, counts, undo and coding; the staging lifecycle and its deletion rules; reading while photos are taken, one at a time, and two at a time after Done; pausing for heat and Low Power Mode; never reading a photo twice; unreadable and crashing photos; incremental grouping equal to one-shot grouping over many arrival orders, and its cost for 120 photos; the list held until the last reads end, with edits kept; lookups started early, once per barcode, at most 2 at once, within the pass budget, deferred and retried; cancelling reads and lookups on discard and on closing the camera; Add all, Undo and partial adds; and kill and resume while capturing, during a read while capturing, during a lookup, reading, reviewing, adding and undoing |
 | macOS `make test-package` | The same against Apple's Foundation |
 | Hosted app tests | The usage description; the review sample on the real local store, with Add all and Undo; staged files' protection class and backup exclusion; Vision reading drawn text from a still. Vision's barcode and QR detection found nothing in the CI simulator, which logged a model load failure, so those tests only check that nothing wrong is read and mark the rest as a known simulator issue |
 | Screenshots | The review screen on synthetic readings with placeholder photos, light and dark, default and largest text |
@@ -202,7 +263,10 @@ syncs.
 **Not verified:** Vision's barcode and QR detection at all (it found nothing in the simulator), recognition on real packaging, lighting and curved labels; whether the thresholds group
 real photos well; feature print distances on real photos (the 0.25 and 0.5 values assume revision 2's
 unit vectors and are a guess); the camera itself, rapid shots, focus and memory on a device; the Photos
-picker with real libraries; and how long reading takes on a phone.
+picker with real libraries; how long reading takes on a phone, whether one read at a time keeps up
+with real shooting, whether reading while the camera runs slows the shutter or preview, how warm the
+phone gets, and memory with two reads at once. All of the timing and thermal numbers above are
+reasoned, not measured on a device.
 
 ## Owner decisions
 

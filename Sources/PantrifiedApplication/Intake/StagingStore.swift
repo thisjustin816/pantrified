@@ -88,9 +88,22 @@ public struct IntakeBatch: Sendable, Hashable, Codable, Identifiable {
     /// The last time the person used the batch: opened it, took or removed a photo, changed the
     /// review or added from it. An unfinished batch expires a set time after this.
     public internal(set) var lastActivityAt: Date
+    /// Barcode lookup answers, by barcode. Kept apart from grouping, so an answer that arrives while
+    /// photos are still being taken attaches to whichever candidate shows that barcode.
+    public internal(set) var lookups: [GTIN: LookupAnswer] = [:]
     var nextSequence = 0
 
     public var livePhotos: [StagedPhoto] { photos.filter { !$0.fileRemoved } }
+
+    /// Barcodes still to ask, in the order their photos were taken. Before review, every product
+    /// barcode read so far; in review, those of candidates whose name the person has not set.
+    public var barcodesToLookUp: [GTIN] {
+        if let review { return review.barcodesToLookUp }
+        var seen: Set<GTIN> = []
+        return photos.sorted { $0.sequence < $1.sequence }
+            .flatMap { $0.observation?.products ?? [] }
+            .filter { seen.insert($0).inserted && LookupAnswer.needsAsking(lookups[$0]) }
+    }
 
     init(id: IntakeBatchID, space: SpaceID, startedAt: Date) {
         self.id = id
@@ -102,10 +115,11 @@ public struct IntakeBatch: Sendable, Hashable, Codable, Identifiable {
 
 extension IntakeBatch {
     private enum CodingKeys: String, CodingKey {
-        case id, space, startedAt, photos, phase, processedAt, finishedAt, review, lastActivityAt, nextSequence
+        case id, space, startedAt, photos, phase, processedAt, finishedAt, review, lastActivityAt, lookups, nextSequence
     }
 
-    /// A record from before activity was kept counts as last used when its newest photo was taken.
+    /// Fields added after the first records: activity counts from the newest photo, and lookup
+    /// answers come from the review.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(IntakeBatchID.self, forKey: .id)
@@ -118,6 +132,7 @@ extension IntakeBatch {
         review = try container.decodeIfPresent(IntakeReview.self, forKey: .review)
         lastActivityAt = try container.decodeIfPresent(Date.self, forKey: .lastActivityAt)
             ?? photos.map(\.capturedAt).max() ?? startedAt
+        lookups = try container.decodeIfPresent([GTIN: LookupAnswer].self, forKey: .lookups) ?? review?.lookups ?? [:]
         nextSequence = try container.decode(Int.self, forKey: .nextSequence)
     }
 }
@@ -437,12 +452,40 @@ public actor StagingStore {
         try writable()
         guard let index = index(id) else { throw .unknownBatch }
         if let existing = batches[index].review { return existing }
+        var review = review
+        review.useLookups(batches[index].lookups)
         batches[index].review = review
         batches[index].phase = review.isFinished ? .finished : .reviewing
         batches[index].processedAt = time.now()
         if review.isFinished { batches[index].finishedAt = time.now() }
         try save()
         return review
+    }
+
+    // MARK: Lookups
+
+    /// Keeps lookup answers by barcode, and in the review when there is one. A failure or deferral
+    /// never replaces an answer already found. Returns the answers that changed something.
+    @discardableResult
+    public func recordLookups(_ answers: [(GTIN, LookupAnswer)], in id: IntakeBatchID) throws(StagingError) -> Int {
+        try writable()
+        guard let index = index(id) else { throw .unknownBatch }
+        let before = batches[index]
+        var changed = 0
+        for (barcode, answer) in answers {
+            let combined = LookupAnswer.combining(batches[index].lookups[barcode], with: answer)
+            if combined != batches[index].lookups[barcode] { changed += 1 }
+            batches[index].lookups[barcode] = combined
+            batches[index].review?.record(answer, for: barcode)
+        }
+        guard changed > 0 else { return 0 }
+        do {
+            try save()
+        } catch {
+            batches[index] = before
+            throw error
+        }
+        return changed
     }
 
     // MARK: Review

@@ -8,7 +8,7 @@ private let day: TimeInterval = 24 * 60 * 60
 
 /// A Space with Fridge, Freezer and Pantry, its pantry, and a staging folder that outlives any one
 /// store, the way the app's folder outlives a process.
-private struct IntakeWorld {
+struct IntakeWorld {
     let space = SpaceID()
     let files = MemoryStagingFiles()
     let time = FixedTime(syncEpoch)
@@ -30,8 +30,17 @@ private struct IntakeWorld {
     /// A store as a fresh launch opens it.
     func launch() -> StagingStore { StagingStore(files: files, time: time) }
 
-    func pipeline(_ store: StagingStore, recognizer: FakeRecognizer? = nil, lookup: (any ProductLookupService)? = nil) -> IntakePipeline {
-        IntakePipeline(store: store, recognizer: recognizer ?? FakeRecognizer(files: files, readings: IntakeFixture.readings), lookup: lookup)
+    func pipeline(
+        _ store: StagingStore,
+        recognizer: (any PhotoRecognizer)? = nil,
+        lookup: (any ProductLookupService)? = nil,
+        policy: ReadingPolicy = .standard,
+        lookupPolicy: LookupPolicy = .standard
+    ) -> IntakePipeline {
+        IntakePipeline(
+            store: store, recognizer: recognizer ?? FakeRecognizer(files: files, readings: IntakeFixture.readings),
+            lookup: lookup, time: time, policy: policy, lookupPolicy: lookupPolicy
+        )
     }
 
     /// Stages photos whose bytes name their fixture reading.
@@ -49,7 +58,7 @@ private struct IntakeWorld {
     }
 }
 
-private struct FixedLocationStore: StorageLocationStore {
+struct FixedLocationStore: StorageLocationStore {
     let locations: [SpaceID: [StorageLocation]]
     func locations(in space: SpaceID) async throws -> [StorageLocation] { locations[space] ?? [] }
     func saveAll(_ locations: [StorageLocation], in space: SpaceID) async throws {}
@@ -430,11 +439,13 @@ struct BatchIntakeTests {
         let world = IntakeWorld()
         let batch = try await world.stage(["rice", "crash", "beans"], in: world.launch())
         try await world.launch().startProcessing(batch)
+        var serial = ReadingPolicy()
+        serial.afterDone = 1
 
         for launch in 1...2 {
             let store = world.launch()
             let recognizer = CrashingRecognizer(files: world.files)
-            let pipeline = IntakePipeline(store: store, recognizer: recognizer, lookup: nil, concurrency: 1)
+            let pipeline = world.pipeline(store, recognizer: recognizer, policy: serial)
             let run = Task { try await pipeline.process(batch, locations: world.locations, defaultLocation: nil) }
             #expect(await waitUntil { await recognizer.crashes == 1 })
             _ = run  // Never finishes: the process died here.
@@ -443,7 +454,7 @@ struct BatchIntakeTests {
 
         let store = world.launch()
         let recognizer = CrashingRecognizer(files: world.files)
-        let review = try await IntakePipeline(store: store, recognizer: recognizer, lookup: nil, concurrency: 1)
+        let review = try await world.pipeline(store, recognizer: recognizer, policy: serial)
             .process(batch, locations: world.locations, defaultLocation: nil)
         #expect(await recognizer.reads == ["beans"])
         #expect(review.summaries.count == 3)
@@ -461,77 +472,6 @@ struct BatchIntakeTests {
             _ = try await world.pipeline(store, recognizer: interrupted).process(batch, locations: world.locations, defaultLocation: nil)
         }
         #expect(await store.batch(batch)?.photos[0].readAttempts == 0)
-    }
-
-    // MARK: Lookups
-
-    @Test("lookups fill names, a miss is final, and offline defers the pass to later")
-    func lookups() async throws {
-        let world = IntakeWorld()
-        let store = world.launch()
-        let batch = try await world.stage(["yogurt-back", "beans"], in: store)
-        let lookup = FakeLookup([
-            IntakeFixture.yogurt: .failed(.offline),
-            IntakeFixture.beans: .found(ProductSuggestion(name: "BLACK BEANS", source: "USDA FoodData Central")),
-        ])
-        _ = try await world.process(batch, store, lookup: lookup)
-        let pipeline = world.pipeline(store, lookup: lookup)
-
-        // Offline defers the whole pass; nothing blocks adding meanwhile.
-        #expect(await pipeline.lookUpNames(batch) == 0)
-        var review = try #require(await store.batch(batch)?.review)
-        #expect(review.summaries.allSatisfy { $0.notes.contains(.lookupPaused) })
-        #expect(review.readyToAdd.count == 2)
-        #expect(await lookup.calls == [IntakeFixture.yogurt])
-
-        await lookup.set(.notFound, for: IntakeFixture.yogurt)
-        await pipeline.lookUpNames(batch)
-        review = try #require(await store.batch(batch)?.review)
-        #expect(review.summaries[0].notes.contains(.lookupFoundNothing))
-        #expect(review.summaries[0].nameOrigin == .label)
-        #expect(review.summaries[1].name == "Black beans")
-        #expect(review.summaries[1].nameOrigin == .lookup(source: "USDA FoodData Central"))
-        #expect(review.barcodesToLookUp.isEmpty)
-    }
-
-    @Test("a rate limit defers lookups without failing them, and each barcode is asked once when they resume")
-    func rateLimited() async throws {
-        let world = IntakeWorld()
-        let store = world.launch()
-        let batch = try await world.stage(["yogurt-back", "beans", "rice"], in: store)
-        let lookup = FakeLookup([IntakeFixture.yogurt: .failed(.rateLimited(resumesAt: nil)), IntakeFixture.beans: .failed(.rateLimited(resumesAt: nil))])
-        let review = try await world.process(batch, store, lookup: lookup)
-        let pipeline = world.pipeline(store, lookup: lookup)
-        for _ in 0..<5 { await pipeline.lookUpNames(batch) }
-        var current = try #require(await store.batch(batch)?.review)
-        #expect(current.summaries[0].notes.contains(.lookupPaused))
-        #expect(current.summaries[1].notes.contains(.lookupPaused))
-        #expect(current.barcodesToLookUp == [IntakeFixture.yogurt, IntakeFixture.beans])
-        #expect(current.readyToAdd.count == review.readyToAdd.count)
-
-        await lookup.set(.found(ProductSuggestion(name: "Greek yogurt", source: "USDA")), for: IntakeFixture.yogurt)
-        await lookup.set(.notFound, for: IntakeFixture.beans)
-        let callsBefore = await lookup.calls.count
-        await pipeline.lookUpNames(batch)
-        await pipeline.lookUpNames(batch)
-        #expect(await lookup.calls.count == callsBefore + 2)
-        current = try #require(await store.batch(batch)?.review)
-        #expect(current.summaries[0].name == "Greek yogurt")
-        #expect(current.barcodesToLookUp.isEmpty)
-    }
-
-    @Test("a lookup that answers after the person named the food changes nothing")
-    func lateLookup() async throws {
-        let world = IntakeWorld()
-        let store = world.launch()
-        let batch = try await world.stage(["beans"], in: store)
-        let review = try await world.process(batch, store, lookup: FakeLookup([:]))
-        try await store.updateReview(batch) { try $0.setName("Frijoles", for: review.summaries[0].id) }
-        #expect(review.barcodesToLookUp == [IntakeFixture.beans])
-        let lookup = FakeLookup([IntakeFixture.beans: .found(ProductSuggestion(name: "Beans", source: "USDA"))])
-        await world.pipeline(store, lookup: lookup).lookUpNames(batch)
-        #expect(await lookup.calls.isEmpty)
-        #expect(await store.batch(batch)?.review?.summaries[0].name == "Frijoles")
     }
 
     // MARK: Adding

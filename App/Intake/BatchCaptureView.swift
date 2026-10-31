@@ -6,7 +6,8 @@ import PantrifiedApplication
 import PantrifiedDomain
 
 /// The camera behind the batch screen. It runs only while the screen is visible and the app is
-/// active, and it reads nothing while it runs: photos are read after Done.
+/// active. It reads nothing itself: each kept photo is read by the intake pipeline, one at a time
+/// at low priority, so the shutter and preview keep the processor.
 @MainActor
 @Observable
 final class BatchCameraModel {
@@ -107,8 +108,8 @@ final class BatchCameraModel {
 }
 
 /// Taking photos for a batch: a shutter that can be tapped as fast as the person likes, a strip of
-/// what has been taken, Done to read them, and the Photos picker for photos already taken. Nothing
-/// is recognized live.
+/// what has been taken with whether each is read yet, a tentative count of packages, Done to see the
+/// list, and the Photos picker for photos already taken. Reading never holds up the shutter.
 struct BatchCaptureView: View {
     let intake: IntakeModel
     let addByHand: () -> Void
@@ -177,7 +178,7 @@ struct BatchCaptureView: View {
         ToolbarItem(placement: .confirmationAction) {
             Button("Done") { Task { await intake.finishCapture() } }
                 .disabled(intake.photos.isEmpty || camera.pending > 0 || importing)
-                .accessibilityHint("Reads the photos and shows what was found")
+                .accessibilityHint("Reads any photos left and shows what was found")
         }
     }
 
@@ -249,11 +250,21 @@ struct BatchCaptureView: View {
                 Spacer()
                 shutter
                 Spacer()
-                Text(IntakeText.photoCount(intake.photos.count))
-                    .font(.subheadline.monospacedDigit())
-                    .frame(minWidth: 44)
-                    .accessibilityLabel(IntakeText.photoCount(intake.photos.count) + " taken")
+                counts
             }
+            if let pause = intake.live?.pause, !intake.photos.isEmpty {
+                Text(IntakeText.pause(pause))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            #if DEBUG
+            if let timing = intake.readTiming {
+                Text(timing)
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            #endif
             if let notice = intake.notice, intake.photos.isEmpty {
                 Text(notice)
                     .font(.footnote)
@@ -266,6 +277,28 @@ struct BatchCaptureView: View {
         }
         .padding()
         .background(.regularMaterial)
+    }
+
+    /// Photos taken, and the packages they make so far, which can change as more are read.
+    private var counts: some View {
+        VStack(alignment: .trailing, spacing: 2) {
+            Text(IntakeText.photoCount(intake.photos.count))
+                .font(.subheadline.monospacedDigit())
+            if let live = intake.live, live.progress.read > 0 {
+                Text(IntakeText.soFar(live.packagesSoFar))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(minWidth: 44)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(countsLabel)
+    }
+
+    private var countsLabel: String {
+        var label = IntakeText.photoCount(intake.photos.count) + " taken"
+        if let live = intake.live, live.progress.read > 0 { label += ", " + IntakeText.soFar(live.packagesSoFar) }
+        return label
     }
 
     private var shutter: some View {
@@ -288,7 +321,11 @@ struct BatchCaptureView: View {
             ScrollView(.horizontal) {
                 LazyHStack(spacing: 8) {
                     ForEach(Array(intake.photos.enumerated()), id: \.element.id) { index, photo in
+                        let state = intake.live?.states[photo.id] ?? .waiting
                         Thumbnail(image: intake.thumbnails[photo.id], size: thumbnailSize)
+                            .overlay(alignment: .bottomTrailing) {
+                                ReadBadge(state: state, settled: intake.live?.settled.contains(photo.id) == true)
+                            }
                             .id(photo.id)
                             .contextMenu {
                                 Button("Remove Photo", systemImage: "trash", role: .destructive) {
@@ -296,7 +333,7 @@ struct BatchCaptureView: View {
                                 }
                             }
                             .accessibilityElement()
-                            .accessibilityLabel("Photo \(index + 1)")
+                            .accessibilityLabel("Photo \(index + 1), \(IntakeText.state(state))")
                             .accessibilityAction(named: "Remove photo") { Task { await intake.remove(photo.id) } }
                     }
                 }
@@ -318,6 +355,38 @@ struct BatchCaptureView: View {
             guard let data = try? await item.loadTransferable(type: Data.self) else { continue }
             await intake.keep(data, source: .imported, takenAt: PhotoFormat.takenAt(data))
         }
+    }
+}
+
+/// A photo's reading state, small in the corner of its thumbnail: nothing while it waits, an
+/// ellipsis while it is read, a check once read (filled once its package looks complete), and a
+/// warning when it could not be read. Static symbols, so Reduce Motion needs nothing more.
+private struct ReadBadge: View {
+    let state: PhotoReadState
+    let settled: Bool
+
+    var body: some View {
+        if let symbol {
+            Image(systemName: symbol)
+                .font(.caption.weight(.semibold))
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(.white, tint)
+                .padding(2)
+                .accessibilityHidden(true)
+        }
+    }
+
+    private var symbol: String? {
+        switch state {
+        case .waiting: nil
+        case .reading: "ellipsis.circle.fill"
+        case .read: settled ? "checkmark.circle.fill" : "checkmark.circle"
+        case .couldNotRead: "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var tint: Color {
+        state == .couldNotRead ? .orange : .black.opacity(0.6)
     }
 }
 

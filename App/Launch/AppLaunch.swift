@@ -19,6 +19,8 @@ final class AppLaunch {
 
     private(set) var state: State = .opening
     private var started = false
+    /// Feeds the device's thermal, power and background state to batch intake's reading.
+    private var conditions: DeviceConditionsMonitor?
     private let files: @Sendable () throws -> StoreFiles
     private let undoWindow: Duration
 
@@ -67,6 +69,7 @@ final class AppLaunch {
             await model.load()
             state = .ready(model)
             // Finishes batch work a kill cut off, off the launch path.
+            if let intake { conditions = DeviceConditionsMonitor(pipeline: intake.pipeline) }
             if let intake, let locations = model.snapshot?.locations {
                 Task(priority: .utility) { await intake.resume(locations: locations) }
             }

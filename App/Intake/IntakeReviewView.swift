@@ -24,7 +24,7 @@ struct IntakeReviewView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if intake.summaries.isEmpty {
+                if intake.summaries.isEmpty && !intake.isFinishing {
                     finished
                 } else {
                     list
@@ -54,9 +54,18 @@ struct IntakeReviewView: View {
 
     private var list: some View {
         List(selection: $selection) {
+            if case .finishing(let left) = intake.stage {
+                Section {
+                    Label(IntakeText.readingLeft(left), systemImage: "hourglass")
+                        .font(.subheadline)
+                        .accessibilityAddTraits(.updatesFrequently)
+                }
+            }
             Section {
                 ForEach(intake.summaries) { summary in
                     CandidateCard(summary: summary, intake: intake) { editing = EditTarget(id: summary.id) }
+                        // The list before the last photos are read is not the review yet.
+                        .disabled(intake.isFinishing)
                         .swipeActions(edge: .trailing) {
                             Button("Delete", systemImage: "trash", role: .destructive) {
                                 Task { await intake.delete([summary.id]) }
@@ -92,9 +101,9 @@ struct IntakeReviewView: View {
         }
         ToolbarItem(placement: .primaryAction) {
             Button("Undo", systemImage: "arrow.uturn.backward") { Task { await intake.undoChange() } }
-                .disabled(!intake.canUndoChange)
+                .disabled(!intake.canUndoChange || intake.isFinishing)
         }
-        if !intake.summaries.isEmpty {
+        if !intake.summaries.isEmpty && !intake.isFinishing {
             ToolbarItem(placement: .primaryAction) {
                 Button(selecting ? "Done" : "Select") {
                     selection = []
@@ -122,7 +131,7 @@ struct IntakeReviewView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-                .disabled(ready == 0 || intake.isAdding)
+                .disabled(ready == 0 || intake.isAdding || intake.isFinishing)
                 let waiting = intake.summaries.count - ready
                 // At accessibility sizes the bar would cover most of the list; the cards say it.
                 if waiting > 0 && !typeSize.isAccessibilitySize {

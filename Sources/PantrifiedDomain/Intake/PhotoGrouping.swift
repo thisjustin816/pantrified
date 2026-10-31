@@ -125,6 +125,24 @@ public struct GroupSuggestion: Sendable, Hashable {
 public struct GroupingResult: Sendable, Hashable {
     public var groups: [PhotoGroup]
     public var suggestions: [GroupSuggestion]
+
+    public static let empty = GroupingResult(groups: [], suggestions: [])
+}
+
+/// The work one grouping did: photos prepared and pairs of photos scored. Deterministic, unlike a
+/// time, so a test can hold it.
+public struct GroupingCost: Sendable, Hashable {
+    public var photos = 0
+    public var pairsScored = 0
+
+    public init(photos: Int = 0, pairsScored: Int = 0) {
+        self.photos = photos
+        self.pairsScored = pairsScored
+    }
+
+    public static func + (a: GroupingCost, b: GroupingCost) -> GroupingCost {
+        GroupingCost(photos: a.photos + b.photos, pairsScored: a.pairsScored + b.pairsScored)
+    }
 }
 
 /// Groups a batch's photos into package candidates. Deterministic for the same input in any order:
@@ -175,13 +193,20 @@ public struct PhotoGrouper: Sendable {
     }
 
     public func group(_ observations: [PhotoObservation]) -> GroupingResult {
+        measuredGroup(observations).result
+    }
+
+    /// Groups, and counts the work done, so a change that makes grouping costlier shows in a test.
+    public func measuredGroup(_ observations: [PhotoObservation]) -> (result: GroupingResult, cost: GroupingCost) {
         let photos = prepare(observations)
         let single = photos.indices.filter { photos[$0].products.count < 2 }
         let common = commonWords(photos)
 
         var pairs: [Pair] = []
+        var cost = GroupingCost(photos: photos.count)
         for (position, i) in single.enumerated() {
             for j in single[(position + 1)...] {
+                cost.pairsScored += 1
                 if let pair = score(photos, i, j, ignoring: common) { pairs.append(pair) }
             }
         }
@@ -254,7 +279,8 @@ public struct PhotoGrouper: Sendable {
             groups[index].photos.sort { (sequence[$0] ?? 0) < (sequence[$1] ?? 0) }
         }
 
-        return GroupingResult(groups: groups, suggestions: suggestions(pairs, photos, groupOfRoot: groupOfRoot, root: root, groups: groups))
+        let result = GroupingResult(groups: groups, suggestions: suggestions(pairs, photos, groupOfRoot: groupOfRoot, root: root, groups: groups))
+        return (result, cost)
     }
 
     private func suggestions(

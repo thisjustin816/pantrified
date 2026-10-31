@@ -14,6 +14,31 @@ public enum LookupAnswer: Sendable, Hashable, Codable {
     /// again later without counting as a failure.
     case deferred
 
+    /// A lookup that failed this many times is not tried again.
+    public static let maximumAttempts = 3
+
+    /// Whether a barcode with this answer is still to be asked: never asked, deferred, or failed
+    /// fewer than `maximumAttempts` times. A miss is final.
+    public static func needsAsking(_ answer: LookupAnswer?) -> Bool {
+        switch answer {
+        case nil, .deferred?: true
+        case .failed(let attempts)?: attempts < maximumAttempts
+        case .found?, .notFound?: false
+        }
+    }
+
+    /// The answer to keep when `new` arrives after `old`. A failure or a deferral never replaces an
+    /// answer already found, and failures are counted.
+    public static func combining(_ old: LookupAnswer?, with new: LookupAnswer) -> LookupAnswer {
+        switch (old, new) {
+        case (.found?, .failed), (.notFound?, .failed), (.found?, .deferred), (.notFound?, .deferred), (.failed?, .deferred):
+            old ?? new
+        case (.failed(let before)?, .failed(let now)): .failed(attempts: max(before, now) + 1)
+        case (_, .failed): .failed(attempts: 1)
+        default: new
+        }
+    }
+
     /// A found answer, cleaned. An empty name counts as not found.
     public static func found(rawName: String, source: String) -> LookupAnswer {
         let name = LabelText.tidyName(rawName)

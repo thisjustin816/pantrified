@@ -14,7 +14,10 @@ final class IntakeModel {
     enum Stage: Equatable {
         case opening
         case capturing
+        /// After Done, with many photos still to read: progress.
         case reading(IntakeProgress)
+        /// After Done, with only the last few photos to read: the list so far, not yet changeable.
+        case finishing(left: Int)
         /// Reading stopped with an error; trying again carries on where it stopped.
         case readingStopped
         case reviewing
@@ -44,8 +47,15 @@ final class IntakeModel {
 
     let services: IntakeServices
     let pantry: PantryModel
+    /// Where reading and grouping are while photos are taken. Tentative until the review exists.
+    private(set) var live: IntakeLiveStatus?
+    #if DEBUG
+    /// How long the last photo took to read, for measuring on a device. Debug builds only.
+    private(set) var readTiming: String?
+    #endif
+
     @ObservationIgnored private var batchID: IntakeBatchID?
-    @ObservationIgnored private var lookups: Task<Void, Never>?
+    @ObservationIgnored private var following: Task<Void, Never>?
 
     init(services: IntakeServices, pantry: PantryModel) {
         self.services = services
@@ -78,6 +88,8 @@ final class IntakeModel {
             if await services.store.takeExpiryNotice() { notice = IntakeText.expired }
             batchID = batch.id
             photos = batch.livePhotos
+            follow(batch.id)
+            await services.pipeline.open(batch.id, capturing: batch.phase == .capturing)
             switch batch.phase {
             case .capturing:
                 stage = .capturing
@@ -87,7 +99,6 @@ final class IntakeModel {
                 try? await services.adding.resume(batch.id)
                 await reloadReview()
                 stage = .reviewing
-                lookUpNames()
             }
         } catch {
             unavailableDetail = await services.store.takeLoadProblem() == .newerVersion ? IntakeText.newerVersion : nil
@@ -106,6 +117,7 @@ final class IntakeModel {
                 digest: PhotoFormat.digest(of: data), in: batchID
             )
             photos.append(photo)
+            await services.pipeline.photosChanged()
             let thumbnail = await Task.detached(priority: .userInitiated) { SentImage(PhotoFormat.thumbnail(of: data)) }.value
             thumbnails[photo.id] = thumbnail.image
         } catch StagingError.unknownBatch {
@@ -125,52 +137,88 @@ final class IntakeModel {
             try await services.store.removePhoto(photo, from: batchID)
             photos.removeAll { $0.id == photo }
             thumbnails[photo] = nil
+            await services.pipeline.photosChanged()
         } catch {
             problem = "That photo couldn't be removed."
         }
     }
 
-    /// Done taking photos: read them, then review.
+    /// Done taking photos: read what is left, group once, then review.
     func finishCapture() async {
         await read()
     }
 
     // MARK: Reading
 
+    /// Reads what is left and makes the review. With only a few photos left the list so far shows at
+    /// once, unchangeable until the review exists, so no edit can be lost to the last regroup.
     func read() async {
         guard let batchID else { return }
-        stage = .reading(IntakeProgress(read: 0, total: photos.count))
+        let left = live?.unread ?? photos.count
+        stage = left > ReadingPolicy.standard.fewLeft
+            ? .reading(live?.progress ?? IntakeProgress(read: 0, total: photos.count))
+            : .finishing(left: left)
+        await refreshPreview()
         do {
-            let review = try await services.pipeline.process(
-                batchID, locations: locations, defaultLocation: locations.first?.id
-            ) { progress in
-                Task { @MainActor [weak self] in
-                    guard let self, case .reading = self.stage else { return }
-                    self.stage = .reading(progress)
-                }
-            }
-            self.review = review
+            let made = try await services.pipeline.finish(batchID, locations: locations, defaultLocation: locations.first?.id)
+            guard self.batchID == batchID else { return }
+            animated { review = made }
             stage = .reviewing
-            lookUpNames()
         } catch is CancellationError {
-            // The sheet closed. What was read is kept; opening the batch carries on.
+            // Discarded, or the batch was closed before Done. What was read is kept.
+        } catch StagingError.unknownBatch {
+            await batchExpired()
         } catch {
             stage = .readingStopped
         }
     }
 
-    /// Looks up barcodes in the background. The review is usable meanwhile, and adding never waits.
-    private func lookUpNames() {
-        guard services.looksUp, let batchID, lookups == nil else { return }
-        lookups = Task { [weak self, services] in
-            if await services.pipeline.lookUpNames(batchID) > 0 { await self?.reloadReview() }
-            self?.lookups = nil
+    /// Follows the pipeline's updates for this batch while the screen is open.
+    private func follow(_ id: IntakeBatchID) {
+        following?.cancel()
+        following = Task { [weak self, services] in
+            var answers = 0
+            for await status in await services.pipeline.updates() {
+                guard let self, status.batch == self.batchID else { continue }
+                self.live = status
+                #if DEBUG
+                self.readTiming = services.readTimer.summary
+                #endif
+                switch self.stage {
+                case .reading, .finishing:
+                    if status.unread > ReadingPolicy.standard.fewLeft {
+                        self.stage = .reading(status.progress)
+                    } else {
+                        self.stage = .finishing(left: status.unread)
+                        await self.refreshPreview()
+                    }
+                case .reviewing where status.lookupAnswers != answers:
+                    await self.reloadReview()
+                default:
+                    break
+                }
+                answers = status.lookupAnswers
+            }
         }
     }
 
-    func stopLookups() {
-        lookups?.cancel()
-        lookups = nil
+    private func refreshPreview() async {
+        guard case .finishing = stage else { return }
+        let preview = await services.pipeline.preview(locations: locations, defaultLocation: locations.first?.id)
+        if case .finishing = stage { review = preview }
+    }
+
+    /// The screen closed with the batch kept. Reading for the camera stops; after Done it carries on.
+    func leave() async {
+        following?.cancel()
+        following = nil
+        guard let batchID else { return }
+        await services.pipeline.leave(batchID)
+    }
+
+    var isFinishing: Bool {
+        if case .finishing = stage { return true }
+        return false
     }
 
     func loadThumbnail(_ photo: IntakePhotoID) async {
@@ -222,7 +270,8 @@ final class IntakeModel {
     }
 
     private func change(_ body: @escaping @Sendable (inout IntakeReview) throws -> Void) async {
-        guard let batchID else { return }
+        // The list shown while the last photos are read is not the review yet.
+        guard let batchID, !isFinishing else { return }
         do {
             try await services.store.updateReview(batchID) { try body(&$0) }
         } catch StagingError.unknownBatch {
@@ -252,7 +301,7 @@ final class IntakeModel {
     }
 
     func add(_ ids: [IntakeCandidateID]) async {
-        guard let batchID, !ids.isEmpty, !isAdding else { return }
+        guard let batchID, !ids.isEmpty, !isAdding, !isFinishing else { return }
         isAdding = true
         defer { isAdding = false }
         do {
@@ -287,8 +336,10 @@ final class IntakeModel {
 
     /// Deletes the batch's photos and everything read from them, now.
     func discard() async {
-        stopLookups()
+        following?.cancel()
+        following = nil
         guard let batchID else { return }
+        await services.pipeline.discard(batchID)
         try? await services.store.discard(batchID)
         self.batchID = nil
     }
@@ -298,6 +349,9 @@ final class IntakeModel {
     /// The batch was deleted under the screen, such as when it expired while the app was away:
     /// start again with the batch the store has now.
     private func batchExpired() async {
+        following?.cancel()
+        following = nil
+        live = nil
         batchID = nil
         review = nil
         photos = []

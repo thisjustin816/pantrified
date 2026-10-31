@@ -13,6 +13,10 @@ struct IntakeServices: Sendable {
     let pipeline: IntakePipeline
     let adding: IntakeAdding
     let looksUp: Bool
+    #if DEBUG
+    /// Times each photo read, for the batch screen's timing line in Debug builds.
+    let readTimer: ReadTimer
+    #endif
 
     init(
         pantry: Pantry,
@@ -23,14 +27,23 @@ struct IntakeServices: Sendable {
     ) {
         space = pantry.space
         store = StagingStore(files: files, time: time)
-        pipeline = IntakePipeline(store: store, recognizer: recognizer, lookup: lookup)
+        #if DEBUG
+        let timer = ReadTimer()
+        readTimer = timer
+        let reader: any PhotoRecognizer = TimedRecognizer(inner: recognizer, timer: timer)
+        #else
+        let reader = recognizer
+        #endif
+        pipeline = IntakePipeline(store: store, recognizer: reader, lookup: lookup, time: time)
         adding = IntakeAdding(pantry: pantry, store: store)
         looksUp = lookup != nil
     }
 
     /// At launch: deletes what is due, finishes an add or undo a crash cut off, and carries on
-    /// reading a batch that was being read. Failures wait for the next launch or for the person
-    /// opening the batch; nothing here blocks the app.
+    /// reading a batch that was being read after Done. A batch still in the camera is read when it
+    /// opens. Failures wait for the next launch or for the person opening the batch; nothing here
+    /// blocks the app. The pipeline is shared with the batch screen, so a batch is never read by two
+    /// runs at once.
     func resume(locations: [StorageLocation]) async {
         _ = try? await store.sweep()
         guard let batch = await store.unfinished(in: space) else { return }

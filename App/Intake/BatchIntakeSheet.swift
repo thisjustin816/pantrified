@@ -28,6 +28,10 @@ struct BatchIntakeSheet: View {
             intake = opened
             await opened.start()
         }
+        .onDisappear {
+            guard let intake else { return }
+            Task { await intake.leave() }
+        }
         .sheet(isPresented: $addingByHand) { AddFoodView(model: model) }
     }
 
@@ -40,6 +44,8 @@ struct BatchIntakeSheet: View {
             BatchCaptureView(intake: intake, addByHand: { addingByHand = true }, close: { dismiss() })
         case .reading(let progress):
             ReadingView(progress: progress, close: { dismiss() }, discard: { discard(intake) })
+        case .finishing:
+            IntakeReviewView(intake: intake, addByHand: { addingByHand = true }, close: { dismiss() })
         case .readingStopped:
             NavigationStack {
                 ContentUnavailableView {
@@ -132,7 +138,7 @@ private struct ReadingView: View {
                     .accessibilityLabel(IntakeText.reading(progress))
                 Text(IntakeText.reading(progress))
                     .font(.headline)
-                Text("Pantrified is reading the labels and barcodes on this iPhone. You can close this; it carries on next time you open the batch.")
+                Text("Pantrified is reading the labels and barcodes on this iPhone. You can close this: it carries on while Pantrified is open, and your list is ready next time you open the batch.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

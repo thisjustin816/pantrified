@@ -115,6 +115,8 @@ func waitUntil(_ condition: @Sendable () async -> Bool) async -> Bool {
 actor FakeLookup: ProductLookupService {
     private var answers: [GTIN: ProductLookupResult]
     private(set) var calls: [GTIN] = []
+    private(set) var inFlight = 0
+    private(set) var mostInFlight = 0
 
     init(_ answers: [GTIN: ProductLookupResult]) { self.answers = answers }
 
@@ -122,6 +124,10 @@ actor FakeLookup: ProductLookupService {
 
     func lookUp(_ barcode: GTIN) async -> ProductLookupResult {
         calls.append(barcode)
+        inFlight += 1
+        mostInFlight = max(mostInFlight, inFlight)
+        defer { inFlight -= 1 }
+        await Task.yield()
         return answers[barcode] ?? .notFound
     }
 }
@@ -150,4 +156,107 @@ enum IntakeFixture {
         "rice": PhotoReading(lines: [line("Basmati rice")]),
         "beans": PhotoReading(lines: [line("Black beans")], codes: [.product(beans)]),
     ]
+}
+
+/// Holds callers until a test lets them go, by key. A held caller that is cancelled is let go at once
+/// with a `CancellationError`, and counted.
+actor KeyedGate<Key: Hashable & Sendable> {
+    private var open: Set<Key> = []
+    private var allOpen = false
+    private var held: [Key: [(id: Int, continuation: CheckedContinuation<Void, any Error>)]] = [:]
+    private var lastID = 0
+    private(set) var cancellations = 0
+
+    func pass(_ key: Key) async throws {
+        if allOpen || open.contains(key) { return }
+        lastID += 1
+        let id = lastID
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                if Task.isCancelled {
+                    cancellations += 1
+                    continuation.resume(throwing: CancellationError())
+                } else {
+                    held[key, default: []].append((id, continuation))
+                }
+            }
+        } onCancel: {
+            Task { await self.cancel(id) }
+        }
+    }
+
+    func release(_ key: Key) {
+        open.insert(key)
+        for waiter in held.removeValue(forKey: key) ?? [] { waiter.continuation.resume() }
+    }
+
+    func releaseAll() {
+        allOpen = true
+        for waiters in held.values { for waiter in waiters { waiter.continuation.resume() } }
+        held = [:]
+    }
+
+    var waiting: Int { held.values.reduce(0) { $0 + $1.count } }
+
+    private func cancel(_ id: Int) {
+        for (key, waiters) in held {
+            guard let index = waiters.firstIndex(where: { $0.id == id }) else { continue }
+            held[key]?.remove(at: index)
+            cancellations += 1
+            waiters[index].continuation.resume(throwing: CancellationError())
+            return
+        }
+    }
+}
+
+/// Reads like `FakeRecognizer`, but each photo waits at a gate keyed by its bytes until the test
+/// lets it through. Counts reads and the most at once.
+actor GatedRecognizer: PhotoRecognizer {
+    private let files: MemoryStagingFiles
+    private let readings: [String: PhotoReading]
+    let gate = KeyedGate<String>()
+    private(set) var reads: [String] = []
+    private(set) var inFlight = 0
+    private(set) var mostInFlight = 0
+
+    init(files: MemoryStagingFiles, readings: [String: PhotoReading] = IntakeFixture.readings) {
+        self.files = files
+        self.readings = readings
+    }
+
+    func read(_ file: URL) async throws -> PhotoReading {
+        let key = try files.read(file.lastPathComponent).map { String(decoding: $0, as: UTF8.self) } ?? ""
+        reads.append(key)
+        inFlight += 1
+        mostInFlight = max(mostInFlight, inFlight)
+        defer { inFlight -= 1 }
+        try await gate.pass(key)
+        return readings[key] ?? PhotoReading()
+    }
+}
+
+/// A lookup whose answers wait at a gate keyed by barcode. Counts calls and the most at once. A
+/// cancelled call answers `.failed(.cancelled)`, as the real service does.
+actor GatedLookup: ProductLookupService {
+    private var answers: [GTIN: ProductLookupResult]
+    let gate = KeyedGate<GTIN>()
+    private(set) var calls: [GTIN] = []
+    private(set) var inFlight = 0
+    private(set) var mostInFlight = 0
+
+    init(_ answers: [GTIN: ProductLookupResult] = [:], open: Bool = false) {
+        self.answers = answers
+        if open { Task { [gate] in await gate.releaseAll() } }
+    }
+
+    func set(_ answer: ProductLookupResult, for barcode: GTIN) { answers[barcode] = answer }
+
+    func lookUp(_ barcode: GTIN) async -> ProductLookupResult {
+        calls.append(barcode)
+        inFlight += 1
+        mostInFlight = max(mostInFlight, inFlight)
+        defer { inFlight -= 1 }
+        do { try await gate.pass(barcode) } catch { return .failed(.cancelled) }
+        return answers[barcode] ?? .notFound
+    }
 }

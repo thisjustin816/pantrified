@@ -110,8 +110,9 @@ useful region → generated evidence crop → active package → optional CloudK
 
 Never delete an original asset owned by Photos/file providers.
 
-The first version of this lifecycle is built as batch intake (`batch-intake.md`): photos are read after
-the person taps Done rather than as a continuous stream, and no evidence crops are made yet.
+The first version of this lifecycle is built as batch intake (`batch-intake.md`): each kept photo is read
+while the camera stays open, one at a time, rather than analyzing the camera's stream, and no evidence
+crops are made yet.
 
 ## Recognition pipeline
 

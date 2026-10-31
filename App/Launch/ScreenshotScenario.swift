@@ -140,9 +140,7 @@ struct ScreenshotScenario {
             ), in: batch.id)
         }
         _ = try await intake.pipeline.process(batch.id, locations: locations, defaultLocation: locations.first?.id)
-        try await intake.store.updateReview(batch.id) {
-            $0.record(.found(rawName: "Black beans", source: "USDA FoodData Central"), for: Self.beans)
-        }
+        try await intake.store.recordLookups([(Self.beans, .found(rawName: "Black beans", source: "USDA FoodData Central"))], in: batch.id)
     }
 
     /// A plain tinted square standing in for a photo.
