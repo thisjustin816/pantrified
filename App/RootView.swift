@@ -1,14 +1,35 @@
 import SwiftUI
 
-/// The four working areas. Each tab is a placeholder until its feature is wired to the packages.
+/// The four working areas. Today and Food are wired to the local store; Meals and List are
+/// placeholders until their features are.
 struct RootView: View {
+    let launch: AppLaunch
+
+    var body: some View {
+        Group {
+            switch launch.state {
+            case .opening:
+                ProgressView()
+            case .ready(let model):
+                MainTabs(model: model)
+            case .unavailable(let problem):
+                StoreProblemView(problem: problem)
+            }
+        }
+        .task { await launch.start() }
+    }
+}
+
+private struct MainTabs: View {
+    let model: PantryModel
+
     var body: some View {
         TabView {
             Tab("Today", systemImage: "sun.max") {
-                TodayView()
+                TodayView(model: model)
             }
             Tab("Food", systemImage: "carrot") {
-                PlaceholderView(title: "Food", detail: "What you have will appear here.")
+                FoodView(model: model)
             }
             Tab("Meals", systemImage: "fork.knife") {
                 PlaceholderView(title: "Meals", detail: "Meals that use what you have will appear here.")
@@ -21,6 +42,26 @@ struct RootView: View {
                 EvaluationView()
             }
             #endif
+        }
+    }
+}
+
+/// Shown instead of the app when its data cannot be opened. It offers nothing that deletes data.
+private struct StoreProblemView: View {
+    let problem: StoreProblem
+
+    var body: some View {
+        ContentUnavailableView {
+            Label(problem.title, systemImage: "exclamationmark.triangle")
+        } description: {
+            VStack(spacing: 12) {
+                Text(problem.message)
+                DisclosureGroup("Details") {
+                    Text(problem.detail)
+                        .font(.footnote.monospaced())
+                        .textSelection(.enabled)
+                }
+            }
         }
     }
 }
