@@ -2,7 +2,8 @@
 # Takes screenshots of the app's screens on the largest iPhone simulator, the 6.9-inch size App
 # Store Connect asks for: each screen in light and dark mode, at the default text size and at the
 # largest accessibility size, on sample food and without the Debug-only Evaluate tab. A simulator
-# has no camera, so the scan screen shows its "Camera not available" state.
+# has no camera, so the scan screen shows its "Camera not available" state, and the batch review
+# shows synthetic readings over placeholder photos.
 #
 # Usage: capture-screenshots.sh APP_BUNDLE OUTPUT_DIR
 #
@@ -52,7 +53,7 @@ for appearance in light dark; do
     xcrun simctl ui "$udid" content_size "$size"
     label=default
     [ "$size" = large ] || label=xxxl
-    for screen in today food add scan; do
+    for screen in today food add scan review; do
       shoot "$screen" "$appearance" "$label"
     done
   done

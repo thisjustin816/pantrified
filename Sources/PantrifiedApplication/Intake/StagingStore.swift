@@ -248,7 +248,7 @@ public actor StagingStore {
     /// Changes the review and writes it before returning. Nothing is written when `change` throws.
     public func updateReview<Result: Sendable>(
         _ id: IntakeBatchID,
-        _ change: (inout IntakeReview) throws -> Result
+        _ change: @Sendable (inout IntakeReview) throws -> Result
     ) throws -> Result {
         guard let index = index(id) else { throw StagingError.unknownBatch }
         guard var review = batches[index].review else { throw StagingError.notRecognized }

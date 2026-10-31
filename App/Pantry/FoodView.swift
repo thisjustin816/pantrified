@@ -7,6 +7,7 @@ struct FoodView: View {
     let model: PantryModel
 
     @State private var adding = false
+    @State private var batching = false
     @State private var scanning = false
 
     var body: some View {
@@ -21,6 +22,10 @@ struct FoodView: View {
             .navigationTitle("Food")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
+                    Button("Add a batch", systemImage: "photo.stack") { batching = true }
+                        .accessibilityHint("Take photos of everything you brought home, then review and add it")
+                }
+                ToolbarItem(placement: .primaryAction) {
                     Button("Scan", systemImage: "barcode.viewfinder") { scanning = true }
                 }
                 ToolbarItem(placement: .primaryAction) {
@@ -30,6 +35,7 @@ struct FoodView: View {
             .navigationDestination(for: PackageID.self) { PackageDetailView(model: model, id: $0) }
             .sheet(isPresented: $adding) { AddFoodView(model: model) }
             .sheet(isPresented: $scanning) { ScanSheet(model: model) }
+            .fullScreenCover(isPresented: $batching) { BatchIntakeSheet(model: model) }
             .pantryChrome(model)
         }
     }

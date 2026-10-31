@@ -10,6 +10,8 @@ struct StartScreen {
     var addingFood = false
     /// True in a screenshot run of the scan screen, which opens the scanner over Today.
     var scanning = false
+    /// True in a screenshot run of the batch review, which opens batch intake over Today.
+    var batchIntake = false
     /// False in a screenshot run, so the tab bar looks as it does in the App Store build.
     var showsEvaluation = true
     /// False in a screenshot run, so the keyboard does not cover the Add food form.
