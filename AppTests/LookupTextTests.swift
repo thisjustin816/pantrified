@@ -6,20 +6,23 @@ import Testing
 struct LookupTextTests {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
-    @Test("a pause reads as roughly how long is left", arguments: [
-        (1.0, "about a minute"),
-        (60.0, "about a minute"),
-        (61.0, "about 2 minutes"),
-        (9 * 60.0, "about 9 minutes"),
-        (40 * 60.0, "about 40 minutes"),
-        (37 * 60.0, "about 35 minutes"),
-        (54 * 60.0, "about 55 minutes"),
-        (55 * 60.0, "about an hour"),
-        (60 * 60.0, "about an hour"),
-        (89 * 60.0, "about an hour"),
-        (90 * 60.0, "about 2 hours"),
-        (24 * 3_600.0, "about 24 hours"),
-    ])
+    private static let durations: [(TimeInterval, String)] = [
+        (0, "about a minute"),
+        (1, "about a minute"),
+        (60, "about a minute"),
+        (61, "about 2 minutes"),
+        (9 * 60, "about 9 minutes"),
+        (40 * 60, "about 40 minutes"),
+        (37 * 60, "about 35 minutes"),
+        (54 * 60, "about 55 minutes"),
+        (55 * 60, "about an hour"),
+        (60 * 60, "about an hour"),
+        (89 * 60, "about an hour"),
+        (90 * 60, "about 2 hours"),
+        (24 * 3_600, "about 24 hours"),
+    ]
+
+    @Test("a pause reads as roughly how long is left", arguments: durations)
     func duration(seconds: TimeInterval, expected: String) {
         #expect(LookupText.duration(seconds) == expected)
     }
