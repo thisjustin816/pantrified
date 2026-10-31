@@ -4,7 +4,7 @@ import PantrifiedDomain
 
 /// Storage locations kept on this device, per Space. Each is stored under its app-owned ID with its
 /// name, storage type tag and the position it was first saved at, which orders the list.
-public struct PersistentLocations: StorageLocationRepository {
+public struct PersistentLocations: StorageLocationStore {
     private let backend: any StorageBackend
 
     public init(backend: any StorageBackend) {
@@ -20,15 +20,28 @@ public struct PersistentLocations: StorageLocationRepository {
     /// Adds a location, or changes the name or type of one already stored and keeps its position.
     /// Two locations added at once can share a position; their IDs then order them.
     public func save(_ location: StorageLocation, in space: SpaceID) async throws {
+        try await saveAll([location], in: space)
+    }
+
+    /// Adds or changes several locations in one write. New ones take the next positions in order.
+    public func saveAll(_ locations: [StorageLocation], in space: SpaceID) async throws {
         let existing = try stored(in: space)
-        let position = existing.first { $0.location.id == location.id }?.position
-            ?? (existing.map(\.position).max() ?? -1) + 1
+        var next = (existing.map(\.position).max() ?? -1) + 1
         var batch = StorageBatch()
-        batch.localWrites[Self.key(location.id, in: space)] = .put(StoredValueCoding.encode(.map([
-            "name": .string(location.name),
-            "storageType": .string(location.storageType.storedTag),
-            "position": .int(position),
-        ])))
+        for location in locations {
+            let position: Int64
+            if let known = existing.first(where: { $0.location.id == location.id }) {
+                position = known.position
+            } else {
+                position = next
+                next += 1
+            }
+            batch.localWrites[Self.key(location.id, in: space)] = .put(StoredValueCoding.encode(.map([
+                "name": .string(location.name),
+                "storageType": .string(location.storageType.storedTag),
+                "position": .int(position),
+            ])))
+        }
         try backend.write(batch)
     }
 

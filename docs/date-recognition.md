@@ -65,6 +65,14 @@ unlabeled date and a packed date. Among equal labels the earliest wins.
 3. **The parser does not choose the order of an ambiguous date.** The caller supplies a hint only when
    the package or locale settles it safely; the parser never defaults to the device's locale.
 
+## Known limitation: time zones far ahead of UTC
+
+A printed date is stored at noon UTC so that the device's time zone does not move its day. That holds
+from UTC-11 to UTC+11. In a zone further ahead, such as New Zealand in summer, Tonga or Kiribati's Line
+Islands, noon UTC is already the next morning, and the attention policy, which counts days in the
+device's calendar, reads the date a day late. Dates the person enters by hand have the same limit.
+Reading printed dates as calendar days, apart from any time zone, would remove it.
+
 ## Not built
 
 GS1 2D barcode dates, a date printed after its label, and Julian or lot-code dates.
