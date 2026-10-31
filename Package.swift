@@ -9,10 +9,12 @@ let package = Package(
         .library(name: "PantrifiedApplication", targets: ["PantrifiedApplication"]),
         .library(name: "PantrifiedFoundationModels", targets: ["PantrifiedFoundationModels"]),
         .library(name: "PantrifiedGuidanceData", targets: ["PantrifiedGuidanceData"]),
+        .library(name: "PantrifiedPersistence", targets: ["PantrifiedPersistence"]),
     ],
     targets: [
         .target(name: "PantrifiedDomain"),
-        .target(name: "PantrifiedTestSupport"),
+        // Shared by the test targets: seeded randomness, permutations and storage fault injection.
+        .target(name: "PantrifiedTestSupport", dependencies: ["PantrifiedPersistence", "PantrifiedApplication", "PantrifiedDomain"]),
         .testTarget(
             name: "PantrifiedDomainTests",
             dependencies: ["PantrifiedDomain", "PantrifiedTestSupport"]
@@ -32,9 +34,17 @@ let package = Package(
             name: "PantrifiedGuidanceDataTests",
             dependencies: ["PantrifiedGuidanceData", "PantrifiedApplication", "PantrifiedDomain"]
         ),
+        // Durable local storage behind the application layer's repositories. The row mapping is
+        // plain Swift and builds everywhere; the SwiftData backend is empty where SwiftData does not
+        // exist, such as Linux.
+        .target(name: "PantrifiedPersistence", dependencies: ["PantrifiedApplication", "PantrifiedDomain"]),
+        .testTarget(
+            name: "PantrifiedPersistenceTests",
+            dependencies: ["PantrifiedPersistence", "PantrifiedApplication", "PantrifiedDomain", "PantrifiedTestSupport"]
+        ),
         .testTarget(
             name: "PantrifiedApplicationTests",
-            dependencies: ["PantrifiedApplication", "PantrifiedDomain", "PantrifiedTestSupport"]
+            dependencies: ["PantrifiedApplication", "PantrifiedDomain", "PantrifiedPersistence", "PantrifiedTestSupport"]
         ),
     ]
 )

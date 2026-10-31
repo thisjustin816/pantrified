@@ -10,7 +10,7 @@ The app is designed around imperfect real-world inventory: approximate quantitie
 
 ## Product status
 
-**The pure-Swift domain and application layers for the first slice are implemented and tested on Linux, and an app shell and its macOS workflows are in place.** Capture, local persistence, CloudKit sync and the Apple model adapters are not built, and nothing has been verified on a device. Competitive research reinforced that the main product risk is inventory-maintenance friction, not the availability of AI recipe features. The first milestone therefore validates the household loop:
+**The pure-Swift domain and application layers for the first slice are implemented and tested on Linux, and an app shell and its macOS workflows are in place.** Local persistence is built on SwiftData and tested on Linux, on macOS and in the simulator, but no screen uses it yet. Capture, the CloudKit adapter and most Apple model adapters are not built, and nothing has been verified on a device. Competitive research reinforced that the main product risk is inventory-maintenance friction, not the availability of AI recipe features. The first milestone therefore validates the household loop:
 
 `capture → correct/put away → use/cook → reconcile → return`
 
@@ -38,6 +38,7 @@ See GitHub issue #1 for the pilot and completion criteria.
 - [`docs/ai-runtime.md`](docs/ai-runtime.md) — Apple Foundation Models/PCC runtime and fallback boundary.
 - [`docs/monetization.md`](docs/monetization.md) — free/Plus boundary and purchase strategy.
 - [`docs/sync-design.md`](docs/sync-design.md): shared-Space record schema, clock, merge rules, and resume behavior.
+- [`docs/persistence.md`](docs/persistence.md): what is stored on the device and how, schema and migration, crash behavior, file protection, and what is verified where.
 - [`docs/dietary-validation.md`](docs/dietary-validation.md): hard-restriction validation, classification data and its limits, and the Make Something request context.
 - [`docs/branching-and-ci.md`](docs/branching-and-ci.md): how work is branched, merged and verified.
 - [`docs/ci.md`](docs/ci.md): the workflows, what each check establishes, and what is not built yet.

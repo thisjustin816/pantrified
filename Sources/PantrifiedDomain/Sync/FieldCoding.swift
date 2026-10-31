@@ -85,6 +85,17 @@ extension Identifier {
     }
 }
 
+extension StorageType {
+    /// The tag every app-owned format stores, so renaming a case never changes stored data.
+    public var storedTag: String { DomainCoding.storageType.tag(self) }
+
+    /// Nil for a tag this version does not know.
+    public init?(storedTag: String) {
+        guard let type = DomainCoding.storageType.decodeIfKnown(.string(storedTag)) else { return nil }
+        self = type
+    }
+}
+
 enum DomainCoding {
     static let printedDateLabel = TagTable<PrintedDateLabel>([
         (.useBy, "useBy"), (.bestBy, "bestBy"), (.sellBy, "sellBy"),

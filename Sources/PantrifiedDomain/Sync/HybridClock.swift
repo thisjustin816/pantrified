@@ -36,6 +36,19 @@ public struct HybridClock: Sendable, Hashable, Codable {
         self.replica = replica
     }
 
+    /// A clock whose last reading is `latest`, as a stored `latest` describes it.
+    public init(resuming latest: HybridTimestamp) {
+        replica = latest.replica
+        physicalMillis = latest.physicalMillis
+        counter = latest.counter
+    }
+
+    /// The last reading issued or observed, under the current replica ID. Storing it and resuming
+    /// from it gives back an equal clock.
+    public var latest: HybridTimestamp {
+        HybridTimestamp(physicalMillis: physicalMillis, counter: counter, replica: replica)
+    }
+
     public mutating func tick(now: Date) -> HybridTimestamp {
         let physical = Int64((now.timeIntervalSince1970 * 1000).rounded(.down))
         if physical > physicalMillis {
