@@ -223,4 +223,18 @@ struct AppLaunchTests {
         try await Task.sleep(for: .seconds(1))
         #expect(model.undoPrompt == nil)
     }
+
+    @Test("the offer carries its window, so the banner can count it down")
+    func undoOfferCarriesWindow() async throws {
+        let (files, cleanup) = try makeFiles()
+        defer { cleanup() }
+        let model = try ready(await launch(files, undoWindow: .seconds(5)))
+        let fridge = try #require(model.snapshot?.locations.first)
+        #expect(await model.add(NewFood(name: "Milk", location: fridge.id)))
+        let entry = try #require(model.snapshot?.entries.first)
+
+        await model.perform(.usedUp, on: entry)
+
+        #expect(model.undoPrompt?.window == .seconds(5))
+    }
 }

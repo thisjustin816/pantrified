@@ -5,6 +5,10 @@ struct UndoBanner: View {
     let prompt: PantryModel.UndoPrompt
     let undo: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// 1 when the offer appears, 0 when it expires.
+    @State private var remaining: CGFloat = 1
+
     var body: some View {
         HStack {
             Text(prompt.message)
@@ -17,9 +21,36 @@ struct UndoBanner: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(alignment: .bottom) { countdown }
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .shadow(color: .black.opacity(0.12), radius: 8, y: 2)
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
         .accessibilityElement(children: .combine)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.linear(duration: prompt.window.seconds)) { remaining = 0 }
+        }
+    }
+
+    /// A thin line that runs out as the offer does. Hidden with Reduce Motion.
+    @ViewBuilder
+    private var countdown: some View {
+        if !reduceMotion {
+            Capsule()
+                .fill(.tint.opacity(0.7))
+                .frame(height: 3)
+                .scaleEffect(x: remaining, anchor: .leading)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 4)
+                .accessibilityHidden(true)
+        }
+    }
+}
+
+private extension Duration {
+    var seconds: Double {
+        Double(components.seconds) + Double(components.attoseconds) / 1e18
     }
 }
 
@@ -40,11 +71,12 @@ extension View {
     func pantryChrome(_ model: PantryModel) -> some View {
         safeAreaInset(edge: .bottom) {
             if let prompt = model.undoPrompt {
+                // A new offer replaces the old banner, so its countdown starts again.
                 UndoBanner(prompt: prompt) { Task { await model.undo() } }
+                    .id(prompt.id)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.default, value: model.undoPrompt)
         .problemAlert(model)
     }
 }

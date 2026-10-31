@@ -15,23 +15,25 @@ struct EntryRow: View {
     private var otherLocations: [StorageLocation] { locations.filter { $0.id != entry.package.location } }
 
     var body: some View {
-        // Beside the text at ordinary sizes. At accessibility sizes there is no room beside it, so
-        // the badge goes underneath rather than being squeezed until its words break.
-        Group {
-            if typeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: 8) {
-                    summary
-                    badge
-                }
-            } else {
-                HStack(alignment: .firstTextBaseline) {
-                    summary
-                    Spacer(minLength: 8)
-                    badge
+        NavigationLink(value: entry.id) {
+            // Beside the text at ordinary sizes. At accessibility sizes there is no room beside it, so
+            // the badge goes underneath rather than being squeezed until its words break.
+            Group {
+                if typeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 8) {
+                        summary
+                        badge
+                    }
+                } else {
+                    HStack(alignment: .firstTextBaseline) {
+                        summary
+                        Spacer(minLength: 8)
+                        badge
+                    }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
         .swipeActions(edge: .leading) {
             if canOpen {
