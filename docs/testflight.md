@@ -50,6 +50,13 @@ branch named outside `feature/` will not work.
 | `APP_STORE_CONNECT_KEY_ID` | The API key's Key ID |
 | `APP_STORE_CONNECT_ISSUER_ID` | The Issuer ID from the Team Keys page |
 | `APP_STORE_CONNECT_PRIVATE_KEY` | Entire `.p8` text |
+| `FDC_API_KEY` | Optional. The free api.data.gov key for product lookup (`docs/capture.md`) |
+
+`FDC_API_KEY` is not a signing secret. It ships inside the app, so it is low value and rate limited, and the
+upload does not require it: without it the build works with product lookup off. The script accepts only one
+plain word of letters, digits, `_` and `-`, writes it to the git-ignored `Config/Signing.local.xcconfig`
+rather than the command line, checks that the archived app carries it, and never prints it. The run's log
+says whether a key was included.
 
 The API key is a team key with the Developer role. The identifiers are in `Scripts/upload-testflight.sh`:
 bundle `com.thisjustin816.Pantrified`, team `S2TFTKR4CS`, profile "Pantrified App Store" with UUID
@@ -98,7 +105,7 @@ unpinned in the same job. The owner is the only person with access and accepts t
 2. Revoke the distribution certificate in the Apple Developer account and create a new one.
 3. Regenerate the provisioning profile for the new certificate, and update its UUID in
    `Scripts/upload-testflight.sh`.
-4. Replace the six secrets.
+4. Replace the six signing secrets, and `FDC_API_KEY` if you set one.
 5. Check App Store Connect for builds you did not upload, and expire them.
 
 ## Removing the XcodeGen risk later
