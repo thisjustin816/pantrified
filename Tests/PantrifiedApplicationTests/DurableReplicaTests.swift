@@ -287,4 +287,41 @@ struct DurableReplicaTests {
         let list = Set(try await b.replica.list(in: world.space).items.map(\.id))
         #expect(list == Set(listed.keys).subtracting(removed))
     }
+
+    /// Adversarial: two replicas opened over one Space's storage, as a second `LocalStore` in one
+    /// process would. Their records merge, but the last header written can hold the clock of the
+    /// replica that has seen less.
+    @Test("two replicas writing one Space's storage lose no record, and a reopened clock follows every stored stamp", arguments: TestStorage.allCases)
+    func twoWritersKeepRecordsAndClock(storage: TestStorage) async throws {
+        let world = World()
+        let backend = try storage.makeBackend()
+        let time = FixedTime(syncEpoch)
+        let lagging = FixedTime(syncEpoch)
+        func open(_ time: FixedTime) throws -> SpaceReplica {
+            try SpaceReplica(
+                space: world.space, replica: ReplicaID(), transport: CloudLink(world.cloud),
+                store: PersistentReplicaStateStore(space: world.space, backend: backend), time: time
+            )
+        }
+        let seed = try open(time)
+        try await ShoppingListActions(repository: seed, time: time).add(name: "Milk", in: world.space)
+        let first = try open(time)
+        let second = try open(lagging)
+
+        for name in ["Eggs", "Rice", "Beans"] {
+            time.advance(hours: 1)
+            try await ShoppingListActions(repository: first, time: time).add(name: name, in: world.space)
+        }
+        try await ShoppingListActions(repository: second, time: lagging).add(name: "Bread", in: world.space)
+
+        let reopened = try open(time)
+        let stored = await reopened.records
+        #expect(Set(try await reopened.list(in: world.space).items.map(\.name)) == ["Milk", "Eggs", "Rice", "Beans", "Bread"])
+        #expect(await reopened.pendingCount == 5)
+        time.advance(hours: -10)
+        try await ShoppingListActions(repository: reopened, time: time).add(name: "Kale", in: world.space)
+        let latest = stored.records.values.map(\.latestStamp).max()!
+        let kale = try #require(await reopened.records.records.values.first { $0.value("name") == .string("Kale") })
+        #expect(kale.created > latest)
+    }
 }

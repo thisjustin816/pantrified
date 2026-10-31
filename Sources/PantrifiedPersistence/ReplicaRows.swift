@@ -43,6 +43,12 @@ enum ReplicaRowMapping {
             if row.queued { state.outbox.insert(row.id) }
             if let tag = row.serverTag { state.serverTags[row.id] = ServerTag(tag) }
         }
+        // The replica that owns a Space has already observed every stamp it stores, so this
+        // changes nothing for it. A header written by a second writer that had seen less would
+        // otherwise let the clock reissue stamps earlier than ones already stored.
+        for record in state.records.records.values {
+            state.clock.observe(record.latestStamp)
+        }
         return state
     }
 

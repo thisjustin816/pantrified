@@ -27,6 +27,7 @@ func sampleState(seed: UInt64 = 1, records count: Int = 12) -> ReplicaState {
     for _ in 0..<count {
         let record = StoredValueCodingTests.randomRecord(using: &rng)
         state.records.merge(record)
+        state.clock.observe(record.latestStamp)
         if Bool.random(using: &rng) { state.outbox.insert(record.id) }
         if Bool.random(using: &rng) { state.serverTags[record.id] = ServerTag("tag-\(UInt8.random(in: 0...255, using: &rng))") }
     }
@@ -97,7 +98,7 @@ struct ReplicaRowMappingTests {
     func headerChangesAlone() {
         let old = sampleState()
         var ticked = old
-        _ = ticked.clock.tick(now: Date(timeIntervalSince1970: 1_900_000_000))
+        ticked.clock.adopt(ReplicaID())
         var moved = old
         moved.changeToken = ChangeToken("next")
 
