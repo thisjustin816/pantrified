@@ -41,7 +41,7 @@ public final class SwiftDataBackend: StorageBackend {
                 configuration: ModelConfiguration(
                     schema: Schema(versionedSchema: CurrentSchema.self),
                     url: files.store,
-                    cloudKitDatabase: .automatic
+                    cloudKitDatabase: .none
                 ),
                 beforeCommit: beforeCommit
             )
@@ -80,8 +80,8 @@ public final class SwiftDataBackend: StorageBackend {
                 try stage(writes, in: space, context: context)
             }
             try stageLocal(batch.localWrites, in: context)
-            try context.save()
             try beforeCommit?()
+            try context.save()
         }
     }
 
@@ -99,8 +99,7 @@ public final class SwiftDataBackend: StorageBackend {
         for write in writes {
             let key = RowKey.record(write.id, in: space)
             let model = stored[key]
-            defer { try? context.save() }
-            switch try write.resolve(over: nil) {
+            switch try write.resolve(over: model.map(Self.row)) {
             case nil:
                 if let model {
                     context.delete(model)
