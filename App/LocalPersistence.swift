@@ -1,7 +1,7 @@
 import Foundation
 import PantrifiedPersistence
 
-/// Opens the app's local store. The interface does not read from it yet.
+/// Opens the app's local store.
 enum LocalPersistence {
     static func open(_ files: StoreFiles) throws(PersistenceError) -> LocalStore {
         LocalStore(backend: try SwiftDataBackend.open(files))
@@ -29,12 +29,12 @@ extension LocalPersistence {
         let package = Package(spaceID: space, name: "Milk", location: fridge.id, addedAt: Date())
         do {
             let store = try open(files)
-            try await store.replica(for: space, transport: Offline(), time: SystemTime()).save(package)
+            try await store.replica(for: space, transport: OfflineTransport(), time: SystemTime()).save(package)
             try await store.locations.save(fridge, in: space)
         }
 
         let reopened = try open(files)
-        let name = try await reopened.replica(for: space, transport: Offline(), time: SystemTime()).package(package.id)?.name
+        let name = try await reopened.replica(for: space, transport: OfflineTransport(), time: SystemTime()).package(package.id)?.name
         let locations = try await reopened.locations.locations(in: space).map(\.name)
         let values = try files.store.resourceValues(forKeys: [.fileProtectionKey, .isExcludedFromBackupKey])
         return RelaunchCheck(
@@ -43,17 +43,6 @@ extension LocalPersistence {
             protection: values.fileProtection?.rawValue,
             excludedFromBackup: values.isExcludedFromBackup
         )
-    }
-
-    private struct Offline: SyncTransport {
-        struct Unreachable: Error {}
-
-        func push(_ records: [OutgoingRecord], zone: SpaceID) async throws -> [RecordID: PushOutcome] { throw Unreachable() }
-        func pull(zone: SpaceID, since token: ChangeToken?) async throws -> PullPage { throw Unreachable() }
-    }
-
-    private struct SystemTime: TimeSource {
-        func now() -> Date { Date() }
     }
 }
 #endif
