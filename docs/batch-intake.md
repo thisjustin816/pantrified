@@ -222,7 +222,9 @@ deleted with them. **Discard** deletes the photos and the batch at once. Deletin
 open: at launch, whenever the app becomes active, and when the batch screen opens; an app that stays closed
 deletes them the next time it opens. The next batch screen after an unfinished batch expired starts a new
 batch and says once "An unfinished batch was deleted after 3 days without use." Photo files no batch
-names, left by a crash between writing a file and recording it, are removed. Times come from the store's
+names, left by a crash between writing a file and recording it, are removed. Photos are written in
+place rather than through a temporary file, so a crash mid-write leaves only such a file; the batch list
+is replaced atomically. Times come from the store's
 own records, never from file dates, so no required-reason API is used.
 
 **A batch list that cannot be used.** When the list cannot be read, such as before the first unlock

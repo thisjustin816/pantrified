@@ -375,6 +375,9 @@ struct StagingStoreTests {
             #expect(throws: StagingDirectory.UnsafeName.self) { try folder.remove(name) }
         }
         #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("escape.jpg").path))
+        #expect(StagingDirectory.writeOptions(for: StagingStore.manifestName).contains(.atomic))
+        #expect(StagingDirectory.writeOptions(for: StagingStore.setAsideName).contains(.atomic))
+        #expect(!StagingDirectory.writeOptions(for: UUID().uuidString + ".jpg").contains(.atomic))
     }
 }
 

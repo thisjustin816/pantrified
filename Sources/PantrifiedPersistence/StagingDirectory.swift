@@ -29,7 +29,7 @@ public struct StagingDirectory: StagingFiles {
     public func write(_ data: Data, to name: String) throws {
         let url = try file(name)
         try prepare()
-        try data.write(to: url, options: Self.writeOptions)
+        try data.write(to: url, options: Self.writeOptions(for: name))
         if !Self.protection.isEmpty { try FileManager.default.setAttributes(Self.protection, ofItemAtPath: url.path) }
         try Self.markTemporary(url)
     }
@@ -68,13 +68,23 @@ public struct StagingDirectory: StagingFiles {
         try Self.markTemporary(directory)
     }
 
+    /// Record files are replaced atomically, so a crash leaves the old one whole. Photos are written
+    /// in place: an atomic write goes through a hidden temporary file that a crash can leave behind,
+    /// which the store would never remove, while a half-written photo has a name the store made
+    /// and no record naming it, so the next sweep removes it.
+    public static func writeOptions(for name: String) -> Data.WritingOptions {
+        var options: Data.WritingOptions = name.hasSuffix(".json") ? [.atomic] : []
+        #if os(iOS)
+        options.insert(.completeFileProtectionUntilFirstUserAuthentication)
+        #endif
+        return options
+    }
+
     #if os(iOS)
-    private static let writeOptions: Data.WritingOptions = [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
     private static var protection: [FileAttributeKey: Any] {
         [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
     }
     #else
-    private static let writeOptions: Data.WritingOptions = [.atomic]
     private static var protection: [FileAttributeKey: Any] { [:] }
     #endif
 
