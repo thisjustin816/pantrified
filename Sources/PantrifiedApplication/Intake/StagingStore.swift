@@ -74,6 +74,21 @@ public enum StagingError: Error, Sendable, Equatable {
     case notCapturing
     case notRecognized
     case storage
+    /// The batch list cannot be used now: it could not be read, or a newer version of the app
+    /// wrote it. Nothing is changed or deleted meanwhile.
+    case unavailable
+}
+
+/// Why the batch list is not, or not fully, in use.
+public enum StagingLoadProblem: Sendable, Equatable {
+    /// The file could not be read, such as before the first unlock after a restart. Reading is tried
+    /// again on the next call; until then nothing is written or deleted.
+    case unreadable
+    /// The file, or a batch in it, could not be understood. It was set aside and the batches that
+    /// could be read were kept; the rest are lost.
+    case damaged
+    /// A newer version of the app wrote the file. It is read only, so nothing it holds is lost.
+    case newerVersion
 }
 
 /// Keeps staged photos and batch records, and deletes them on schedule. Every change is written
@@ -86,49 +101,134 @@ public actor StagingStore {
     public static let maximumPhotoBytes = 40 * 1_024 * 1_024
     static let photoExtensions: Set<String> = ["jpg", "heic", "png"]
 
+    /// The batch list's format. A file with a higher version is opened read only.
+    public static let manifestVersion = 1
+    /// A batch list that could not be understood is kept under this name for a recovery window,
+    /// then deleted.
+    public static let setAsideName = "batches.unreadable.json"
+
     private let files: any StagingFiles
     private let time: any TimeSource
     public let recoveryWindow: TimeInterval
-    private var batches: [IntakeBatch]
+    private var batches: [IntakeBatch] = []
+    /// False until the batch list has been read. Nothing is written or deleted before that, so a
+    /// read that fails for a while cannot replace the real list with an empty one.
+    private var loaded = false
+    private var readOnly = false
+    /// When a damaged batch list was set aside. Until a recovery window after it, photo files no
+    /// batch names are kept, because the lost batch named them.
+    private var setAsideAt: Date?
+    /// What went wrong reading the batch list in this launch, for the screen to say once.
+    public private(set) var loadProblem: StagingLoadProblem?
 
-    /// Reads the batch list. One that cannot be read is set aside as `batches.unreadable.json`
-    /// rather than overwritten, and the store starts empty.
     public init(files: any StagingFiles, time: any TimeSource, recoveryWindow: TimeInterval = StagingStore.defaultRecoveryWindow) {
         self.files = files
         self.time = time
         self.recoveryWindow = recoveryWindow
-        do {
-            if let data = try files.read(Self.manifestName) {
-                batches = try JSONDecoder().decode(Manifest.self, from: data).batches
-            } else {
-                batches = []
-            }
-        } catch {
-            if let data = try? files.read(Self.manifestName) { try? files.write(data, to: "batches.unreadable.json") }
-            batches = []
-        }
+        let load = Self.load(files: files, now: time.now())
+        (loaded, batches, setAsideAt, readOnly, loadProblem) = (load.loaded, load.batches, load.setAsideAt, load.readOnly, load.problem)
     }
 
     private struct Manifest: Codable {
-        var version = 1
+        var version = StagingStore.manifestVersion
         var batches: [IntakeBatch]
+        var setAsideAt: Date?
+    }
+
+    /// Reads a batch on its own, so one that cannot be understood does not lose the others.
+    private struct Lenient: Decodable {
+        let batch: IntakeBatch?
+        init(from decoder: any Decoder) throws { batch = try? IntakeBatch(from: decoder) }
+    }
+
+    private struct Stored: Decodable {
+        var version: Int
+        var batches: [Lenient]
+        var setAsideAt: Date?
+    }
+
+    /// The outcome of reading the batch list.
+    private struct Load {
+        var loaded = true
+        var batches: [IntakeBatch] = []
+        var setAsideAt: Date?
+        var readOnly = false
+        var problem: StagingLoadProblem?
+
+        static let unreadable = Load(loaded: false, problem: .unreadable)
+    }
+
+    private static func load(files: any StagingFiles, now: Date) -> Load {
+        let data: Data?
+        do { data = try files.read(manifestName) } catch { return .unreadable }
+        guard let data else { return Load() }
+        guard let stored = try? JSONDecoder().decode(Stored.self, from: data) else {
+            return setAside(data, keeping: [], files: files, now: now)
+        }
+        let batches = stored.batches.compactMap(\.batch)
+        if stored.version > manifestVersion {
+            return Load(batches: batches, setAsideAt: stored.setAsideAt, readOnly: true, problem: .newerVersion)
+        }
+        if batches.count < stored.batches.count { return setAside(data, keeping: batches, files: files, now: now) }
+        return Load(batches: batches, setAsideAt: stored.setAsideAt)
+    }
+
+    /// Keeps a copy of a damaged list and writes the batches that could be read. When either write
+    /// fails, nothing is replaced and the list is tried again later.
+    private static func setAside(_ data: Data, keeping batches: [IntakeBatch], files: any StagingFiles, now: Date) -> Load {
+        do {
+            try files.write(data, to: setAsideName)
+            let manifest = try JSONEncoder().encode(Manifest(batches: batches, setAsideAt: now))
+            try files.write(manifest, to: manifestName)
+        } catch {
+            return .unreadable
+        }
+        return Load(batches: batches, setAsideAt: now, problem: .damaged)
+    }
+
+    /// Reads the batch list again when it could not be read before. Returns whether it is in use.
+    @discardableResult
+    private func ensureLoaded() -> Bool {
+        if !loaded {
+            let load = Self.load(files: files, now: time.now())
+            (loaded, batches, setAsideAt, readOnly, loadProblem) = (load.loaded, load.batches, load.setAsideAt, load.readOnly, load.problem)
+        }
+        return loaded
+    }
+
+    /// Whether changes can be written: the list was read and no newer version wrote it.
+    private func writable() throws(StagingError) {
+        guard ensureLoaded(), !readOnly else { throw .unavailable }
+    }
+
+    /// Says what went wrong reading the batch list, once.
+    public func takeLoadProblem() -> StagingLoadProblem? {
+        ensureLoaded()
+        defer { if loadProblem != .unreadable { loadProblem = nil } }
+        return loadProblem
     }
 
     // MARK: Batches
 
-    public var all: [IntakeBatch] { batches }
+    public var all: [IntakeBatch] {
+        ensureLoaded()
+        return batches
+    }
 
     public func batch(_ id: IntakeBatchID) -> IntakeBatch? {
-        batches.first { $0.id == id }
+        ensureLoaded()
+        return batches.first { $0.id == id }
     }
 
     /// The Space's batch that is not finished, if any: the one to resume.
     public func unfinished(in space: SpaceID) -> IntakeBatch? {
-        batches.last { $0.space == space && $0.phase != .finished }
+        ensureLoaded()
+        return batches.last { $0.space == space && $0.phase != .finished }
     }
 
     /// The unfinished batch to carry on with, or a new one.
     public func open(in space: SpaceID) throws(StagingError) -> IntakeBatch {
+        try writable()
         if let existing = unfinished(in: space) { return existing }
         let batch = IntakeBatch(id: IntakeBatchID(), space: space, startedAt: time.now())
         batches.append(batch)
@@ -149,6 +249,7 @@ public actor StagingStore {
         digest: String? = nil,
         in id: IntakeBatchID
     ) throws(StagingError) -> StagedPhoto {
+        try writable()
         guard let index = index(id) else { throw .unknownBatch }
         guard batches[index].phase == .capturing else { throw .notCapturing }
         guard batches[index].photos.count < IntakeLimits.photosPerBatch else { throw .batchFull }
@@ -175,6 +276,7 @@ public actor StagingStore {
 
     /// Takes a photo back out before the batch is read, deleting its file.
     public func removePhoto(_ photo: IntakePhotoID, from id: IntakeBatchID) throws(StagingError) {
+        try writable()
         guard let index = index(id) else { throw .unknownBatch }
         guard batches[index].phase == .capturing else { throw .notCapturing }
         guard let position = batches[index].photos.firstIndex(where: { $0.id == photo }) else { throw .unknownPhoto }
@@ -192,6 +294,7 @@ public actor StagingStore {
 
     /// Moves a capturing batch on to reading. Calling it again changes nothing.
     public func startProcessing(_ id: IntakeBatchID) throws(StagingError) {
+        try writable()
         guard let index = index(id) else { throw .unknownBatch }
         guard batches[index].phase == .capturing else { return }
         batches[index].phase = .processing
@@ -207,6 +310,7 @@ public actor StagingStore {
     /// read twice, as after a relaunch, changes nothing. Returns whether it was kept.
     @discardableResult
     public func record(_ observation: PhotoObservation, in id: IntakeBatchID) throws(StagingError) -> Bool {
+        try writable()
         guard let index = index(id) else { throw .unknownBatch }
         guard let position = batches[index].photos.firstIndex(where: { $0.id == observation.photo }) else { throw .unknownPhoto }
         guard batches[index].photos[position].observation == nil else { return false }
@@ -218,6 +322,7 @@ public actor StagingStore {
     /// Counts a failed read. Returns the number of failures so far.
     @discardableResult
     public func recordFailure(of photo: IntakePhotoID, in id: IntakeBatchID) throws(StagingError) -> Int {
+        try writable()
         guard let index = index(id) else { throw .unknownBatch }
         guard let position = batches[index].photos.firstIndex(where: { $0.id == photo }) else { throw .unknownPhoto }
         batches[index].photos[position].failedAttempts += 1
@@ -233,6 +338,7 @@ public actor StagingStore {
     /// that already has a review keeps it, with the person's edits: grouping runs once per batch.
     @discardableResult
     public func finishRecognition(_ id: IntakeBatchID, review: IntakeReview) throws(StagingError) -> IntakeReview {
+        try writable()
         guard let index = index(id) else { throw .unknownBatch }
         if let existing = batches[index].review { return existing }
         batches[index].review = review
@@ -250,6 +356,7 @@ public actor StagingStore {
         _ id: IntakeBatchID,
         _ change: @Sendable (inout IntakeReview) throws -> Result
     ) throws -> Result {
+        try writable()
         guard let index = index(id) else { throw StagingError.unknownBatch }
         guard var review = batches[index].review else { throw StagingError.notRecognized }
         let result = try change(&review)
@@ -277,6 +384,7 @@ public actor StagingStore {
 
     /// Deletes the batch's photos and record now.
     public func discard(_ id: IntakeBatchID) throws(StagingError) {
+        try writable()
         guard let index = index(id) else { return }
         let removed = batches.remove(at: index)
         try save()
@@ -289,12 +397,22 @@ public actor StagingStore {
     /// - a batch still capturing a recovery window after its last photo is moved on to reading, so
     ///   an abandoned capture does not keep photos indefinitely;
     /// - finished batches a recovery window after they finished;
-    /// - photo files no batch names, left by a crash between writing a file and recording it.
+    /// - photo files no batch names, left by a crash between writing a file and recording it, once
+    ///   no damaged batch list is set aside;
+    /// - a damaged batch list set aside a recovery window ago.
+    ///
+    /// Nothing is deleted while the batch list cannot be read or a newer version wrote it.
     @discardableResult
     public func sweep() throws(StagingError) -> Int {
+        guard ensureLoaded(), !readOnly else { return 0 }
         let now = time.now()
         var doomed: [String] = []
         var changed = false
+        if let setAside = setAsideAt, now.timeIntervalSince(setAside) >= recoveryWindow {
+            try? files.remove(Self.setAsideName)
+            setAsideAt = nil
+            changed = true
+        }
         for index in batches.indices {
             if let processed = batches[index].processedAt, now.timeIntervalSince(processed) >= recoveryWindow {
                 for photo in batches[index].photos.indices where !batches[index].photos[photo].fileRemoved {
@@ -322,7 +440,8 @@ public actor StagingStore {
         if changed { try save() }
 
         let named = Set(batches.flatMap { $0.photos.filter { !$0.fileRemoved }.map(\.fileName) })
-        if let present = try? files.names() {
+        // While a damaged list is set aside, the photos it named are kept with it.
+        if setAsideAt == nil, let present = try? files.names() {
             for name in present where !named.contains(name) { doomed.append(name) }
         }
         var deleted = 0
@@ -347,8 +466,9 @@ public actor StagingStore {
     }
 
     private func save() throws(StagingError) {
+        try writable()
         do {
-            let data = try JSONEncoder().encode(Manifest(batches: batches))
+            let data = try JSONEncoder().encode(Manifest(batches: batches, setAsideAt: setAsideAt))
             try files.write(data, to: Self.manifestName)
         } catch {
             throw .storage

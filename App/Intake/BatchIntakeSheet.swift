@@ -16,7 +16,7 @@ struct BatchIntakeSheet: View {
             if let intake {
                 flow(intake)
             } else if model.intake == nil {
-                unavailable
+                unavailable(nil)
             } else {
                 ProgressView()
             }
@@ -60,16 +60,16 @@ struct BatchIntakeSheet: View {
         case .reviewing:
             IntakeReviewView(intake: intake, addByHand: { addingByHand = true }, close: { dismiss() })
         case .unavailable:
-            unavailable
+            unavailable(intake.unavailableDetail)
         }
     }
 
-    private var unavailable: some View {
+    private func unavailable(_ detail: String?) -> some View {
         NavigationStack {
             ContentUnavailableView {
                 Label("Batches aren't available", systemImage: "photo.stack")
             } description: {
-                Text("Pantrified couldn't open its folder for batch photos. You can still add food by hand.")
+                Text(detail ?? "Pantrified couldn't open its folder for batch photos. Try again later. You can still add food by hand.")
             } actions: {
                 Button("Add by Hand") { addingByHand = true }
                     .buttonStyle(.borderedProminent)
@@ -79,6 +79,20 @@ struct BatchIntakeSheet: View {
                     Button("Close") { dismiss() }
                 }
             }
+        }
+    }
+}
+
+extension View {
+    /// Tells the person about a failure once.
+    func intakeProblemAlert(_ intake: IntakeModel) -> some View {
+        alert(
+            "Something went wrong",
+            isPresented: Binding(get: { intake.problem != nil }, set: { if !$0 { intake.dismissProblem() } })
+        ) {
+            Button("OK") {}
+        } message: {
+            Text(intake.problem ?? "")
         }
     }
 }

@@ -216,13 +216,95 @@ struct StagingStoreTests {
         #expect(kept.summaries.map(\.name) == ["Rice"])
     }
 
-    @Test("an unreadable batch list is set aside, not overwritten")
-    func unreadableManifest() async throws {
+    @Test("a damaged batch list is set aside, the person is told, and its photos stay until the copy goes")
+    func damagedManifest() async throws {
         let world = IntakeWorld()
-        world.files.put(StagingStore.manifestName, Data("{not json".utf8))
+        _ = try await world.stage(["rice", "beans"], in: world.launch())
+        let whole = try #require(world.files.contents(of: StagingStore.manifestName))
+        world.files.put(StagingStore.manifestName, whole.prefix(whole.count / 2))
+
         let store = world.launch()
         #expect(await store.all.isEmpty)
-        #expect(world.files.has("batches.unreadable.json"))
+        #expect(await store.takeLoadProblem() == .damaged)
+        #expect(await store.takeLoadProblem() == nil)
+        #expect(world.files.contents(of: StagingStore.setAsideName) == whole.prefix(whole.count / 2))
+        #expect(try await store.sweep() == 0)
+        #expect(world.files.photoNames.filter { $0.hasSuffix(".jpg") }.count == 2)
+        // A new batch can start meanwhile, and saving it does not delete the lost batch's photos.
+        _ = try await world.stage(["rice"], in: store)
+        #expect(try await store.sweep() == 0)
+
+        world.time.advance(hours: 24)
+        #expect(try await store.sweep() == 2)
+        #expect(!world.files.has(StagingStore.setAsideName))
+        #expect(world.files.photoNames.filter { $0.hasSuffix(".jpg") }.count == 1)
+    }
+
+    @Test("one batch that cannot be understood is set aside without losing the others")
+    func oneDamagedBatch() async throws {
+        let world = IntakeWorld()
+        let store = world.launch()
+        let kept = try await world.stage(["rice"], in: store)
+        try await store.startProcessing(kept)
+        _ = try await store.open(in: SpaceID())
+        let data = try #require(world.files.contents(of: StagingStore.manifestName))
+        var json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        var batches = try #require(json["batches"] as? [[String: Any]])
+        batches[1]["phase"] = "somethingNewer"
+        json["batches"] = batches
+        world.files.put(StagingStore.manifestName, try JSONSerialization.data(withJSONObject: json))
+
+        let relaunched = world.launch()
+        #expect(await relaunched.all.map(\.id) == [kept])
+        #expect(await relaunched.takeLoadProblem() == .damaged)
+        #expect(world.files.has(StagingStore.setAsideName))
+    }
+
+    @Test("a batch list that cannot be read now is tried again later, and nothing is written or deleted meanwhile")
+    func unreadableManifest() async throws {
+        let world = IntakeWorld()
+        let batch = try await world.stage(["rice", "beans"], in: world.launch())
+        let before = world.files.contents(of: StagingStore.manifestName)
+        world.files.failReads(true)
+
+        let store = world.launch()
+        #expect(await store.all.isEmpty)
+        #expect(await store.takeLoadProblem() == .unreadable)
+        #expect(try await store.sweep() == 0)
+        await #expect(throws: StagingError.unavailable) { try await store.open(in: world.space) }
+        #expect(world.files.contents(of: StagingStore.manifestName) == before)
+        #expect(!world.files.has(StagingStore.setAsideName))
+        #expect(world.files.removed.isEmpty)
+
+        world.files.failReads(false)
+        #expect(await store.batch(batch)?.photos.count == 2)
+        #expect(await store.takeLoadProblem() == nil)
+        #expect(try await store.open(in: world.space).id == batch)
+    }
+
+    @Test("a batch list a newer version wrote is opened read only and never rewritten or swept")
+    func newerManifest() async throws {
+        let world = IntakeWorld()
+        let batch = try await world.stage(["rice"], in: world.launch())
+        let data = try #require(world.files.contents(of: StagingStore.manifestName))
+        var json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        json["version"] = 99
+        json["somethingNew"] = ["kept": true]
+        let newer = try JSONSerialization.data(withJSONObject: json)
+        world.files.put(StagingStore.manifestName, newer)
+        world.files.put(UUID().uuidString + ".jpg")
+
+        let store = world.launch()
+        #expect(await store.batch(batch) != nil)
+        #expect(await store.takeLoadProblem() == .newerVersion)
+        await #expect(throws: StagingError.unavailable) {
+            try await store.stage(Data([1]), fileExtension: "jpg", source: .camera, in: batch)
+        }
+        await #expect(throws: StagingError.unavailable) { try await store.discard(batch) }
+        world.time.advance(hours: 24 * 30)
+        #expect(try await store.sweep() == 0)
+        #expect(world.files.contents(of: StagingStore.manifestName) == newer)
+        #expect(world.files.removed.isEmpty)
     }
 
     @Test("the staging directory writes, lists and removes plain names in its folder, and refuses paths")

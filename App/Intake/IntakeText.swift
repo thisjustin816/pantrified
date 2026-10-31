@@ -7,6 +7,10 @@ enum IntakeText {
     /// What the batch screen says about photos. Must match the camera usage description and PRIVACY.md.
     static let photosStayHere = "Photos stay on this iPhone and are deleted about a day after they're read. They're never saved to your photo library."
 
+    static let damagedBatch = "A batch couldn't be opened because its record was damaged. Its photos are deleted within a day."
+
+    static let newerVersion = "These batch photos were saved by a newer version of Pantrified. Update the app to open them. You can still add food by hand."
+
     static func added(_ count: Int) -> String {
         count == 1 ? "Added 1 food" : "Added \(count) foods"
     }

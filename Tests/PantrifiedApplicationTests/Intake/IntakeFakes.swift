@@ -8,6 +8,7 @@ final class MemoryStagingFiles: StagingFiles, @unchecked Sendable {
     private let lock = NSLock()
     private var contents: [String: Data] = [:]
     private var failingWrites: Set<String> = []
+    private var failingReads = false
     private(set) var removed: [String] = []
 
     func write(_ data: Data, to name: String) throws {
@@ -17,7 +18,12 @@ final class MemoryStagingFiles: StagingFiles, @unchecked Sendable {
         }
     }
 
-    func read(_ name: String) throws -> Data? { lock.withLock { contents[name] } }
+    func read(_ name: String) throws -> Data? {
+        try lock.withLock {
+            if failingReads { throw FakeFailure() }
+            return contents[name]
+        }
+    }
 
     func remove(_ name: String) throws {
         lock.withLock {
@@ -32,6 +38,9 @@ final class MemoryStagingFiles: StagingFiles, @unchecked Sendable {
 
     func failWrites(to name: String) { lock.withLock { _ = failingWrites.insert(name) } }
     func allowWrites() { lock.withLock { failingWrites.removeAll() } }
+    /// Every read fails, as before the first unlock after a restart.
+    func failReads(_ failing: Bool) { lock.withLock { failingReads = failing } }
+    func contents(of name: String) -> Data? { lock.withLock { contents[name] } }
     func put(_ name: String, _ data: Data = Data([1])) { lock.withLock { contents[name] = data } }
     func has(_ name: String) -> Bool { lock.withLock { contents[name] != nil } }
     var photoNames: [String] { lock.withLock { contents.keys.filter { $0 != StagingStore.manifestName }.sorted() } }

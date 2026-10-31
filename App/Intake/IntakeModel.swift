@@ -35,6 +35,8 @@ final class IntakeModel {
     private(set) var thumbnails: [IntakePhotoID: UIImage] = [:]
     /// A failure to tell the person about, once.
     private(set) var problem: String?
+    /// Why batches cannot be opened, when it is not the folder itself.
+    private(set) var unavailableDetail: String?
     private(set) var added: AddedPrompt?
     private(set) var isAdding = false
 
@@ -70,6 +72,7 @@ final class IntakeModel {
         do {
             _ = try? await services.store.sweep()
             let batch = try await services.store.open(in: services.space)
+            if await services.store.takeLoadProblem() == .damaged { problem = IntakeText.damagedBatch }
             batchID = batch.id
             photos = batch.livePhotos
             switch batch.phase {
@@ -84,6 +87,7 @@ final class IntakeModel {
                 lookUpNames()
             }
         } catch {
+            unavailableDetail = await services.store.takeLoadProblem() == .newerVersion ? IntakeText.newerVersion : nil
             stage = .unavailable
         }
     }

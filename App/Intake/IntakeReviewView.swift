@@ -48,14 +48,7 @@ struct IntakeReviewView: View {
             } message: {
                 Text("The photos and everything read from them are deleted now. Food already added stays.")
             }
-            .alert(
-                "Something went wrong",
-                isPresented: Binding(get: { intake.problem != nil }, set: { if !$0 { intake.dismissProblem() } })
-            ) {
-                Button("OK") {}
-            } message: {
-                Text(intake.problem ?? "")
-            }
+            .intakeProblemAlert(intake)
         }
     }
 

@@ -131,6 +131,7 @@ struct BatchCaptureView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { toolbar }
                 .safeAreaInset(edge: .bottom) { controls }
+                .intakeProblemAlert(intake)
         }
         .task {
             camera.onShot = { shot in Task { await intake.keep(shot.data, source: .camera, takenAt: shot.takenAt) } }
