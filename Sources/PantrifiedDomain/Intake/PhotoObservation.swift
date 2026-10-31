@@ -305,8 +305,31 @@ public struct PhotoObservation: Sendable, Hashable, Codable {
 
 /// Cleans untrusted text: control and format characters (including bidirectional overrides) become
 /// spaces, runs of white space collapse, and the result is cut between characters to a character and
-/// a UTF-8 byte limit.
+/// a UTF-8 byte limit. Invisible scalars attached to a visible character, such as tag characters or a
+/// zero width joiner between letters, are removed one by one; only an emoji keeps its joiners,
+/// variation selectors and tags. Hangul fillers, which draw nothing, count as spaces.
 public enum BoundedText {
+    /// Letters that draw nothing.
+    static let fillers: Set<UInt32> = [0x115F, 0x1160, 0x3164, 0xFFA0]
+
+    static func isInvisible(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.properties.generalCategory {
+        case .control, .format, .lineSeparator, .paragraphSeparator, .surrogate, .privateUse, .unassigned: true
+        default: (0xFE00...0xFE0F).contains(scalar.value) || (0xE0100...0xE01EF).contains(scalar.value)
+        }
+    }
+
+    /// The character as it may be kept: whole when it is an emoji, otherwise without invisible scalars.
+    static func visible(_ character: Character) -> String {
+        let scalars = character.unicodeScalars
+        let emoji = scalars.contains { $0.properties.isEmojiPresentation }
+            || (scalars.count > 1 && scalars.first?.properties.isEmoji == true && scalars.first?.isASCII == false)
+        if emoji { return String(character) }
+        var kept = String.UnicodeScalarView()
+        for scalar in scalars where !isInvisible(scalar) && !fillers.contains(scalar.value) { kept.append(scalar) }
+        return String(kept)
+    }
+
     public static func clean(_ text: String, characters: Int, bytes: Int) -> String {
         var out = ""
         var bytesSoFar = 0
@@ -314,19 +337,12 @@ public enum BoundedText {
         var pendingSpace = false
         // Reading stops well past the limits, so a huge input costs no more than a long line.
         for character in text.prefix(characters * 4) {
-            // A character made only of control or format scalars goes. An emoji joined with zero
-            // width joiners stays: its joiners are inside one character with visible scalars.
-            let isSpace = character.isWhitespace || character.unicodeScalars.allSatisfy { scalar in
-                switch scalar.properties.generalCategory {
-                case .control, .format, .lineSeparator, .paragraphSeparator, .surrogate, .privateUse, .unassigned: true
-                default: false
-                }
-            }
-            if isSpace {
+            let kept = visible(character)
+            if character.isWhitespace || kept.isEmpty {
                 pendingSpace = !out.isEmpty
                 continue
             }
-            let piece = pendingSpace ? " " + String(character) : String(character)
+            let piece = pendingSpace ? " " + kept : kept
             let pieceBytes = piece.utf8.count
             let pieceCount = pendingSpace ? 2 : 1
             guard count + pieceCount <= characters, bytesSoFar + pieceBytes <= bytes else { break }

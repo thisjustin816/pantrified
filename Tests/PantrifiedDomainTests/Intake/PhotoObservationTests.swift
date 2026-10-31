@@ -59,6 +59,22 @@ struct PhotoObservationTests {
         #expect(RecognizedTextLine(text: "\u{202E}\u{0007}  \n", box: .whole) == nil)
     }
 
+    @Test("invisible scalars inside a character go, Hangul fillers are spaces, and emoji keep their joiners")
+    func invisibleScalars() {
+        func clean(_ text: String) -> String { BoundedText.clean(text, characters: 100, bytes: 400) }
+        #expect(clean("Mi\u{E0041}\u{E0042}lk") == "Milk")
+        #expect(clean("Mi\u{200D}lk") == "Milk")
+        #expect(clean("Mi\u{200B}lk") == "Mi lk")
+        #expect(clean("Oat\u{3164}milk") == "Oat milk")
+        #expect(clean("\u{3164}\u{115F}\u{1160}\u{FFA0}") == "")
+        #expect(clean("Rice\u{FE0F}") == "Rice")
+        #expect(clean("Family \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}") == "Family \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}")
+        let england = "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}"
+        #expect(clean("Tea " + england) == "Tea " + england)
+        #expect(clean("Snow \u{2744}\u{FE0F}") == "Snow \u{2744}\u{FE0F}")
+        #expect(clean("Caf\u{0065}\u{0301}") == "Caf\u{0065}\u{0301}")
+    }
+
     @Test("a line is cut between characters to both its character and its byte limit")
     func lineLimits() throws {
         let long = try #require(RecognizedTextLine(text: String(repeating: "a", count: 1_000), box: .whole))
