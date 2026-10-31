@@ -23,14 +23,16 @@ screen or the app. You can turn camera access off in iOS Settings and still add
 food by hand.
 
 A barcode you scan is kept with that food in the app's storage on your device.
-It is not synchronized or sent to the developer.
+Apart from the product lookup below, it does not leave the device: it is not
+synchronized or sent to the developer. It stays after the food is used up or
+discarded, and is removed only when you delete the app.
 
 ## Product lookup
 
 Builds that include product lookup send a scanned barcode number to USDA
-FoodData Central, through the U.S. government's api.data.gov service, to
-suggest the product's name. The request contains the barcode number and the
-app's own access key. It contains nothing about you, your household or your
+FoodData Central at api.nal.usda.gov, which uses the U.S. government's
+api.data.gov key service, to suggest the product's name. The request contains
+the barcode number and the app's own access key. It contains nothing about you, your household or your
 other food, and the app sets a fixed app name and language on it instead of
 your device's details. Like any internet request, it reveals your device's IP
 address to the service. The app keeps no cookies or cache from it and logs

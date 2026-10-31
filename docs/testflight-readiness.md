@@ -50,7 +50,7 @@ What is in place for an upload, what only the owner can decide, and what data le
 5. **Product lookup key and App Privacy.** A build looks products up only when it carries a FoodData Central
    key (`FDC_API_KEY`, `docs/capture.md`). The upload workflow does not pass one yet; `docs/capture.md`
    lists the change and the secret to add. Before uploading a build with a key, decide how App Privacy
-   describes the barcode sent to api.data.gov with the device's IP address (owner decision 3 in
+   describes the barcode sent to api.nal.usda.gov with the device's IP address (owner decision 3 in
    `docs/capture.md`).
 
 Read App Store Connect's current requirements when preparing these; they change.
@@ -66,7 +66,7 @@ data types change when the flow is built.
 | Flow | What leaves the device | To whom | Status |
 |---|---|---|---|
 | Household sync | Inventory, shopping list, consumer profiles and approved evidence crops | Apple iCloud, and the participants of a shared Space | Engine built against a fake transport; no CloudKit code |
-| Product lookup | A scanned barcode number and the app's api.data.gov key, with the device's IP address as for any request. No name, household data or device details | USDA FoodData Central, through api.data.gov | Built; on only in a build with a key, which the upload workflow does not pass yet |
+| Product lookup | A scanned barcode number and the app's api.data.gov key, with the device's IP address as for any request. No name, household data or device details | USDA FoodData Central at api.nal.usda.gov, keyed through api.data.gov | Built; on only in a build with a key, which the upload workflow does not pass yet |
 | Recipe discovery | To be decided when built | Edamam | Not built |
 | Generation on the device | Nothing | Nobody | Built; the on-device model needs a device with Apple Intelligence |
 | Generation in the cloud | The Make Something request context: selected foods, restrictions and preferences | Apple Private Cloud Compute | Not built |
