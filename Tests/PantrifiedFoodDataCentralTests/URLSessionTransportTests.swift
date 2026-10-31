@@ -10,9 +10,9 @@ import PantrifiedDomain
 private let limit = 1_000_000
 private let chunk = Data(repeating: UInt8(ascii: "a"), count: 65_536)
 
-private func transport(to server: LoopbackServer) -> URLSessionTransport {
+private func transport(to server: LoopbackServer, timeout: TimeInterval = 20) -> URLSessionTransport {
     URLSessionTransport(
-        timeout: 20,
+        timeout: timeout,
         origin: URLSessionTransport.Origin(scheme: "http", host: "127.0.0.1", port: server.port),
         limit: limit
     )
@@ -50,38 +50,41 @@ private func idleTask() -> URLSessionDataTask {
 struct URLSessionTransportTests {
     // MARK: Against a local server
 
-    @Test("a body that keeps growing past the limit is cut off, not read to the end")
+    @Test("a body that keeps growing past the limit is cut off, not waited for")
     func streamingBodyStopsEarly() async throws {
-        // 32 MB with no length announced, so only the running count can stop it, at about 30 MB a
-        // second, faster than a phone's network.
+        // A little over the limit with no length announced, then silence on a connection that stays
+        // open. Only the running count can end this: a transport that waited for the end of the answer
+        // would sit until its timeout and return `.timedOut`. Nothing here depends on how fast the
+        // machine is or how far URLSession reads ahead.
         let server = try LoopbackServer(
             head: "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n",
-            body: chunk, repeats: 512, pauseMicroseconds: 2_000
+            body: chunk, repeats: limit / chunk.count + 5, holdOpen: true
         )
         defer { server.stop() }
 
-        let result = await transport(to: server).get(request(server))
+        let result = await transport(to: server, timeout: 10).get(request(server))
 
         #expect(result == .failure(.other))
         #expect(server.waitForConnection())
-        // The limit plus what the sockets and URLSession buffer, far short of the 32 MB on offer.
-        #expect(server.bodyBytesSent < 16_000_000, "\(server.bodyBytesSent) bytes were read")
+        #expect(server.clientClosedBeforeEnd)
     }
 
-    @Test("a body announced as larger than the limit is refused without reading it")
+    @Test("a body announced as larger than the limit is refused without waiting for it")
     func announcedLengthRefused() async throws {
+        // The head promises 64 MB, the server sends one chunk and holds the connection open. A transport
+        // that did not check the announced length would wait for the rest until its timeout.
         let size = 64 * chunk.count * 16
         let server = try LoopbackServer(
             head: "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: \(size)\r\nConnection: close\r\n\r\n",
-            body: chunk, repeats: size / chunk.count, pauseMicroseconds: 2_000
+            body: chunk, repeats: 1, holdOpen: true
         )
         defer { server.stop() }
 
-        let result = await transport(to: server).get(request(server))
+        let result = await transport(to: server, timeout: 10).get(request(server))
 
         #expect(result == .failure(.other))
         #expect(server.waitForConnection())
-        #expect(server.bodyBytesSent < size / 4, "\(server.bodyBytesSent) bytes were read")
+        #expect(server.clientClosedBeforeEnd)
     }
 
     @Test("a body within the limit is returned whole with its status")
