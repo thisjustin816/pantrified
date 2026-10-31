@@ -34,7 +34,10 @@ final class PantryModel {
 
     func load() async {
         do {
-            snapshot = try await pantry.snapshot()
+            let fresh = try await pantry.snapshot()
+            // Inside the animation, so a food that was used up, moved or put back slides out of or
+            // into its list instead of jumping.
+            animated { snapshot = fresh }
         } catch {
             problem = "Couldn't read your food list. Quit and open Pantrified again."
         }
@@ -101,9 +104,9 @@ final class PantryModel {
         animated { undoPrompt = nil }
     }
 
-    /// Makes the change inside an animation, so the banner slides in and out. The banner sits in a
-    /// safe area inset, which ignores an `.animation` modifier on the screen, so the animation has to
-    /// start where the change is made. With Reduce Motion on, the change is immediate.
+    /// Makes the change inside an animation, so the banner and the list rows move. The banner sits in
+    /// a safe area inset, which ignores an `.animation` modifier on the screen, so the animation has
+    /// to start where the change is made. With Reduce Motion on, the change is immediate.
     private func animated(_ change: () -> Void) {
         if UIAccessibility.isReduceMotionEnabled {
             change()
