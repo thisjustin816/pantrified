@@ -46,9 +46,10 @@ kept and deleted with the batch's photos, as above. Once you add the food, what 
 the name, place, printed date and barcode, as for food added by hand. No photo
 is kept with your food.
 
-A copy of a photo you pick keeps the details stored in that file, such as
-where it was taken, until it is deleted. The app uses only the image and the
-time it was taken.
+The app removes the location from its copy of a photo you pick. Other details
+stored in that file, such as the camera model, stay with the copy until it is
+deleted. The app uses only the image and the time it was taken. Photos taken in
+Add a batch carry no location.
 
 You can turn camera access off in iOS Settings and still add food by hand or
 from photos you pick.

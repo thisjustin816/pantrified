@@ -74,6 +74,26 @@ final class BatchCameraModel {
         camera?.setTorch(on: torchOn)
     }
 
+    private func handle(_ event: BatchCamera.Event) {
+        switch event {
+        case .interrupted:
+            if state == .running { state = .starting }
+        case .resumed:
+            if state == .starting { startIfWanted() }
+        case .failed:
+            state = .failed
+        }
+    }
+
+    /// Another screen covers the camera, such as Add by Hand. The camera stops until it is uncovered.
+    func covered(_ isCovered: Bool) async {
+        if isCovered {
+            disappeared()
+        } else {
+            await appeared()
+        }
+    }
+
     private func received(_ shot: BatchCamera.Shot?) {
         pending = max(0, pending - 1)
         if let shot { onShot(shot) } else { onFailedShot() }
@@ -81,7 +101,11 @@ final class BatchCameraModel {
 
     private func startIfWanted() {
         guard visible, active, state == .starting || state == .running else { return }
-        let camera = camera ?? BatchCamera { [weak self] shot in self?.received(shot) }
+        let camera = camera ?? BatchCamera { [weak self] shot in
+            self?.received(shot)
+        } onEvent: { [weak self] event in
+            self?.handle(event)
+        }
         self.camera = camera
         session = camera.session
         camera.start { [weak self] running, hasTorch in
@@ -112,6 +136,8 @@ final class BatchCameraModel {
 /// list, and the Photos picker for photos already taken. Reading never holds up the shutter.
 struct BatchCaptureView: View {
     let intake: IntakeModel
+    /// Another sheet covers this one, so the camera should not run.
+    var covered = false
     let addByHand: () -> Void
     let close: () -> Void
 
@@ -140,6 +166,7 @@ struct BatchCaptureView: View {
             await camera.appeared()
         }
         .onDisappear { camera.disappeared() }
+        .onChange(of: covered) { _, isCovered in Task { await camera.covered(isCovered) } }
         .onChange(of: scenePhase) { _, phase in camera.sceneActive(phase == .active) }
         .onChange(of: picked) { _, items in
             guard !items.isEmpty else { return }
@@ -347,13 +374,20 @@ struct BatchCaptureView: View {
         }
     }
 
-    /// Copies each picked photo into the staging folder. The originals stay in Photos, untouched.
+    /// Copies each picked photo into the staging folder without its location. The originals stay in
+    /// Photos, untouched. The time it was taken and the duplicate check come from the original.
     private func importPhotos(_ items: [PhotosPickerItem]) async {
         importing = true
         defer { importing = false }
         for item in items.prefix(remaining) {
             guard let data = try? await item.loadTransferable(type: Data.self) else { continue }
-            await intake.keep(data, source: .imported, takenAt: PhotoFormat.takenAt(data))
+            let takenAt = PhotoFormat.takenAt(data)
+            let digest = PhotoFormat.digest(of: data)
+            guard let copy = await Task.detached(priority: .userInitiated, operation: { PhotoFormat.withoutLocation(data) }).value else {
+                intake.report("That photo couldn't be added.")
+                continue
+            }
+            await intake.keep(copy, source: .imported, takenAt: takenAt, digest: digest)
         }
     }
 }

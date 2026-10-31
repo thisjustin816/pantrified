@@ -109,12 +109,13 @@ final class IntakeModel {
     // MARK: Capture
 
     /// Keeps a photo the camera took or the picker gave. It is written to the staging folder only.
-    func keep(_ data: Data, source: PhotoSource, takenAt: Date?) async {
+    /// `digest` is the original's, for a picked photo whose copy had its location removed.
+    func keep(_ data: Data, source: PhotoSource, takenAt: Date?, digest: String? = nil) async {
         guard let batchID else { return }
         do {
             let photo = try await services.store.stage(
                 data, fileExtension: PhotoFormat.fileExtension(of: data), source: source, capturedAt: takenAt,
-                digest: PhotoFormat.digest(of: data), in: batchID
+                digest: digest ?? PhotoFormat.digest(of: data), in: batchID
             )
             photos.append(photo)
             await services.pipeline.photosChanged()
@@ -345,6 +346,8 @@ final class IntakeModel {
     }
 
     func dismissProblem() { problem = nil }
+
+    func report(_ problem: String) { self.problem = problem }
 
     /// The batch was deleted under the screen, such as when it expired while the app was away:
     /// start again with the batch the store has now.

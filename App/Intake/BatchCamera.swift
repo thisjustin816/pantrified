@@ -13,6 +13,15 @@ final class BatchCamera: NSObject, AVCapturePhotoCaptureDelegate, @unchecked Sen
         case notDetermined, authorized, denied, restricted
     }
 
+    /// What happened to a running session.
+    enum Event: Sendable {
+        /// The system took the camera, for example for a phone call.
+        case interrupted
+        case resumed
+        /// The session stopped on an error.
+        case failed
+    }
+
     struct Shot: Sendable {
         let data: Data
         let fileExtension: String
@@ -23,13 +32,33 @@ final class BatchCamera: NSObject, AVCapturePhotoCaptureDelegate, @unchecked Sen
     private let output = AVCapturePhotoOutput()
     private let queue = DispatchQueue(label: "com.thisjustin816.Pantrified.batch-camera")
     private let onShot: @MainActor @Sendable (Shot?) -> Void
+    private let onEvent: @MainActor @Sendable (Event) -> Void
     /// Used only on `queue`.
     private var configured = false
     private var device: AVCaptureDevice?
+    private var observers: [NSObjectProtocol] = []
 
-    /// `onShot` gets each photo, or nil when one could not be taken.
-    init(onShot: @escaping @MainActor @Sendable (Shot?) -> Void) {
+    /// `onShot` gets each photo, or nil when one could not be taken. `onEvent` hears about
+    /// interruptions and errors, so the screen never shows a frozen preview as running.
+    init(onShot: @escaping @MainActor @Sendable (Shot?) -> Void, onEvent: @escaping @MainActor @Sendable (Event) -> Void) {
         self.onShot = onShot
+        self.onEvent = onEvent
+        super.init()
+        let center = NotificationCenter.default
+        let events: [(Notification.Name, Event)] = [
+            (AVCaptureSession.wasInterruptedNotification, .interrupted),
+            (AVCaptureSession.interruptionEndedNotification, .resumed),
+            (AVCaptureSession.runtimeErrorNotification, .failed),
+        ]
+        for (name, event) in events {
+            observers.append(center.addObserver(forName: name, object: session, queue: nil) { _ in
+                Task { @MainActor in onEvent(event) }
+            })
+        }
+    }
+
+    deinit {
+        for observer in observers { NotificationCenter.default.removeObserver(observer) }
     }
 
     static var isAvailable: Bool { backCamera() != nil }
@@ -68,10 +97,14 @@ final class BatchCamera: NSObject, AVCapturePhotoCaptureDelegate, @unchecked Sen
         queue.async { [self] in setTorch(on) }
     }
 
-    /// Takes a photo. Can be called again at once; photos arrive in the order they finish.
+    /// Takes a photo. Can be called again at once; photos arrive in the order they finish. Every call
+    /// gets an answer, nil when no photo could be taken, so the screen never waits for one forever.
     func shoot() {
         queue.async { [self] in
-            guard session.isRunning else { return }
+            guard session.isRunning else {
+                Task { @MainActor [onShot] in onShot(nil) }
+                return
+            }
             let format: [String: Any] = output.availablePhotoCodecTypes.contains(.hevc)
                 ? [AVVideoCodecKey: AVVideoCodecType.hevc]
                 : [AVVideoCodecKey: AVVideoCodecType.jpeg]

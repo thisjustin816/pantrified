@@ -41,7 +41,7 @@ struct BatchIntakeSheet: View {
         case .opening:
             ProgressView()
         case .capturing:
-            BatchCaptureView(intake: intake, addByHand: { addingByHand = true }, close: { dismiss() })
+            BatchCaptureView(intake: intake, covered: addingByHand, addByHand: { addingByHand = true }, close: { dismiss() })
         case .reading(let progress):
             ReadingView(progress: progress, close: { dismiss() }, discard: { discard(intake) })
         case .finishing:

@@ -89,6 +89,29 @@ enum PhotoFormat {
         return formatter.date(from: text)
     }
 
+    /// The same image without its location. The image data is copied unchanged where the format
+    /// allows it, and otherwise written again from the original with every other property kept, so
+    /// its orientation and the time it was taken stay. Nil when the bytes are not an image.
+    static func withoutLocation(_ data: Data) -> Data? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil), let type = CGImageSourceGetType(source) else { return nil }
+        let copied = NSMutableData()
+        if let destination = CGImageDestinationCreateWithData(copied, type, 1, nil),
+           CGImageDestinationCopyImageSource(destination, source, [kCGImageMetadataShouldExcludeGPS: true] as CFDictionary, nil) {
+            return copied as Data
+        }
+        let written = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(written, type, 1, nil) else { return nil }
+        CGImageDestinationAddImageFromSource(destination, source, 0, [kCGImagePropertyGPSDictionary: kCFNull] as CFDictionary)
+        return CGImageDestinationFinalize(destination) ? written as Data : nil
+    }
+
+    /// Whether the image's properties hold a location.
+    static func hasLocation(_ data: Data) -> Bool {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] else { return false }
+        return properties[kCGImagePropertyGPSDictionary] != nil
+    }
+
     /// A small, upright copy for the screen. Made in memory and never written anywhere.
     static func thumbnail(_ source: CGImageSource?, pixels: Int) -> UIImage? {
         guard let source else { return nil }

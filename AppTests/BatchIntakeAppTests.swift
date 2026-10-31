@@ -2,6 +2,7 @@
 import CoreImage
 import CoreImage.CIFilterBuiltins
 import Foundation
+import ImageIO
 import Testing
 import UIKit
 import PantrifiedApplication
@@ -147,6 +148,30 @@ struct BatchIntakeAppTests {
         #expect(PhotoFormat.digest(of: png) == PhotoFormat.digest(of: png))
         #expect(PhotoFormat.digest(of: png).count == 64)
         #expect(PhotoFormat.thumbnail(of: png) != nil)
+    }
+
+    @Test("a picked photo's copy loses its location and keeps its image and the time it was taken")
+    func withoutLocation() throws {
+        let png = try Self.drawnLabel(text: "A", qr: nil)
+        let source = try #require(CGImageSourceCreateWithData(png as CFData, nil))
+        let image = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        for type in ["public.jpeg", "public.heic"] {
+            let tagged = NSMutableData()
+            let destination = try #require(CGImageDestinationCreateWithData(tagged, type as CFString, 1, nil))
+            let properties: [CFString: Any] = [
+                kCGImagePropertyGPSDictionary: [kCGImagePropertyGPSLatitude: 47.6, kCGImagePropertyGPSLatitudeRef: "N"],
+                kCGImagePropertyExifDictionary: [kCGImagePropertyExifDateTimeOriginal: "2026:10:30 18:05:00"],
+            ]
+            CGImageDestinationAddImage(destination, image, properties as CFDictionary)
+            guard CGImageDestinationFinalize(destination) else { continue }
+            let original = tagged as Data
+            #expect(PhotoFormat.hasLocation(original))
+            let copy = try #require(PhotoFormat.withoutLocation(original))
+            #expect(!PhotoFormat.hasLocation(copy))
+            #expect(PhotoFormat.takenAt(copy) == PhotoFormat.takenAt(original))
+            #expect(PhotoFormat.thumbnail(of: copy) != nil)
+        }
+        #expect(PhotoFormat.withoutLocation(Data("not an image".utf8)) == nil)
     }
 
     @Test("the review's wording names where each proposal came from")
