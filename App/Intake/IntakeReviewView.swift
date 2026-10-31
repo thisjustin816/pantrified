@@ -17,6 +17,7 @@ struct IntakeReviewView: View {
     @State private var editMode = EditMode.inactive
     @State private var editing: EditTarget?
     @State private var confirmingDiscard = false
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     private var selecting: Bool { editMode.isEditing }
 
@@ -130,7 +131,8 @@ struct IntakeReviewView: View {
                 .controlSize(.large)
                 .disabled(ready == 0 || intake.isAdding)
                 let waiting = intake.summaries.count - ready
-                if waiting > 0 {
+                // At accessibility sizes the bar would cover most of the list; the cards say it.
+                if waiting > 0 && !typeSize.isAccessibilitySize {
                     Text(IntakeText.waiting(waiting))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -293,6 +295,7 @@ struct CandidateCard: View {
                     Text(origin)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
                 }
             }
         }
