@@ -77,7 +77,8 @@ still the scanner's wording and is an open owner decision in `batch-intake.md`.
 `GTIN` (domain) turns a scanned payload and its symbology, or text of 8, 12, 13 or 14 digits, into one
 canonical form: the 14-digit GTIN, zero padded. UPC-E is expanded to its UPC-A by the standard
 zero-suppression rules before padding. `issuedForm` gives the length the code was issued in (GTIN-8, UPC-A,
-EAN-13 or GTIN-14), which is what the form shows and what lookup searches.
+EAN-13 or GTIN-14), which is what the form shows. Lookup searches more lengths than this (Product lookup,
+below).
 
 A code is refused, with a reason, when it:
 
@@ -118,23 +119,60 @@ found, or failed with a reason (offline, timed out, rate limited, key refused, p
 never throws. `FoodDataCentralLookup` (the `PantrifiedFoodDataCentral` target) is the only adapter.
 
 **Request.** One HTTPS GET to `https://api.nal.usda.gov/fdc/v1/foods/search` with `query` set to the
-barcode's issued form and two constants, `dataType=Branded` and `pageSize=10`. The key goes in the
-`X-Api-Key` header, so it is never part of a URL. The User-Agent is the fixed text `Pantrified` and
-Accept-Language is `en`, so the request does not carry the OS version or the device's language. The session
-is ephemeral (no cookies, cache or credential storage), times out after 8 seconds, does not wait for a
-network, and requires TLS 1.2 or later. The transport sends only to `https://api.nal.usda.gov` and follows
-no redirect, so the key header cannot be carried to another host; a 3xx answer is a provider error. It reads
-the body as it arrives and stops once more than 1 MB has arrived after decompression, and refuses an answer
-that announces a larger length before reading any of it. Like any network request, it reveals the device's
-IP address to the service. Nothing is logged: not the key, not the barcode, not the answer.
+barcode's search forms (below), separated by single spaces, and two constants, `dataType=Branded` and
+`pageSize=10`. The key goes in the `X-Api-Key` header, so it is never part of a URL. The User-Agent is the
+fixed text `Pantrified` and Accept-Language is `en`, so the request does not carry the OS version or the
+device's language. The session is ephemeral (no cookies, cache or credential storage), times out after 8
+seconds, does not wait for a network, and requires TLS 1.2 or later. The transport sends only to
+`https://api.nal.usda.gov` and follows no redirect, so the key header cannot be carried to another host; a
+3xx answer is a provider error. It reads the body as it arrives and stops once more than 1 MB has arrived
+after decompression, and refuses an answer that announces a larger length before reading any of it. Like any
+network request, it reveals the device's IP address to the service. Nothing is logged: not the key, not the
+barcode, not the answer.
+
+**Search forms.** FoodData Central records hold their barcode (`gtinUpc`) in different lengths, such as 12,
+13 or 14 digits, and its search finds a barcode only as the exact string stored. So the query holds the one
+scanned number written in each GTIN length that drops nothing but leading zeros, shortest first
+(`GTIN.foodDataCentralForms`), and nothing else:
+
+| Scanned | Lengths searched | Example |
+|---|---|---|
+| UPC-A, UPC-E (by the UPC-A it expands to), EAN-13 starting 0 | 12, 13, 14 | `049000006346 0049000006346 00049000006346` |
+| EAN-13 starting 1 to 9 | 13, 14 | `4006381333931 04006381333931` |
+| EAN-8, or a UPC-A starting 0000 (the same 14 digits) | 8, 12, 13, 14 | `96385074 000096385074 0000096385074 00000096385074` |
+
+A GTIN-14 read from text is searched like the shorter code it pads to; one with a packaging indicator is
+refused before lookup. A UPC-E's own eight digits are not searched, since they would read as a different
+GTIN-8. No other length is searched, because `GTIN` reads no other length as a barcode, so a record stored
+that way could never be accepted. Every form is ASCII digits only and normalizes to the scanned GTIN.
+
+FoodData Central behavior this relies on, observed against the live service on 2026-10-31 with the owner's
+key: `query=0044700361146` found a record stored in 13 digits, while the same number in 12 or 14 digits
+found nothing; `query=049000006346` found nothing although the product is stored as `00049000006346`; one
+query holding several space-separated forms returned each record stored in any of them and nothing more,
+and forms that matched nothing added nothing. The service may change this. The tests do not call the live
+service: they check the forms and the request, and search a fake catalog stored in mixed lengths that
+follows the behavior above.
 
 **Answer.** A record counts only when its own `gtinUpc`, normalized, equals the scanned GTIN; a search that
-returns other products is a miss. The first matching record with a usable description gives the name, with
-control characters removed, spaces collapsed, all-capitals text put in sentence case, and limits of 100
-characters and 400 bytes of UTF-8, cut between characters. 401 and 403 are a refused key, 429 is a rate
-limit, other non-2xx statuses (redirects included) and anything that cannot be read as the search response,
-or is over 1 MB, are a provider error. URL loading errors are grouped into offline, timed out, cancelled and
-other.
+returns other products is a miss. The first matching record with a usable description gives the name; a
+record with a brand but a blank description gives none, so a later record can. The name is the brand
+followed by the description, or the description alone when it already names the brand as whole words
+(ignoring case and punctuation). The brand is `brandName`; when that is missing or unusable, `brandOwner`
+stands in only if it is at most three words and 24 characters with no company word such as Inc, LLC or
+Company, since it is usually the company's legal name. Both are optional: a missing, null or non-text brand
+leaves the description's name. Each part has control characters (format and bidi characters included)
+removed and spaces collapsed. An all-capitals description is put in sentence case, or kept lowercase after
+a brand; an all-capitals brand has each word capitalized, also after a hyphen, ampersand, slash or full stop
+("Coca-Cola", "M&M's"), and a mixed-case brand is kept as written. A brand of one character, without a
+letter, or over 30 characters or 120 bytes of UTF-8 is left out rather than cut. A name over 60 characters,
+or over 400 bytes of UTF-8, has its description cut back to the last space that fits, with trailing
+separators such as "&" or "," dropped, and ends in "…", so the brand is kept; a description with no space
+in reach is cut between characters. A final guard of 100 characters and 400 bytes applies to the whole
+name. Cuts fall between characters, never inside a grapheme cluster or a scalar. 401 and 403 are a refused
+key, 429 is a rate limit, other non-2xx statuses (redirects included) and anything that cannot be read as
+the search response, or is over 1 MB, are a provider error. URL loading errors are grouped into offline,
+timed out, cancelled and other.
 
 **On the form.** A found name fills the Name field only when it is empty, with the note "Name suggested by
 USDA FoodData Central. Check it before adding." If the person edits it the note goes away. A name added as
@@ -178,7 +216,7 @@ the default and largest accessibility text sizes.
 
 | Level | What runs |
 |---|---|
-| Linux `swift test` | GTIN normalization and every refusal, UPC-E expansion, coding; two-frame confirmation, repeat and refusal suppression, the forget window; barcodes through `Pantry` and `PutAway`, including failure, retry and order; suggested names saved as proposals; the device-local row and its refusal of a stored value that is not a GTIN; the FoodData Central request shape, matching, every status and transport failure, malformed and oversized answers, names and their byte limit, and cancellation, with a fake transport; and the URLSession transport against a local HTTP server: a body growing past 1 MB is cut off early, an announced oversize length and a redirect are refused, the key reaches no second server, and other origins are never contacted. Never the real network |
+| Linux `swift test` | GTIN normalization and every refusal, UPC-E expansion, coding; two-frame confirmation, repeat and refusal suppression, the forget window; barcodes through `Pantry` and `PutAway`, including failure, retry and order; suggested names saved as proposals; the device-local row and its refusal of a stored value that is not a GTIN; the FoodData Central search forms for every symbology, the request shape, matching, a fake catalog stored in mixed lengths, every status and transport failure, malformed and oversized answers, names with their brand, word-boundary cut and byte limit, hostile brand text, and cancellation, with a fake transport; and the URLSession transport against a local HTTP server: a body growing past 1 MB is cut off early, an announced oversize length and a redirect are refused, the key reaches no second server, and other origins are never contacted. Never the real network |
 | macOS `make test-package` | The same against Apple's Foundation, including the transport tests against URLSession on macOS |
 | `make build` and `make test` | The camera and scan code compile against the iOS SDK; the hosted tests check the usage description and the empty key in the merged Info.plist and the scan screen's start state |
 | Screenshots | The no-camera state's layout |
@@ -186,10 +224,14 @@ the default and largest accessibility text sizes.
 
 Not verified: live scanning, the permission prompt, torch, low light, close focus, real packaging, real
 UPC-E reads (AVFoundation is expected to report UPC-E as eight digits with the number system and check
-digit), and the real FoodData Central response for real barcodes, including whether its search finds a
-barcode stored in a different length. The body limit and redirect refusal are tested on Linux and macOS
-against a local server with uncompressed bodies only; that iOS hands the delegate decompressed bytes as
-they arrive, so a compressed bomb is stopped at 1 MB, is Apple's documented behavior but untested here.
+digit), and the real FoodData Central response for real barcodes in any automated test. The search
+behavior under Search forms and the brand fields were checked by hand against the live service on
+2026-10-31: `brandName` is present on branded search results but null on some, the same brand appears in
+capitals and in mixed case, and a description can end in a space. FoodData Central's published API
+specification lists `brandOwner` on search results but not `brandName`, so both stay optional.
+The body limit and redirect refusal are tested on Linux and macOS against a local server with uncompressed
+bodies only; that iOS hands the delegate decompressed bytes as they arrive, so a compressed bomb is stopped
+at 1 MB, is Apple's documented behavior but untested here.
 
 ## Not built
 
@@ -214,6 +256,8 @@ they arrive, so a compressed bomb is stopped at 1 MB, is Apple's documented beha
 6. **A suggested name the person keeps is a proposal**, so a later correction or recognition treats it like
    other recognized names.
 7. **Only the barcode and the key are sent**, plus the fixed search options, a fixed User-Agent and language.
+   The barcode goes in up to four lengths in one request, so that a record stored with or without leading
+   zeros is found.
 
 ## Owner decisions
 
