@@ -8,8 +8,11 @@ public typealias IntakeCandidateID = Identifier<IntakeCandidateTag>
 public enum LookupAnswer: Sendable, Hashable, Codable {
     case found(name: String, source: String)
     case notFound
-    /// Offline, timed out, refused or unreadable. Tried again later; never blocks anything.
+    /// Timed out, refused or unreadable. Tried again later, a few times; never blocks anything.
     case failed(attempts: Int)
+    /// Not asked yet because the device was offline or the service asked for fewer requests. Tried
+    /// again later without counting as a failure.
+    case deferred
 
     /// A found answer, cleaned. An empty name counts as not found.
     public static func found(rawName: String, source: String) -> LookupAnswer {
@@ -150,6 +153,8 @@ public enum CandidateNote: Sendable, Hashable {
     case linkSeen
     case lookingUp
     case lookupFailed
+    /// Offline, or the lookup service asked to slow down; the barcode is kept for later.
+    case lookupPaused
     case lookupFoundNothing
 }
 

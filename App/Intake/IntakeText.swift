@@ -66,6 +66,7 @@ enum IntakeText {
         case .lookingUp: return "Looking up the barcode…"
         case .lookupFailed: return "Couldn't look up the barcode yet. Pantrified will try again."
         case .lookupFoundNothing: return "No product found for this barcode."
+        case .lookupPaused: return "Barcode lookups are paused for now. Pantrified will try again later; you can add this now."
         }
     }
 

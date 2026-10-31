@@ -113,6 +113,27 @@ struct IntakeReviewTests {
         #expect(review.summaries[0].name == "Yogurt")
     }
 
+    @Test("two candidates with one barcode ask the lookup once, and a deferral never replaces an answer")
+    func oneLookupPerBarcode() throws {
+        let photos = [
+            Fixture.photo(0, codes: [.product(Fixture.beans)]),
+            Fixture.photo(1, codes: [.product(Fixture.beans)]),
+        ]
+        var review = review(photos)
+        try review.split(photos[1].photo, from: review.summaries[0].id)
+        #expect(review.summaries.count == 2)
+        #expect(review.summaries.allSatisfy { $0.barcode == Fixture.beans })
+        #expect(review.barcodesToLookUp == [Fixture.beans])
+
+        review.record(.deferred, for: Fixture.beans)
+        #expect(review.barcodesToLookUp == [Fixture.beans])
+        #expect(review.summaries[0].notes.contains(.lookupPaused))
+        review.record(.notFound, for: Fixture.beans)
+        review.record(.deferred, for: Fixture.beans)
+        #expect(review.lookups[Fixture.beans] == .notFound)
+        #expect(review.barcodesToLookUp.isEmpty)
+    }
+
     @Test("a lookup's name is untrusted: cleaned, bounded and refused when empty")
     func hostileLookup() {
         let long = LookupAnswer.found(rawName: "Yog\u{202E}urt" + String(repeating: "é", count: 500), source: "X")

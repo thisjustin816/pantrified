@@ -2,8 +2,9 @@
 
 The first capture slice: scan one barcode with the camera, open Add food with the barcode attached, and
 suggest the product's name from USDA FoodData Central when the build has a key. The person reviews the form
-and adds the food as they do by hand. Date recognition, photo import, the continuous multi-package stream
-and evidence crops are not part of it (see Not built).
+and adds the food as they do by hand. The scanner keeps no photos. Taking or picking photos of many
+packages at once, reading their labels and dates, and grouping them for review is batch intake, a
+separate screen described in `batch-intake.md`; it shares the GTIN rules and the lookup below.
 
 Code: `App/Capture/` (camera, scan screen), `App/Pantry/AddFoodView.swift` (barcode and lookup on the
 form), `Sources/PantrifiedDomain/GTIN.swift` (normalization), `Sources/PantrifiedApplication/BarcodeScan.swift`
@@ -40,8 +41,12 @@ closing the form cancels the lookup.
 | Couldn't start | The session did not start, for example while another app holds the camera | Try again and Add by hand |
 
 Access is read again when the app returns to the foreground, so turning the camera on in Settings and coming
-back starts it. The usage description (`NSCameraUsageDescription`, set in `project.yml`) is: "Pantrified uses
-the camera to scan barcodes on food packages. Only the barcode number is read; no photos are taken or saved."
+back starts it. The usage description (`NSCameraUsageDescription`, set in `project.yml`) covers both camera
+screens: "Pantrified uses the camera to scan barcodes and to take photos of the food you add, so it can read
+their labels on this iPhone. Photos are kept on this iPhone for about a day, then deleted, and are never saved
+to your photo library." The scanner itself takes no photos; the photos are batch intake's
+(`batch-intake.md`). The Asking state's own text, "Pantrified uses the camera only to read barcodes", is
+still the scanner's wording and is an open owner decision in `batch-intake.md`.
 
 ## Reading barcodes
 
@@ -192,8 +197,8 @@ they arrive, so a compressed bomb is stopped at 1 MB, is Apple's documented beha
   retry can be added.
 - **Reusing earlier scans.** A barcode scanned before does not suggest the name used last time, which would
   work offline and send nothing.
-- Date recognition from the camera, photo import, evidence crops, the continuous multi-package stream, and
-  syncing or exporting barcodes.
+- Date recognition in the live scanner, evidence crops, and syncing or exporting barcodes. Photo capture,
+  photo import and date reading from photos are batch intake (`batch-intake.md`).
 - Removing a barcode row when its package leaves active inventory, and deleting barcode rows with the
   rest of a Space's local data.
 

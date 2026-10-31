@@ -45,8 +45,10 @@ What is in place for an upload, what only the owner can decide, and what data le
    pages are published on main. Complete App Privacy for the actual uploaded build. Update the policy
    and disclosures before distributing a build with new data flows. The table below lists those flows.
 4. **Usage descriptions.** `NSCameraUsageDescription`, set in `project.yml`: "Pantrified uses the camera to
-   scan barcodes on food packages. Only the barcode number is read; no photos are taken or saved." Photo
-   library access needs its own string when photo import is added.
+   scan barcodes and to take photos of the food you add, so it can read their labels on this iPhone. Photos
+   are kept on this iPhone for about a day, then deleted, and are never saved to your photo library." Photo
+   import uses the system Photos picker, which runs outside the app and needs no photo library permission
+   or usage string.
 5. **Product lookup key and App Privacy.** A build looks products up only when it carries a FoodData Central
    key (`FDC_API_KEY`, `docs/capture.md`). The upload workflow passes the `FDC_API_KEY` Environment secret
    when it is set. Before adding that secret, decide how App Privacy
@@ -57,8 +59,8 @@ Read App Store Connect's current requirements when preparing these; they change.
 
 ## Data flows
 
-There are no analytics and no account. The only thing that can leave the device is a scanned barcode, sent
-for product lookup in a build that carries a FoodData Central key.
+There are no analytics and no account. The only thing that can leave the device is a barcode, scanned or
+read from a batch photo, sent for product lookup in a build that carries a FoodData Central key.
 
 The accepted product decisions add these flows. Each row's privacy answers and the manifest's collected
 data types change when the flow is built.
@@ -66,11 +68,12 @@ data types change when the flow is built.
 | Flow | What leaves the device | To whom | Status |
 |---|---|---|---|
 | Household sync | Inventory, shopping list, consumer profiles and approved evidence crops | Apple iCloud, and the participants of a shared Space | Engine built against a fake transport; no CloudKit code |
-| Product lookup | A scanned barcode number and the app's api.data.gov key, with the device's IP address as for any request. No name, household data or device details | USDA FoodData Central at api.nal.usda.gov, keyed through api.data.gov | Built; on only in a build with a key, which the upload workflow does not pass yet |
+| Product lookup | A barcode number, scanned or read from a batch photo, and the app's api.data.gov key, with the device's IP address as for any request. No name, household data or device details | USDA FoodData Central at api.nal.usda.gov, keyed through api.data.gov | Built; on only in a build with a key, which the upload workflow does not pass yet |
 | Recipe discovery | To be decided when built | Edamam | Not built |
 | Generation on the device | Nothing | Nobody | Built; the on-device model needs a device with Apple Intelligence |
 | Generation in the cloud | The Make Something request context: selected foods, restrictions and preferences | Apple Private Cloud Compute | Not built |
 | Purchases | Purchase and entitlement state | Apple StoreKit | Not built |
 | Reminders export | The shopping selection | The person's own Reminders | Not built |
-| Camera | Nothing. Only the decoded barcode number reaches the app, and it is kept on the device | Nobody | Built: barcode scanning |
-| Photos and evidence crops | Nothing; a capture stays on the device, and only an approved crop may sync | Nobody, or iCloud for a crop | Not built |
+| Camera: Scan | Nothing. Only the decoded barcode number reaches the app, and it is kept on the device | Nobody | Built |
+| Camera and picked photos: Add a batch | Nothing. Photos are kept in the app's storage on the device for about a day after they are read, then deleted; what was read from them stays with an unfinished batch, on the device only. Only a barcode read from them may go to the product lookup above | Nobody | Built (`batch-intake.md`) |
+| Evidence crops | Nothing; only an approved crop may sync | Nobody, or iCloud for a crop | Not built |

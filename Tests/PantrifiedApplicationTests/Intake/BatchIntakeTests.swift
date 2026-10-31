@@ -302,7 +302,7 @@ struct BatchIntakeTests {
 
     // MARK: Lookups
 
-    @Test("lookups fill names, a miss is final and an offline failure is tried again later")
+    @Test("lookups fill names, a miss is final, and offline defers the pass to later")
     func lookups() async throws {
         let world = IntakeWorld()
         let store = world.launch()
@@ -314,11 +314,12 @@ struct BatchIntakeTests {
         _ = try await world.process(batch, store, lookup: lookup)
         let pipeline = world.pipeline(store, lookup: lookup)
 
-        // Offline stops the pass; nothing blocks adding meanwhile.
-        #expect(await pipeline.lookUpNames(batch) == 1)
+        // Offline defers the whole pass; nothing blocks adding meanwhile.
+        #expect(await pipeline.lookUpNames(batch) == 0)
         var review = try #require(await store.batch(batch)?.review)
-        #expect(review.summaries[0].notes.contains(.lookupFailed))
+        #expect(review.summaries.allSatisfy { $0.notes.contains(.lookupPaused) })
         #expect(review.readyToAdd.count == 2)
+        #expect(await lookup.calls == [IntakeFixture.yogurt])
 
         await lookup.set(.notFound, for: IntakeFixture.yogurt)
         await pipeline.lookUpNames(batch)
@@ -328,6 +329,32 @@ struct BatchIntakeTests {
         #expect(review.summaries[1].name == "Black beans")
         #expect(review.summaries[1].nameOrigin == .lookup(source: "USDA FoodData Central"))
         #expect(review.barcodesToLookUp.isEmpty)
+    }
+
+    @Test("a rate limit defers lookups without failing them, and each barcode is asked once when they resume")
+    func rateLimited() async throws {
+        let world = IntakeWorld()
+        let store = world.launch()
+        let batch = try await world.stage(["yogurt-back", "beans", "rice"], in: store)
+        let lookup = FakeLookup([IntakeFixture.yogurt: .failed(.rateLimited), IntakeFixture.beans: .failed(.rateLimited)])
+        let review = try await world.process(batch, store, lookup: lookup)
+        let pipeline = world.pipeline(store, lookup: lookup)
+        for _ in 0..<5 { await pipeline.lookUpNames(batch) }
+        var current = try #require(await store.batch(batch)?.review)
+        #expect(current.summaries[0].notes.contains(.lookupPaused))
+        #expect(current.summaries[1].notes.contains(.lookupPaused))
+        #expect(current.barcodesToLookUp == [IntakeFixture.yogurt, IntakeFixture.beans])
+        #expect(current.readyToAdd.count == review.readyToAdd.count)
+
+        await lookup.set(.found(ProductSuggestion(name: "Greek yogurt", source: "USDA")), for: IntakeFixture.yogurt)
+        await lookup.set(.notFound, for: IntakeFixture.beans)
+        let callsBefore = await lookup.calls.count
+        await pipeline.lookUpNames(batch)
+        await pipeline.lookUpNames(batch)
+        #expect(await lookup.calls.count == callsBefore + 2)
+        current = try #require(await store.batch(batch)?.review)
+        #expect(current.summaries[0].name == "Greek yogurt")
+        #expect(current.barcodesToLookUp.isEmpty)
     }
 
     @Test("a lookup that answers after the person named the food changes nothing")

@@ -202,6 +202,7 @@ public struct IntakeReview: Sendable, Hashable, Codable {
             switch answer {
             case nil: notes.append(.lookingUp)
             case .failed?: notes.append(.lookupFailed)
+            case .deferred?: notes.append(.lookupPaused)
             case .notFound?: notes.append(.lookupFoundNothing)
             case .found?: break
             }
@@ -250,7 +251,7 @@ public struct IntakeReview: Sendable, Hashable, Codable {
         return reviewing.compactMap { candidate -> GTIN? in
             guard let barcode = candidate.barcode, !candidate.nameDecided, seen.insert(barcode).inserted else { return nil }
             switch lookups[barcode] {
-            case nil: return barcode
+            case nil, .deferred?: return barcode
             case .failed(let attempts)?: return attempts < Self.maximumLookupAttempts ? barcode : nil
             case .found?, .notFound?: return nil
             }
@@ -259,10 +260,11 @@ public struct IntakeReview: Sendable, Hashable, Codable {
 
     // MARK: Recognition results
 
-    /// Keeps a lookup's answer. A failure never replaces an answer already found.
+    /// Keeps a lookup's answer. A failure or a deferral never replaces an answer already found.
     public mutating func record(_ answer: LookupAnswer, for barcode: GTIN) {
         switch (lookups[barcode], answer) {
-        case (.found?, .failed), (.notFound?, .failed): return
+        case (.found?, .failed), (.notFound?, .failed), (.found?, .deferred), (.notFound?, .deferred): return
+        case (.failed?, .deferred): return
         case (.failed(let before)?, .failed(let now)): lookups[barcode] = .failed(attempts: max(before, now) + 1)
         case (_, .failed): lookups[barcode] = .failed(attempts: 1)
         default: lookups[barcode] = answer

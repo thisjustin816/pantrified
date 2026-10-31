@@ -13,23 +13,50 @@ The current app does not send personal information to the developer. It does not
 require a Pantrified account and contains no advertising, analytics, tracking,
 or third-party crash-reporting SDKs.
 
-## Camera and barcode scanning
+## Camera, photos and barcode scanning
 
-Pantrified uses the camera only when you tap Scan, and only to read the number
-in a product barcode. The app does not take, keep or save photos or video:
-the camera's frames are shown on screen and decoded by iOS, and only the
-barcode number reaches the app. The camera stops when you leave the scan
-screen or the app. You can turn camera access off in iOS Settings and still add
-food by hand.
+Pantrified uses the camera only when you tap Scan or Add a batch, and the
+camera stops when you leave that screen or the app.
 
-A barcode you scan is kept with that food in the app's storage on your device.
+**Scan** reads the number in one product barcode. It does not take, keep or
+save photos or video: the camera's frames are shown on screen and decoded by
+iOS, and only the barcode number reaches the app.
+
+**Add a batch** takes photos of the food you add so the app can read their
+labels: the name, a printed date, barcodes and QR codes. You can also pick
+photos you already took with the iOS Photos picker, which gives the app only
+the photos you pick and no other access to your library. The app keeps its own
+copies of these photos in its private storage on your iPhone. They are not
+saved to your photo library and are not included in device backups. They are
+deleted about a day after the app has read them, or straight away if you
+discard the batch. The originals in your library are never changed or deleted.
+The photos are read on your iPhone and are not sent anywhere. A link in a QR
+code is never opened.
+
+What the app read from a batch's photos (their text, codes, and a numerical
+summary of how each photo looks, used to group photos of the same package) is
+kept with the batch until you add or discard everything in it, and is deleted
+about a day after that. Once you add the food, what stays is what you added:
+the name, place, printed date and barcode, as for food added by hand. No photo
+is kept with your food.
+
+A copy of a photo you pick keeps the details stored in that file, such as
+where it was taken, until it is deleted. The app uses only the image and the
+time it was taken.
+
+You can turn camera access off in iOS Settings and still add food by hand or
+from photos you pick.
+
+A barcode you scan, or that the app reads from a photo, is kept with that food
+in the app's storage on your device.
 Apart from the product lookup below, it does not leave the device: it is not
 synchronized or sent to the developer. It stays after the food is used up or
 discarded, and is removed only when you delete the app.
 
 ## Product lookup
 
-Builds that include product lookup send a scanned barcode number to USDA
+Builds that include product lookup send a barcode number, scanned or read from
+a batch photo, to USDA
 FoodData Central at api.nal.usda.gov, which uses the U.S. government's
 api.data.gov key service, to suggest the product's name. The request contains
 the barcode number and the app's own access key. It contains nothing about you, your household or your
@@ -39,7 +66,8 @@ address to the service. The app keeps no cookies or cache from it and logs
 nothing about it. The service's handling of requests is covered by
 [api.data.gov](https://api.data.gov/) and the
 [FoodData Central API guide](https://fdc.nal.usda.gov/api-guide). If the lookup
-finds nothing or cannot connect, you enter the name yourself. Scanning works
+finds nothing or cannot connect, you enter the name yourself. Photos, and the
+text read from them, are never part of a lookup. Scanning and batches work
 without a network connection.
 
 ## Information processed on your device
@@ -54,8 +82,7 @@ language model. Requests and results are processed on your device; the app does
 not send them to the developer or a remote model service.
 
 The current beta does not implement household cloud synchronization, recipe
-lookups, cloud model generation, photo import or photo capture, Reminders
-export, or in-app purchases. This policy must be updated when features
+lookups, cloud model generation, Reminders export, or in-app purchases. This policy must be updated when features
 that change data handling are introduced.
 
 ## Apple services and beta feedback

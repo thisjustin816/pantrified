@@ -87,10 +87,10 @@ reference to the image, the request or the results after it returns, and writes,
 nothing. It blocks while Vision works, so a caller runs it off the main thread. Lines come back in
 the order Vision returns them.
 
-**Not built.** Nothing calls the recognizer yet: there is no photo capture, photo import or
-grouping of photos into packages, and the camera still reads only barcodes (`capture.md`). How
-photos are taken, kept and deleted is being designed, and the privacy policy, the camera usage
-description and the App Privacy answers change when that flow is built, not before.
+**Used by batch intake.** Batch intake (`batch-intake.md`) runs the recognizer's request, from
+`TextRecognizer.makeRequest()`, in one Vision pass with its barcode and feature print requests, and
+reads each photo's dates with `PrintedDateRecognition` over its lines in reading order. How its
+photos are kept and deleted is described there and in the privacy policy.
 
 **Verified where.** Linux `swift test` covers the engine: the bounds and that each fails without its
 guard, labels across lines and photos, the photo limit, plausibility and its edges, ambiguity, the

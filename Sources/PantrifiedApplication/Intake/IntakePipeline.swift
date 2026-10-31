@@ -136,23 +136,29 @@ public struct IntakePipeline: Sendable {
         )
     }
 
-    /// Looks up the barcodes still without an answer. Never throws and never blocks adding; offline
-    /// and misses are normal. Returns the number of answers recorded.
+    /// Looks up the barcodes still without an answer, one distinct barcode at a time, through the
+    /// injected lookup service only. Never throws and never blocks review or adding. A miss is final.
+    /// When the device is offline or the service asks for fewer requests, the rest of the pass is
+    /// deferred, not failed: the barcodes stay on their candidates and are asked again on a later pass.
+    /// Returns the number of answers recorded.
     @discardableResult
     public func lookUpNames(_ id: IntakeBatchID) async -> Int {
         guard let lookup, let review = await store.batch(id)?.review else { return 0 }
         var recorded = 0
-        for barcode in review.barcodesToLookUp.prefix(Self.lookupsPerPass) {
+        let barcodes = Array(review.barcodesToLookUp.prefix(Self.lookupsPerPass))
+        for (index, barcode) in barcodes.enumerated() {
             if Task.isCancelled { break }
             let answer: LookupAnswer
             switch await lookup.lookUp(barcode) {
             case .found(let suggestion): answer = .found(rawName: suggestion.name, source: suggestion.source)
             case .notFound: answer = .notFound
             case .failed(.cancelled): return recorded
-            case .failed(.offline):
-                // No point asking about the rest while offline; they are tried again later.
-                _ = try? await store.updateReview(id) { $0.record(.failed(attempts: 1), for: barcode) }
-                return recorded + 1
+            case .failed(.offline), .failed(.rateLimited):
+                let rest = Array(barcodes[index...])
+                _ = try? await store.updateReview(id) { review in
+                    for barcode in rest { review.record(.deferred, for: barcode) }
+                }
+                return recorded
             case .failed: answer = .failed(attempts: 1)
             }
             if (try? await store.updateReview(id, { $0.record(answer, for: barcode) })) != nil { recorded += 1 }
