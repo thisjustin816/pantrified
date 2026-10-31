@@ -56,9 +56,20 @@ final class AppLaunch {
             #if DEBUG
             if let scenario = ScreenshotScenario.current { try await scenario.seed(pantry) }
             #endif
-            let model = PantryModel(pantry: pantry, undoWindow: undoWindow, lookup: Self.lookup())
+            let lookup = Self.lookup()
+            let intake = Self.intake(pantry: pantry, store: files, lookup: lookup)
+            #if DEBUG
+            if let scenario = ScreenshotScenario.current, let intake {
+                try await scenario.seedBatch(intake, locations: pantry.snapshot().locations)
+            }
+            #endif
+            let model = PantryModel(pantry: pantry, undoWindow: undoWindow, lookup: lookup, intake: intake)
             await model.load()
             state = .ready(model)
+            // Finishes batch work a kill cut off, off the launch path.
+            if let intake, let locations = model.snapshot?.locations {
+                Task(priority: .utility) { await intake.resume(locations: locations) }
+            }
         } catch {
             state = .unavailable(StoreProblem(error))
         }
@@ -72,6 +83,19 @@ final class AppLaunch {
         #endif
         let key = Bundle.main.object(forInfoDictionaryKey: "FoodDataCentralAPIKey") as? String ?? ""
         return FoodDataCentralLookup(apiKey: key)
+    }
+
+    /// Batch intake over the app's staging folder, or in a screenshot run a folder beside its
+    /// throwaway store. Nil when the folder cannot be found; the rest of the app works without it.
+    private static func intake(pantry: Pantry, store: StoreFiles, lookup: (any ProductLookupService)?) -> IntakeServices? {
+        #if DEBUG
+        if ScreenshotScenario.current != nil {
+            let folder = StagingDirectory(directory: store.directory.appendingPathComponent("Intake", isDirectory: true))
+            return IntakeServices(pantry: pantry, files: folder, lookup: nil, recognizer: ScreenshotScenario.NoRecognizer())
+        }
+        #endif
+        guard let folder = try? StagingDirectory.applicationSupport() else { return nil }
+        return IntakeServices(pantry: pantry, files: folder, lookup: lookup)
     }
 
     private static func guidance() -> any StorageGuidanceRepository {

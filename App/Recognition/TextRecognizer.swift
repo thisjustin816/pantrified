@@ -10,7 +10,8 @@ import PantrifiedDomain
 /// Vision's results (`RecognizedLines`). The call blocks while Vision works, so make it off the main
 /// thread.
 ///
-/// Nothing calls this yet; a photo capture flow will, once one is built.
+/// Batch intake runs the same request beside its barcode and feature print requests, in one pass
+/// over each staged photo (`App/Intake/VisionPhotoRecognizer.swift`).
 enum TextRecognizer {
     static func text(in image: CGImage, orientation: CGImagePropertyOrientation = .up) throws -> RecognizedLines {
         try recognize(with: VNImageRequestHandler(cgImage: image, orientation: orientation, options: [:]))
@@ -22,12 +23,17 @@ enum TextRecognizer {
 
     /// Accurate recognition reads the small and dot-matrix print dates use, which fast recognition
     /// often misses. Language correction is off because it turns codes such as "5DEC26" into words.
-    private static func recognize(with handler: VNImageRequestHandler) throws -> RecognizedLines {
+    static func makeRequest() -> VNRecognizeTextRequest {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = false
         request.automaticallyDetectsLanguage = false
         request.recognitionLanguages = ["en-US"]
+        return request
+    }
+
+    private static func recognize(with handler: VNImageRequestHandler) throws -> RecognizedLines {
+        let request = makeRequest()
         try handler.perform([request])
         var text = RecognizedLines()
         for observation in request.results ?? [] {

@@ -30,6 +30,7 @@ public struct StagingDirectory: StagingFiles {
         let url = try file(name)
         try prepare()
         try data.write(to: url, options: Self.writeOptions)
+        if !Self.protection.isEmpty { try FileManager.default.setAttributes(Self.protection, ofItemAtPath: url.path) }
         try Self.markTemporary(url)
     }
 
