@@ -30,8 +30,11 @@ What is in place for an upload, what only the owner can decide, and what data le
    chosen by the owner. `Scripts/verify-app-icon.py` checks the size and the absence of an alpha channel in
    the source, and that each archived app carries the compiled catalog and the icon name. It cannot show how
    the icon looks in the tinted and dark home screen styles, so check those on a device or simulator.
-3. **Privacy policy and App Privacy answers.** External TestFlight testing and an App Store listing ask for
-   a privacy policy URL and for App Privacy answers. The table below lists the facts they depend on.
+3. **Privacy policy and App Privacy answers.** The [privacy policy](../PRIVACY.md) describes the current
+   beta. Use `https://github.com/thisjustin816/pantrified/blob/main/PRIVACY.md` as the privacy policy URL
+   and `https://github.com/thisjustin816/pantrified/blob/main/SUPPORT.md` as the support URL once these
+   pages are published on main. Complete App Privacy for the actual uploaded build. Update the policy
+   and disclosures before distributing a build with new data flows. The table below lists those flows.
 4. **Usage descriptions.** Camera and photo access need purpose strings when capture is added.
 
 Read App Store Connect's current requirements when preparing these; they change.
