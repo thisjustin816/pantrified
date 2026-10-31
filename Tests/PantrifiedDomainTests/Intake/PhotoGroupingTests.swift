@@ -17,8 +17,8 @@ struct PhotoGroupingTests {
         ]
         let result = grouper.group(photos)
         #expect(result.sequences(photos) == [[0, 2], [1]])
-        #expect(result.groups[0].barcode == Fixture.yogurt)
-        #expect(result.groups[0].links.first?.signals.contains(.sameBarcode) == true)
+        #expect(result.groups.first?.barcode == Fixture.yogurt)
+        #expect(result.groups.first?.links.first?.signals.contains(.sameBarcode) == true)
     }
 
     @Test("two similar products with different barcodes are never grouped or suggested, however alike")
@@ -55,8 +55,8 @@ struct PhotoGroupingTests {
         ]
         let result = grouper.group(photos)
         #expect(result.sequences(photos) == [[0, 1]])
-        #expect(result.groups[0].barcode == Fixture.yogurt)
-        #expect(result.groups[0].links[0].signals.contains(.sharedLabelWords))
+        #expect(result.groups.first?.barcode == Fixture.yogurt)
+        #expect(result.groups.first?.links.first?.signals.contains(.sharedLabelWords) == true)
     }
 
     @Test("a front that shares only one word with the next photo is a suggestion, not a merge")
@@ -68,8 +68,8 @@ struct PhotoGroupingTests {
         let result = grouper.group(photos)
         #expect(result.sequences(photos) == [[0], [1]])
         #expect(result.suggestions.count == 1)
-        #expect(result.suggestions[0].signals.contains(.someLabelWords))
-        #expect(result.suggestions[0].signals.contains(.takenRightAfter))
+        #expect(result.suggestions.first?.signals.contains(.someLabelWords) == true)
+        #expect(result.suggestions.first?.signals.contains(.takenRightAfter) == true)
     }
 
     @Test("a similar image adds enough to a weak text match to group the photos")
@@ -166,6 +166,7 @@ struct PhotoGroupingTests {
         #expect(beans?.photos.contains(shelf.photo) == true)
         #expect(soup?.photos == [shelf.photo])
         #expect(soup?.sharedPhotos == [shelf.photo])
+        #expect(beans?.sharedPhotos == [shelf.photo])
     }
 
     @Test("a photo with no text at all is its own candidate")
@@ -184,7 +185,7 @@ struct PhotoGroupingTests {
         ]
         let result = grouper.group(photos)
         #expect(result.sequences(photos) == [[0, 2], [1]])
-        #expect(result.groups[0].links[0].signals.contains(.identicalPhoto))
+        #expect(result.groups.first?.links.first?.signals.contains(.identicalPhoto) == true)
     }
 
     @Test("a photo of only a date joins the photo before it, and is only suggested for the one after")
@@ -195,7 +196,7 @@ struct PhotoGroupingTests {
         ]
         let joined = grouper.group(after)
         #expect(joined.sequences(after) == [[0, 1]])
-        #expect(joined.groups[0].links[0].signals.contains(.datePhotoAfter))
+        #expect(joined.groups.first?.links.first?.signals.contains(.datePhotoAfter) == true)
 
         let before = [
             Fixture.photo(0, lines: [Fixture.line("USE BY 2026-11-04")]),
@@ -209,7 +210,10 @@ struct PhotoGroupingTests {
     @Test("a brand on most photos in the batch does not group different products")
     func commonBrand() {
         let names = ["Rolled oats", "Peanut butter", "Almond milk", "Frozen peas", "Black beans", "Basmati rice"]
-        let photos = names.enumerated().map { Fixture.photo($0, seconds: Double($0) * 120, lines: Fixture.front($1, brand: "Kirkland Signature")) }
+        // Printed small, so the names do not share it; taken quickly, so without the rule they would group.
+        let photos = names.enumerated().map {
+            Fixture.photo($0, seconds: Double($0) * 10, lines: Fixture.front($1, small: ["Kirkland Signature Premium"]))
+        }
         #expect(grouper.group(photos).groups.count == names.count)
     }
 

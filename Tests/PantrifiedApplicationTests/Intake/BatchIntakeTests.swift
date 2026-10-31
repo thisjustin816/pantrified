@@ -194,6 +194,28 @@ struct StagingStoreTests {
         #expect(!world.files.removed.contains(where: foreign.contains))
     }
 
+    @Test("a photo's first observation is the one kept, and a batch is grouped only once")
+    func recordOnce() async throws {
+        let world = IntakeWorld()
+        let store = world.launch()
+        let batch = try await world.stage(["rice"], in: store)
+        let photo = try #require(await store.batch(batch)?.photos.first)
+        let first = PhotoObservation(photo: photo.id, sequence: 0, capturedAt: photo.capturedAt, lines: [IntakeFixture.line("Basmati rice")])
+        let second = PhotoObservation(photo: photo.id, sequence: 0, capturedAt: photo.capturedAt, lines: [IntakeFixture.line("Black beans")])
+        #expect(try await store.record(first, in: batch))
+        #expect(try await store.record(second, in: batch) == false)
+        #expect(await world.launch().observations(in: batch) == [first])
+
+        let review = try await world.process(batch, store)
+        try await store.updateReview(batch) { try $0.setName("Rice", for: review.summaries[0].id) }
+        let regrouped = IntakeReview(
+            space: world.space, observations: [second], grouping: PhotoGrouper().group([second]),
+            locations: world.locations, defaultLocation: nil, looksUp: false
+        )
+        let kept = try await store.finishRecognition(batch, review: regrouped)
+        #expect(kept.summaries.map(\.name) == ["Rice"])
+    }
+
     @Test("an unreadable batch list is set aside, not overwritten")
     func unreadableManifest() async throws {
         let world = IntakeWorld()

@@ -213,7 +213,8 @@ public struct PhotoGrouper: Sendable {
             return true
         }
         var links: [Int: [GroupLink]] = [:]
-        for pair in pairs where pair.score >= policy.mergeAt && !pair.separated {
+        // A separated pair is refused by `compatible`, which checks every pair across the two groups.
+        for pair in pairs where pair.score >= policy.mergeAt {
             let (ra, rb) = (root(pair.a), root(pair.b))
             guard ra != rb, compatible(ra, rb) else { continue }
             let (keep, absorb) = ra < rb ? (ra, rb) : (rb, ra)

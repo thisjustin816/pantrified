@@ -268,7 +268,7 @@ struct IntakeReviewTests {
         try review.setName("Rice", for: rice)
 
         let drafts = review.drafts(for: [yogurt, rice])
-        #expect(drafts.count == 4)
+        try #require(drafts.count == 4)
         #expect(Set(drafts.map(\.id)).count == 4)
         let first = drafts[0]
         #expect(first.barcode == Fixture.yogurt)

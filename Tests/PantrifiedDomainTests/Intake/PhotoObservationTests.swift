@@ -148,6 +148,8 @@ struct LabelTextTests {
         #expect(LabelText.statedStorage(in: [Fixture.line("KEEP FROZEN")]) == .frozen)
         #expect(LabelText.statedStorage(in: [Fixture.line("Keep refrigerated")]) == .refrigerated)
         #expect(LabelText.statedStorage(in: [Fixture.line("Refrigerate after opening")]) == nil)
+        // Thawed meat: "frozen" here says where it was, not where it goes.
+        #expect(LabelText.statedStorage(in: [Fixture.line("Previously frozen")]) == nil)
     }
 
     @Test("prominent percentages and net contents are read, nutrition panel percentages are not")

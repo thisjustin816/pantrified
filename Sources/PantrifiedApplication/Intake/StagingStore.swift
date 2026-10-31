@@ -323,9 +323,10 @@ public actor StagingStore {
 
         let named = Set(batches.flatMap { $0.photos.filter { !$0.fileRemoved }.map(\.fileName) })
         if let present = try? files.names() {
-            for name in present where Self.isPhotoName(name) && !named.contains(name) { doomed.append(name) }
+            for name in present where !named.contains(name) { doomed.append(name) }
         }
         var deleted = 0
+        // The one guard on every deletion: only a name this store makes is ever removed.
         for name in Set(doomed) where Self.isPhotoName(name) {
             if (try? files.remove(name)) != nil { deleted += 1 }
         }
