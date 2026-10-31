@@ -154,9 +154,14 @@ private struct ScanView: View {
                 Button("Try again") { scanner.retry() }
                     .buttonStyle(.borderedProminent)
             }
-            if scanner.state != .asking {
+            if scanner.state == .asking {
+                EmptyView()
+            } else if opensSettings || retries {
                 Button("Add by hand") { finish(nil) }
-                    .buttonStyle(opensSettings || retries ? .bordered : .borderedProminent)
+                    .buttonStyle(.bordered)
+            } else {
+                Button("Add by hand") { finish(nil) }
+                    .buttonStyle(.borderedProminent)
             }
         }
     }
