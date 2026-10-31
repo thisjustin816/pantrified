@@ -25,6 +25,11 @@ public protocol PhotoRecognizer: Sendable {
 public struct IntakeProgress: Sendable, Hashable {
     public let read: Int
     public let total: Int
+
+    public init(read: Int, total: Int) {
+        self.read = read
+        self.total = total
+    }
 }
 
 /// Reads a batch's photos, groups them into candidates and looks up barcodes. Every step can stop

@@ -83,7 +83,8 @@ struct BatchIntakeAppTests {
         #expect(summaries[0].date?.label == .useBy)
         #expect(summaries[1].notes.contains(.mightBeSameAs([summaries[2].id])))
         #expect(summaries[3].pendingDate != nil)
-        #expect(summaries[4].location == locations.first { $0.storageType == .frozen }?.id)
+        let freezer = locations.first(where: { $0.storageType == .frozen })?.id
+        #expect(summaries[4].location == freezer)
         #expect(summaries[5].nameOrigin == .lookup(source: "USDA FoodData Central"))
         #expect(summaries[6].notes.contains(.noName))
 

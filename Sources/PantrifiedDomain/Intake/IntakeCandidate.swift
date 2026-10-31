@@ -148,7 +148,6 @@ public enum CandidateNote: Sendable, Hashable {
     case severalProducts
     case duplicatePhotos
     case maybeSeveralPackages
-    case labelsDiffer
     case refusedBarcode(RefusedCode)
     case linkSeen
     case lookingUp

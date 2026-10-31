@@ -99,8 +99,8 @@ final class IntakeModel {
                 digest: PhotoFormat.digest(of: data), in: batchID
             )
             photos.append(photo)
-            let thumbnail = await Task.detached(priority: .userInitiated) { PhotoFormat.thumbnail(of: data) }.value
-            thumbnails[photo.id] = thumbnail
+            let thumbnail = await Task.detached(priority: .userInitiated) { SentImage(PhotoFormat.thumbnail(of: data)) }.value
+            thumbnails[photo.id] = thumbnail.image
         } catch StagingError.batchFull {
             problem = "A batch holds up to \(photoLimit) photos. Tap Done to review these first."
         } catch StagingError.photoTooLarge {
@@ -166,8 +166,8 @@ final class IntakeModel {
 
     func loadThumbnail(_ photo: IntakePhotoID) async {
         guard thumbnails[photo] == nil, let batchID, let url = await services.store.url(of: photo, in: batchID) else { return }
-        let image = await Task.detached(priority: .utility) { PhotoFormat.thumbnail(at: url) }.value
-        if let image { thumbnails[photo] = image }
+        let made = await Task.detached(priority: .utility) { SentImage(PhotoFormat.thumbnail(at: url)) }.value
+        if let image = made.image { thumbnails[photo] = image }
     }
 
     // MARK: Review changes
@@ -289,5 +289,14 @@ final class IntakeModel {
         } else {
             withAnimation(.snappy, change)
         }
+    }
+}
+
+/// A thumbnail made off the main thread and handed to it once. Nothing else holds the image.
+private struct SentImage: @unchecked Sendable {
+    let image: UIImage?
+
+    init(_ image: UIImage?) {
+        self.image = image
     }
 }
