@@ -15,9 +15,9 @@ What is in place for an upload, what only the owner can decide, and what data le
   manifest does not declare, or the manifest declares one the code does not use. Comments and string
   literals are ignored.
 - **Shipped manifest:** CI checks that each archived app carries the manifest unchanged.
-- **Signed upload:** `.github/workflows/testflight.yml`, run by hand from `main` in the `testflight`
-  Environment, signs the app with the Apple Distribution certificate and the App Store profile and uploads
-  it. `docs/testflight-upload.md` lists the secrets, the Environment settings and the first run.
+- **Signed upload:** `.github/workflows/testflight.yml` signs the app with the Apple Distribution
+  certificate and the App Store profile and uploads it, automatically from `main` and by hand from any
+  branch. `docs/testflight.md` lists the secrets and the first run.
 - **Limits:** the scan reads Swift source, so it cannot see what a binary dependency calls. The archived
   app's privacy report remains the last check before a release.
 - **Local store:** the app links SwiftData for its local store. The store's own code calls no

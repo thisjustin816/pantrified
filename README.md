@@ -50,7 +50,7 @@ See GitHub issue #1 for the pilot and completion criteria.
 - [`docs/ci.md`](docs/ci.md): the workflows, what each check establishes, and what is not built yet.
 - [`docs/date-recognition.md`](docs/date-recognition.md): reading printed dates and labels from recognized text, and how ambiguous dates are handled.
 - [`docs/testflight-readiness.md`](docs/testflight-readiness.md): the privacy manifest, what is decided before an upload, and what data leaves the device.
-- [`docs/testflight-upload.md`](docs/testflight-upload.md): the signed TestFlight build, the secrets and Environment it needs, and the first run.
+- [`docs/testflight.md`](docs/testflight.md): the TestFlight upload workflow, its secrets and the first run.
 - [`docs/evaluation.md`](docs/evaluation.md): the on-device model evaluation, what it measures and where it is compiled.
 - [`docs/storage-guidance.md`](docs/storage-guidance.md): the bundled USDA FoodKeeper snapshot, its conversion rules and how foods are matched to it.
 
