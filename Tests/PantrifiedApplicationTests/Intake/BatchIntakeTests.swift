@@ -105,6 +105,56 @@ struct StagingStoreTests {
         #expect(world.files.photoNames.count == 2)
     }
 
+    @Test("observations stay out of the batch list, so reading 120 full-size observations writes a bounded amount")
+    func observationsStoredOnce() async throws {
+        let world = IntakeWorld()
+        let store = world.launch()
+        var readings: [String: PhotoReading] = [:]
+        for index in 0..<IntakeLimits.photosPerBatch {
+            let lines = (0..<30).map { IntakeFixture.line("Marker\(index)x line \($0) with some ingredients text", row: 0.02 * Double($0), size: 0.02) }
+            let print = FeaturePrint((0..<768).map { Float(($0 * 7 + index) % 97) / 97 })
+            readings["photo\(index)"] = PhotoReading(lines: lines, featurePrint: print)
+        }
+        let batch = try await world.stage(readings.keys.sorted(), in: store)
+        let recognizer = FakeRecognizer(files: world.files, readings: readings)
+        _ = try await world.pipeline(store, recognizer: recognizer).finish(batch, locations: world.locations, defaultLocation: nil)
+
+        let manifest = String(decoding: try #require(world.files.contents(of: StagingStore.manifestName)), as: UTF8.self)
+        #expect(!manifest.contains("Marker17x line 15 "))
+        #expect(world.files.observationNames.count == IntakeLimits.photosPerBatch)
+        let written = world.files.bytesWritten(to: StagingStore.manifestName)
+        print("Batch list: \(manifest.utf8.count) bytes after 120 photos, \(written) bytes written in all")
+        // With observations inline the list grew past 1.5 MB and about 180 MB was written.
+        #expect(manifest.utf8.count < 200_000)
+        #expect(written < 20_000_000)
+        #expect(await world.launch().batch(batch)?.review?.observations.count == IntakeLimits.photosPerBatch)
+    }
+
+    @Test("what was read from a photo is kept in its own file, deleted with its batch, and read again when that file is lost")
+    func observationFiles() async throws {
+        let world = IntakeWorld()
+        let store = world.launch()
+        let batch = try await world.stage(["rice", "beans"], in: store)
+        _ = try await world.process(batch, store)
+        #expect(world.files.observationNames.count == 2)
+        let orphan = UUID().uuidString + ".read.json"
+        world.files.put(orphan)
+        try await store.sweep()
+        #expect(!world.files.has(orphan))
+        #expect(world.files.observationNames.count == 2)
+
+        // A lost observation file leaves its photo unread, so it is read again.
+        let photo = try #require(await store.batch(batch)?.photos[0])
+        try world.files.remove(StagingStore.observationName(photo.id))
+        let relaunched = world.launch()
+        #expect(await relaunched.photosToRecognize(in: batch).map(\.id) == [photo.id])
+        #expect(await relaunched.batch(batch)?.review?.observations[photo.id] == nil)
+
+        try await relaunched.discard(batch)
+        #expect(world.files.observationNames.isEmpty)
+        #expect(world.files.photoNames.isEmpty)
+    }
+
     @Test("a photo taken back before reading is deleted with its file")
     func removePhoto() async throws {
         let world = IntakeWorld()

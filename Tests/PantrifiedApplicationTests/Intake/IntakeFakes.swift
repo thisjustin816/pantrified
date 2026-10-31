@@ -11,6 +11,7 @@ final class MemoryStagingFiles: StagingFiles, @unchecked Sendable {
     private var failingReads = false
     private var writesLeft: Int?
     private(set) var removed: [String] = []
+    private var written: [String: Int] = [:]
 
     func write(_ data: Data, to name: String) throws {
         try lock.withLock {
@@ -20,8 +21,12 @@ final class MemoryStagingFiles: StagingFiles, @unchecked Sendable {
                 writesLeft = left - 1
             }
             contents[name] = data
+            written[name, default: 0] += data.count
         }
     }
+
+    /// Bytes written to a file so far, over every write.
+    func bytesWritten(to name: String) -> Int { lock.withLock { written[name] ?? 0 } }
 
     func read(_ name: String) throws -> Data? {
         try lock.withLock {
@@ -55,7 +60,10 @@ final class MemoryStagingFiles: StagingFiles, @unchecked Sendable {
     func contents(of name: String) -> Data? { lock.withLock { contents[name] } }
     func put(_ name: String, _ data: Data = Data([1])) { lock.withLock { contents[name] = data } }
     func has(_ name: String) -> Bool { lock.withLock { contents[name] != nil } }
-    var photoNames: [String] { lock.withLock { contents.keys.filter { $0 != StagingStore.manifestName }.sorted() } }
+    var photoNames: [String] {
+        lock.withLock { contents.keys.filter { $0 != StagingStore.manifestName && !$0.hasSuffix(".json") }.sorted() }
+    }
+    var observationNames: [String] { lock.withLock { contents.keys.filter { $0.hasSuffix(".read.json") }.sorted() } }
 }
 
 /// Answers by the photo's bytes: the test stages each photo's data as its key. Counts reads and the

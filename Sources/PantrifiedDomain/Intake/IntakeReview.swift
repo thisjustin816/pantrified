@@ -79,7 +79,9 @@ public enum IntakeReviewError: Error, Sendable, Equatable {
 public struct IntakeReview: Sendable, Hashable, Codable {
     public let space: SpaceID
     public private(set) var candidates: [IntakeCandidate]
-    public private(set) var observations: [IntakePhotoID: PhotoObservation]
+    /// Not encoded: the staging store keeps each observation once, with its photo, and gives them
+    /// back with `attachObservations` after decoding.
+    public private(set) var observations: [IntakePhotoID: PhotoObservation] = [:]
     public private(set) var lookups: [GTIN: LookupAnswer] = [:]
     /// Whether barcodes are looked up at all, so the review can say a lookup is still running.
     public let looksUp: Bool
@@ -94,7 +96,14 @@ public struct IntakeReview: Sendable, Hashable, Codable {
     public static let maximumLookupAttempts = LookupAnswer.maximumAttempts
 
     private enum CodingKeys: String, CodingKey {
-        case space, candidates, observations, lookups, looksUp, pendingAdd, pendingUndo
+        case space, candidates, lookups, looksUp, pendingAdd, pendingUndo
+    }
+
+    /// Gives a decoded review back the observations it was made from.
+    public mutating func attachObservations(_ observations: [PhotoObservation]) {
+        for observation in observations where self.observations[observation.photo] == nil {
+            self.observations[observation.photo] = observation
+        }
     }
 
     public init(

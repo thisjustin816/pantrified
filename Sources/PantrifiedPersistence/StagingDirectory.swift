@@ -68,12 +68,12 @@ public struct StagingDirectory: StagingFiles {
         try Self.markTemporary(directory)
     }
 
-    /// Record files are replaced atomically, so a crash leaves the old one whole. Photos are written
-    /// in place: an atomic write goes through a hidden temporary file that a crash can leave behind,
-    /// which the store would never remove, while a half-written photo has a name the store made
-    /// and no record naming it, so the next sweep removes it.
+    /// The batch list is replaced atomically, so a crash leaves the old one whole. Photos and the
+    /// observations read from them are written in place: an atomic write goes through a hidden
+    /// temporary file that a crash can leave behind, which the store would never remove, while a
+    /// half-written file has a name the store made and is removed, or read again, on the next launch.
     public static func writeOptions(for name: String) -> Data.WritingOptions {
-        var options: Data.WritingOptions = name.hasSuffix(".json") ? [.atomic] : []
+        var options: Data.WritingOptions = name.hasPrefix("batches") ? [.atomic] : []
         #if os(iOS)
         options.insert(.completeFileProtectionUntilFirstUserAuthentication)
         #endif

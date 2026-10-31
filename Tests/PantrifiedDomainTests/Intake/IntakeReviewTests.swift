@@ -313,14 +313,16 @@ struct IntakeReviewTests {
 
     // MARK: Persistence
 
-    @Test("a review survives encoding with every edit and lookup, but not its undo history")
+    @Test("a review survives encoding with every edit and lookup, but not its undo history or its observations")
     func coding() throws {
         var (review, _) = yogurtAndRice()
         try review.setName("Skyr", for: review.summaries[0].id)
         review.record(.notFound, for: Fixture.yogurt)
         review.beginAdd([review.summaries[1].id])
 
-        let decoded = try JSONDecoder().decode(IntakeReview.self, from: JSONEncoder().encode(review))
+        var decoded = try JSONDecoder().decode(IntakeReview.self, from: JSONEncoder().encode(review))
+        #expect(decoded.observations.isEmpty)
+        decoded.attachObservations(Array(review.observations.values))
         #expect(decoded.candidates == review.candidates)
         #expect(decoded.lookups == review.lookups)
         #expect(decoded.pendingAdd == review.pendingAdd)

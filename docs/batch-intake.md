@@ -198,11 +198,18 @@ barcodes already does.
 New photos and copies of picked photos are written only to `Application Support/Pantrified/Intake`,
 never to the photo library. The folder and each file are protected until the iPhone is first unlocked
 after a restart and are excluded from backups. Originals in Photos are never touched: the picker hands
-the app a copy, and the store only removes names it made itself (an upper-case UUID and `.jpg`, `.heic`
-or `.png`).
+the app a copy, and the store only removes names it made itself (an upper-case UUID and `.jpg`, `.heic`,
+`.png` or `.read.json`).
+
+What was read from each photo is kept once, in its own file beside the photo (the photo's UUID and
+`.read.json`), with the same protection and backup exclusion; the batch list (`batches.json`) holds the
+photos' records and the review. With reading after every photo this keeps writes small: for 120 photos
+with full-size readings the list ends near 94 KB and about 9 MB is written while they are read, where
+keeping observations in the list made it 1.5 MB and wrote about 180 MB. A test holds both bounds. A lost
+or unreadable observation file leaves its photo unread, so it is read again.
 
 `StagingStore` writes every change before returning, so a crash or kill loses at most the change in
-progress:
+progress, and a change whose save fails is undone in memory too:
 
 | When | What happens |
 |---|---|

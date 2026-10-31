@@ -40,11 +40,29 @@ public struct StagedPhoto: Sendable, Hashable, Codable, Identifiable {
     public internal(set) var couldNotRead = false
     /// The file has been deleted; what was read from it may still be in the review.
     public internal(set) var fileRemoved = false
+    /// Decoded from a record that says the observation is in its own file, not loaded yet.
+    var observationInFile = false
 }
 
 extension StagedPhoto {
     private enum CodingKeys: String, CodingKey {
-        case id, fileName, source, sequence, capturedAt, contentDigest, observation, readAttempts, couldNotRead, fileRemoved
+        case id, fileName, source, sequence, capturedAt, contentDigest, observation, read, readAttempts, couldNotRead, fileRemoved
+    }
+
+    /// The observation is not written here but in its own file (`StagingStore.observationName`),
+    /// once, so the batch list stays small while photos are read.
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(fileName, forKey: .fileName)
+        try container.encode(source, forKey: .source)
+        try container.encode(sequence, forKey: .sequence)
+        try container.encode(capturedAt, forKey: .capturedAt)
+        try container.encodeIfPresent(contentDigest, forKey: .contentDigest)
+        try container.encode(observation != nil || observationInFile, forKey: .read)
+        try container.encode(readAttempts, forKey: .readAttempts)
+        try container.encode(couldNotRead, forKey: .couldNotRead)
+        try container.encode(fileRemoved, forKey: .fileRemoved)
     }
 
     /// Fields added after the first records default to their starting values.
@@ -57,6 +75,8 @@ extension StagedPhoto {
         capturedAt = try container.decode(Date.self, forKey: .capturedAt)
         contentDigest = try container.decodeIfPresent(String.self, forKey: .contentDigest)
         observation = try container.decodeIfPresent(PhotoObservation.self, forKey: .observation)
+        let read = try container.decodeIfPresent(Bool.self, forKey: .read) ?? false
+        observationInFile = observation == nil && read
         readAttempts = try container.decodeIfPresent(Int.self, forKey: .readAttempts) ?? 0
         couldNotRead = try container.decodeIfPresent(Bool.self, forKey: .couldNotRead) ?? false
         fileRemoved = try container.decodeIfPresent(Bool.self, forKey: .fileRemoved) ?? false
@@ -177,8 +197,9 @@ public actor StagingStore {
     public static let maximumPhotoBytes = 40 * 1_024 * 1_024
     static let photoExtensions: Set<String> = ["jpg", "heic", "png"]
 
-    /// The batch list's format. A file with a higher version is opened read only.
-    public static let manifestVersion = 1
+    /// The batch list's format. A file with a higher version is opened read only. Version 2 keeps each
+    /// observation in its own file; version 1 lists, which held them inline, still load.
+    public static let manifestVersion = 2
     /// A batch list that could not be understood is kept under this name for a recovery window,
     /// then deleted.
     public static let setAsideName = "batches.unreadable.json"
@@ -251,12 +272,28 @@ public actor StagingStore {
         guard let stored = try? JSONDecoder().decode(Stored.self, from: data) else {
             return setAside(data, keeping: [], files: files, now: now)
         }
-        let batches = stored.batches.compactMap(\.batch)
+        let batches = stored.batches.compactMap(\.batch).map { loadObservations($0, files: files) }
         if stored.version > manifestVersion {
             return Load(batches: batches, setAsideAt: stored.setAsideAt, unfinishedExpired: stored.unfinishedExpired ?? false, readOnly: true, problem: .newerVersion)
         }
         if batches.count < stored.batches.count { return setAside(data, keeping: batches, files: files, now: now) }
         return Load(batches: batches, setAsideAt: stored.setAsideAt, unfinishedExpired: stored.unfinishedExpired ?? false)
+    }
+
+    /// Reads each observation kept in its own file and gives the review its observations. A file that
+    /// is missing or cannot be read leaves its photo unread, so it is read again if its photo is
+    /// still there.
+    private static func loadObservations(_ batch: IntakeBatch, files: any StagingFiles) -> IntakeBatch {
+        var batch = batch
+        for index in batch.photos.indices where batch.photos[index].observationInFile {
+            let name = observationName(batch.photos[index].id)
+            batch.photos[index].observation = (try? files.read(name)).flatMap { $0 }
+                .flatMap { try? JSONDecoder().decode(PhotoObservation.self, from: $0) }
+                .flatMap { $0.photo == batch.photos[index].id ? $0 : nil }
+            batch.photos[index].observationInFile = false
+        }
+        batch.review?.attachObservations(batch.photos.compactMap(\.observation))
+        return batch
     }
 
     /// Keeps a copy of a damaged list and writes the batches that could be read. When either write
@@ -417,6 +454,11 @@ public actor StagingStore {
         guard let index = index(id) else { throw .unknownBatch }
         guard let position = batches[index].photos.firstIndex(where: { $0.id == observation.photo }) else { throw .unknownPhoto }
         guard batches[index].photos[position].observation == nil else { return false }
+        do {
+            try files.write(try JSONEncoder().encode(observation), to: Self.observationName(observation.photo))
+        } catch {
+            throw .storage
+        }
         batches[index].photos[position].observation = observation
         batches[index].photos[position].couldNotRead = couldNotRead
         try save()
@@ -520,7 +562,10 @@ public actor StagingStore {
         guard let index = index(id) else { return }
         let removed = batches.remove(at: index)
         try save()
-        for photo in removed.photos where !photo.fileRemoved { try? files.remove(photo.fileName) }
+        for photo in removed.photos {
+            if !photo.fileRemoved { try? files.remove(photo.fileName) }
+            try? files.remove(Self.observationName(photo.id))
+        }
     }
 
     /// Deletes what is due, and returns how many photo files were deleted:
@@ -552,7 +597,10 @@ public actor StagingStore {
         }
         if !expired.isEmpty {
             let ids = Set(expired.map(\.id))
-            for batch in expired { doomed += batch.photos.filter { !$0.fileRemoved }.map(\.fileName) }
+            for batch in expired {
+                doomed += batch.photos.filter { !$0.fileRemoved }.map(\.fileName)
+                doomed += batch.photos.map { Self.observationName($0.id) }
+            }
             if expired.contains(where: { $0.phase != .finished }) { unfinishedExpired = true }
             batches.removeAll { ids.contains($0.id) }
             changed = true
@@ -560,16 +608,33 @@ public actor StagingStore {
         if changed { try save() }
 
         let named = Set(batches.flatMap { $0.photos.filter { !$0.fileRemoved }.map(\.fileName) })
+            .union(batches.flatMap { $0.photos.filter { $0.observation != nil }.map { Self.observationName($0.id) } })
         // While a damaged list is set aside, the photos it named are kept with it.
         if setAsideAt == nil, let present = try? files.names() {
             for name in present where !named.contains(name) { doomed.append(name) }
         }
         var deleted = 0
         // The one guard on every deletion: only a name this store makes is ever removed.
-        for name in Set(doomed) where Self.isPhotoName(name) {
-            if (try? files.remove(name)) != nil { deleted += 1 }
+        for name in Set(doomed) {
+            if Self.isPhotoName(name) {
+                if (try? files.remove(name)) != nil { deleted += 1 }
+            } else if Self.isObservationName(name) {
+                try? files.remove(name)
+            }
         }
         return deleted
+    }
+
+    /// The file holding what was read from a photo.
+    public static func observationName(_ photo: IntakePhotoID) -> String {
+        photo.rawValue.uuidString + ".read.json"
+    }
+
+    /// Only names `observationName` makes.
+    static func isObservationName(_ name: String) -> Bool {
+        guard name.hasSuffix(".read.json") else { return false }
+        let stem = String(name.dropLast(".read.json".count))
+        return stem.count == 36 && UUID(uuidString: stem)?.uuidString == stem
     }
 
     /// Only names the store makes: an uppercase UUID and a photo extension.
