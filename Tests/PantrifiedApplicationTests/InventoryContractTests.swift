@@ -2,6 +2,8 @@ import Foundation
 import Testing
 import PantrifiedApplication
 import PantrifiedDomain
+import PantrifiedPersistence
+import PantrifiedTestSupport
 
 /// Holds each caller of `pass` until `count` callers have arrived.
 private actor Gate {
@@ -68,10 +70,35 @@ private actor HeldLocations: StorageLocationRepository {
     }
 }
 
+/// Saves through one replica and reads through a replica freshly opened from the stored state, so
+/// every read in the contract checks what reached storage.
+private struct ReopeningInventory: InventoryRepository {
+    let live: SpaceReplica
+    let backend: any StorageBackend
+    let world: World
+
+    private func reopened() throws -> SpaceReplica {
+        try SpaceReplica(
+            space: world.space, replica: ReplicaID(), transport: CloudLink(world.cloud),
+            store: PersistentReplicaStateStore(space: world.space, backend: backend), time: FixedTime(syncEpoch)
+        )
+    }
+
+    func package(_ id: PackageID) async throws -> Package? { try await reopened().package(id) }
+    func activePackages(in space: SpaceID) async throws -> [Package] { try await reopened().activePackages(in: space) }
+    func save(_ package: Package) async throws { try await live.save(package) }
+    func saveAll(_ packages: [Package]) async throws { try await live.saveAll(packages) }
+}
+
 /// Every package store the use cases run against.
 enum InventoryStore: String, CaseIterable, Sendable {
     case inMemory
     case replica
+    /// A replica stored in each persistence backend.
+    case storedInMemory
+    #if canImport(SwiftData)
+    case storedInSwiftData
+    #endif
 
     func make(_ world: World, holding packages: [Package]) async throws -> any InventoryRepository {
         switch self {
@@ -84,7 +111,22 @@ enum InventoryStore: String, CaseIterable, Sendable {
             )
             try await replica.saveAll(packages)
             return replica
+        case .storedInMemory:
+            return try await stored(world, in: TestStorage.memory.makeBackend(), holding: packages)
+        #if canImport(SwiftData)
+        case .storedInSwiftData:
+            return try await stored(world, in: TestStorage.swiftDataFile.makeBackend(), holding: packages)
+        #endif
         }
+    }
+
+    private func stored(_ world: World, in backend: any StorageBackend, holding packages: [Package]) async throws -> any InventoryRepository {
+        let replica = try SpaceReplica(
+            space: world.space, replica: ReplicaID(), transport: CloudLink(world.cloud),
+            store: PersistentReplicaStateStore(space: world.space, backend: backend), time: FixedTime(syncEpoch)
+        )
+        try await replica.saveAll(packages)
+        return ReopeningInventory(live: replica, backend: backend, world: world)
     }
 }
 
