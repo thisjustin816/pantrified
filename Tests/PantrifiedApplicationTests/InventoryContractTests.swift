@@ -47,6 +47,7 @@ private actor HeldLocations: StorageLocationRepository {
     private var held: CheckedContinuation<Void, Never>?
     private var arrival: CheckedContinuation<Void, Never>?
     private var hasArrived = false
+    private var isFinished = false
 
     init(_ inner: InMemoryLocations) { self.inner = inner }
 
@@ -54,14 +55,24 @@ private actor HeldLocations: StorageLocationRepository {
         if !hasArrived {
             hasArrived = true
             arrival?.resume()
+            arrival = nil
             await withCheckedContinuation { held = $0 }
         }
         return try await inner.locations(in: space)
     }
 
+    /// Returns once the first lookup is held, or once the use case has ended without making one.
     func arrived() async {
-        if hasArrived { return }
+        if hasArrived || isFinished { return }
         await withCheckedContinuation { arrival = $0 }
+    }
+
+    /// Called when the use case ends, so a use case that fails before its lookup cannot leave
+    /// `arrived()` waiting forever.
+    func finish() {
+        isFinished = true
+        arrival?.resume()
+        arrival = nil
     }
 
     func release() {
@@ -243,10 +254,24 @@ struct InventoryContractTests {
         let time = FixedTime(syncEpoch)
         let mover = PackageActions(inventory: inventory, locations: held, time: time)
 
-        let move = Task { try await mover.apply(.move(to: world.freezer.id), to: original.id) }
+        let move = Task {
+            do {
+                let outcome = try await mover.apply(.move(to: world.freezer.id), to: original.id)
+                await held.finish()
+                return outcome
+            } catch {
+                await held.finish()
+                throw error
+            }
+        }
         await held.arrived()
-        _ = try await PackageActions(inventory: inventory, locations: world.locations, time: time)
-            .apply(.discard(reason: .spoiled), to: original.id)
+        do {
+            _ = try await PackageActions(inventory: inventory, locations: world.locations, time: time)
+                .apply(.discard(reason: .spoiled), to: original.id)
+        } catch {
+            await held.release()
+            throw error
+        }
         await held.release()
         _ = try await move.value
 
