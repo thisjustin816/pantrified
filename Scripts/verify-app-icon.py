@@ -5,8 +5,8 @@ Usage: verify-app-icon.py APPICONSET [APP_BUNDLE]
 
 App Store Connect rejects an upload whose icon is not a 1024 by 1024 PNG without transparency, and a
 catalog entry that names no file builds without an icon and fails only at upload. The source is
-linted first. With an app bundle, the compiled catalog and the icon name in its Info.plist are
-checked too, because a valid source does not show that the icon ships.
+linted first. With an app bundle, the compiled catalog and the icon name in its Info.plist (at the
+top level or as the primary icon in CFBundleIcons) are checked too, because a valid source does not show that the icon ships.
 """
 import argparse
 import json
@@ -81,9 +81,24 @@ def check(iconset, bundle):
         info = plistlib.loads((bundle / "Info.plist").read_bytes())
     except (OSError, plistlib.InvalidFileException, ValueError) as error:
         return errors + [f"cannot read the Info.plist in {bundle}: {error}"]
-    if info.get("CFBundleIconName") != name:
-        errors.append(f"Info.plist CFBundleIconName is {info.get('CFBundleIconName')!r}, not {name!r}")
+    declared = _declared_icon_names(info)
+    if name not in declared:
+        found = {key: info[key] for key in sorted(info) if "Icon" in key}
+        errors.append(f"Info.plist does not name the icon {name!r}; its icon keys are {found!r}")
     return errors
+
+
+def _declared_icon_names(info):
+    """The icon names an Info.plist declares: at the top level, or as the primary icon of CFBundleIcons."""
+    names = set()
+    if isinstance(info.get("CFBundleIconName"), str):
+        names.add(info["CFBundleIconName"])
+    for key in ("CFBundleIcons", "CFBundleIcons~ipad"):
+        icons = info.get(key)
+        primary = icons.get("CFBundlePrimaryIcon") if isinstance(icons, dict) else None
+        if isinstance(primary, dict) and isinstance(primary.get("CFBundleIconName"), str):
+            names.add(primary["CFBundleIconName"])
+    return names
 
 
 def main(argv):

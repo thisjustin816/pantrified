@@ -104,12 +104,22 @@ class BundleTests(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertIn("Assets.car", errors[0])
 
+    def test_the_primary_icon_in_cfbundleicons_passes(self):
+        plist = {"CFBundleIcons": {"CFBundlePrimaryIcon": {"CFBundleIconName": "AppIcon"}}}
+        self.assertEqual(check(png(), bundle=True, plist=plist), [])
+
     def test_a_missing_or_wrong_icon_name_fails(self):
-        for plist in [{}, {"CFBundleIconName": "Other"}]:
+        wrong_primary = {"CFBundleIcons": {"CFBundlePrimaryIcon": {"CFBundleIconName": "Other"}}}
+        for plist in [{}, {"CFBundleIconName": "Other"}, wrong_primary, {"CFBundleIcons": {"CFBundlePrimaryIcon": "AppIcon"}}, {"CFBundleIcons": []}]:
             with self.subTest(plist=plist):
                 errors = check(png(), bundle=True, plist=plist)
                 self.assertEqual(len(errors), 1)
-                self.assertIn("CFBundleIconName", errors[0])
+                self.assertIn("does not name the icon 'AppIcon'", errors[0])
+
+    def test_the_error_lists_the_icon_keys_that_are_present(self):
+        errors = check(png(), bundle=True, plist={"CFBundleIconFile": "x", "CFBundleName": "y"})
+        self.assertIn("CFBundleIconFile", errors[0])
+        self.assertNotIn("CFBundleName", errors[0])
 
     def test_a_missing_info_plist_fails(self):
         self.assertTrue(check(png(), bundle=True, plist=None))
