@@ -41,6 +41,8 @@ targets:
         product: PantrifiedFoundationModels
       - package: Pantrified
         product: PantrifiedGuidanceData
+      - package: Pantrified
+        product: PantrifiedPersistence
   PantrifiedTests:
     type: bundle.unit-test
     platform: iOS

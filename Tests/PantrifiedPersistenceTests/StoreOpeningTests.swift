@@ -7,14 +7,6 @@ import PantrifiedTestSupport
 
 private struct ContainerFailure: Error {}
 
-/// A new, empty directory for one test.
-func temporaryStoreFiles() throws -> StoreFiles {
-    let directory = FileManager.default.temporaryDirectory
-        .appendingPathComponent("pantrified-tests", isDirectory: true)
-        .appendingPathComponent(UUID().uuidString, isDirectory: true)
-    return StoreFiles(directory: directory)
-}
-
 @Suite("Store opening")
 struct StoreOpeningTests {
     private func marker(_ files: StoreFiles) -> String? {
@@ -28,7 +20,7 @@ struct StoreOpeningTests {
 
     @Test("a first open creates the directory, opens the store and records the schema version")
     func firstOpen() throws {
-        let files = try temporaryStoreFiles()
+        let files = temporaryStoreFiles()
         var opened = 0
 
         let result = try StoreOpening.open(files) { opened += 1; return "store" }
@@ -40,7 +32,7 @@ struct StoreOpeningTests {
 
     @Test("a store marked by a newer schema is refused before it is opened, and left as it is")
     func newerSchemaIsRefused() throws {
-        let files = try temporaryStoreFiles()
+        let files = temporaryStoreFiles()
         try writeMarker("\(StoreSchema.current + 1)", files)
         var opened = false
 
@@ -53,7 +45,7 @@ struct StoreOpeningTests {
 
     @Test("a store that fails to open is reported and its marker is not advanced")
     func containerFailureIsReported() throws {
-        let files = try temporaryStoreFiles()
+        let files = temporaryStoreFiles()
         try writeMarker("0", files)
 
         #expect(throws: PersistenceError.self) {
@@ -64,7 +56,7 @@ struct StoreOpeningTests {
 
     @Test("an older marker is advanced once the store has opened")
     func olderMarkerAdvances() throws {
-        let files = try temporaryStoreFiles()
+        let files = temporaryStoreFiles()
         try writeMarker("0", files)
 
         _ = try StoreOpening.open(files) { 1 }
@@ -74,7 +66,7 @@ struct StoreOpeningTests {
 
     @Test("an unreadable marker refuses the store rather than guessing its version")
     func unreadableMarkerIsRefused() throws {
-        let files = try temporaryStoreFiles()
+        let files = temporaryStoreFiles()
         try writeMarker("two", files)
         var opened = false
 
@@ -86,7 +78,7 @@ struct StoreOpeningTests {
 
     @Test("a directory that cannot be created is reported")
     func directoryFailureIsReported() throws {
-        let blocker = try temporaryStoreFiles().directory
+        let blocker = temporaryStoreFiles().directory
         try FileManager.default.createDirectory(at: blocker.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data([1]).write(to: blocker)
 

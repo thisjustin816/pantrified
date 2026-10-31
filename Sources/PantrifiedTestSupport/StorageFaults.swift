@@ -66,11 +66,26 @@ public final class FaultyBackend: StorageBackend, @unchecked Sendable {
 /// The backends durable tests run against. Each `makeBackend` call returns an empty store.
 public enum TestStorage: String, CaseIterable, Sendable {
     case memory
+    #if canImport(SwiftData)
+    /// A SwiftData store in a new temporary directory.
+    case swiftDataFile
+    #endif
 
     public func makeBackend() throws -> any StorageBackend {
         switch self {
         case .memory:
             return InMemoryStorageBackend()
+        #if canImport(SwiftData)
+        case .swiftDataFile:
+            return try SwiftDataBackend.open(temporaryStoreFiles())
+        #endif
         }
     }
+}
+
+/// A new, empty directory for one test's store.
+public func temporaryStoreFiles() -> StoreFiles {
+    StoreFiles(directory: FileManager.default.temporaryDirectory
+        .appendingPathComponent("pantrified-tests", isDirectory: true)
+        .appendingPathComponent(UUID().uuidString, isDirectory: true))
 }
