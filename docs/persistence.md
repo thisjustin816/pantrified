@@ -13,6 +13,7 @@ use cases ── InventoryRepository / ShoppingListRepository ── SpaceReplic
                                                                 │ rows, one batch per save
 use cases ── StorageLocationRepository ── PersistentLocations ──┤
 use cases ── IngredientLinkRepository ── PersistentIngredientLinks ┤
+use cases ── ProductEvidenceStore ── PersistentProductEvidence ────┤
                                                          StorageBackend
                                               ┌─────────────────┴─────────────────┐
                                      SwiftDataBackend                  InMemoryStorageBackend
@@ -41,6 +42,7 @@ The cost: SwiftData cannot query inside a record. Reads load a Space's rows and 
 | Replica clock and change token | Replica header row, one per Space | The clock's latest reading and the token, encoded | No |
 | Storage locations | Local rows, kind `location` | Name, storage type tag and list position, keyed by the location's ID | No (see Limits) |
 | Ingredient links | Local rows, kind `ingredientLink` | The two normalized names, keyed by both | No (see Limits) |
+| Package barcodes | Local rows, kind `packageBarcode` | The 14-digit GTIN scanned from the package, keyed by the package's ID | No (`capture.md`) |
 
 Every key is app-owned: Space IDs, record IDs and location IDs are the domain's UUIDs. SwiftData's `PersistentIdentifier` is never stored or used as identity.
 
@@ -127,6 +129,8 @@ Nothing in the store leaves the device. Synchronized records reach iCloud only t
 ## Limits
 
 - **Reads decode a whole Space.** A replica loads every record of its Space at launch. Event histories are never compacted (`sync-design.md`), so launch time grows with history.
+- **Package barcodes do not sync,** and stay after their package is used up or discarded. Whether they should
+  sync is an owner decision in `capture.md`.
 - **Locations and ingredient links do not sync.** They are kept per Space on one device. Until they become records, devices sharing a Space each need the same locations, which `sync-design.md` already lists as not synchronized.
 - **No deletion yet.** Leaving a Space and Delete All My Local Data need a backend operation that removes a Space's rows and its files together; it is not built.
 - **One process.** The single-replica rule holds within one process. An app extension writing the same store would need coordination that is not built.

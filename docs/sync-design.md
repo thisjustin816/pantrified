@@ -170,7 +170,7 @@ A crash at any point leaves the last completed step stored. On restart the repli
 - **Last-writer registers lose concurrent intent.** Two concurrent renames of one list item keep one name. Removal beats a concurrent check or uncheck; the item can be restored.
 - **Duplicates are merged only on request.** Two devices adding the same item concurrently produce two items. They are never merged automatically; the merge is a person's action.
 - **CloudKit mapping is not built.** Storing each field's stamp alongside its value in a `CKRecord`, mapping `serverRecordChanged` to a conflict outcome, zone and `CKShare` setup, asset upload, change-token expiry (which needs a full refetch), request size limits, and rate limiting are adapter work and unverified.
-- **Not synchronized yet:** storage locations, ingredient links, consumer profiles and restrictions, preferences, Space membership, and deletion of Space data. Tests treat locations as fixed shared configuration.
+- **Not synchronized yet:** storage locations, ingredient links, package barcodes (`capture.md`), consumer profiles and restrictions, preferences, Space membership, and deletion of Space data. Tests treat locations as fixed shared configuration.
 - **Evidence removal is not implemented.** Crops are not yet removed when their package leaves active inventory, and approved crops have no removal record.
 
 ## Owner decisions

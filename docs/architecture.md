@@ -78,7 +78,7 @@ Use cases and capability protocols. Likely interfaces include:
 - `ShoppingExporter`
 - `EntitlementProvider`
 
-`Pantry` is the facade the Today and Food screens use for one Space. It reads what is in the Space with what needs attention (`UseSoon`), adds food by hand (`PutAway`), applies Opened, Used up, Move and Discard with undo (`PackageActions`), and gives a new Space its default locations. It holds no rules of its own; the screens hold no logic beyond showing its results.
+`Pantry` is the facade the Today and Food screens use for one Space. It reads what is in the Space with what needs attention (`UseSoon`), adds food by hand or from a scanned barcode (`PutAway`, which keeps the barcode through `ProductEvidenceStore`), applies Opened, Used up, Move and Discard with undo (`PackageActions`), and gives a new Space its default locations. It holds no rules of its own; the screens hold no logic beyond showing its results.
 
 Application types must not leak provider DTOs or Apple-framework-native objects.
 
@@ -149,7 +149,7 @@ It emits an explainable attention state/date without rewriting those facts into 
 
 ## Product lookup
 
-`ProductLookupService` is provider-neutral. v1 live adapter is FoodData Central only. A miss preserves the barcode and continues with OCR/user review; it is not an error requiring another provider.
+`ProductLookupService` is provider-neutral. v1 live adapter is FoodData Central only (`PantrifiedFoodDataCentral`). A miss preserves the barcode and continues with OCR/user review; it is not an error requiring another provider. The barcode slice, its camera flow and the lookup are described in `capture.md`.
 
 ## Recipe architecture
 
