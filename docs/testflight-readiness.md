@@ -48,8 +48,8 @@ What is in place for an upload, what only the owner can decide, and what data le
    scan barcodes on food packages. Only the barcode number is read; no photos are taken or saved." Photo
    library access needs its own string when photo import is added.
 5. **Product lookup key and App Privacy.** A build looks products up only when it carries a FoodData Central
-   key (`FDC_API_KEY`, `docs/capture.md`). The upload workflow does not pass one yet; `docs/capture.md`
-   lists the change and the secret to add. Before uploading a build with a key, decide how App Privacy
+   key (`FDC_API_KEY`, `docs/capture.md`). The upload workflow passes the `FDC_API_KEY` Environment secret
+   when it is set. Before adding that secret, decide how App Privacy
    describes the barcode sent to api.data.gov with the device's IP address (owner decision 3 in
    `docs/capture.md`).
 

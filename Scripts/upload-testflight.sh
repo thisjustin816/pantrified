@@ -40,6 +40,13 @@ if [[ $upload != true && $upload != false ]]; then
   echo "TESTFLIGHT_UPLOAD must be true or false." >&2
   exit 1
 fi
+# The FoodData Central key is optional: without it the app's product lookup is off. It is written into an
+# xcconfig below, so it must be one plain word. The value is never printed.
+fdc_key="${FDC_API_KEY:-}"
+if [[ -n $fdc_key && ! $fdc_key =~ ^[A-Za-z0-9_-]{16,128}$ ]]; then
+  echo "FDC_API_KEY is not a plausible api.data.gov key. See docs/capture.md." >&2
+  exit 1
+fi
 if [[ "$(uname -s)" != Darwin ]]; then
   echo "TestFlight uploads require macOS/Xcode, provided by the GitHub Actions runner." >&2
   exit 1
@@ -158,6 +165,11 @@ DEVELOPMENT_TEAM = $TEAM_ID
 PROVISIONING_PROFILE_SPECIFIER = $PROFILE_UUID
 BUNDLE_ID_SUFFIX =
 EOF
+if [[ -n $fdc_key ]]; then
+  # In the xcconfig, which is deleted on exit, rather than on the command line, where xcodebuild would
+  # print it. The key ships inside the app, so it is a low-value, rate-limited key (docs/capture.md).
+  printf 'FDC_API_KEY = %s\n' "$fdc_key" >>Config/Signing.local.xcconfig
+fi
 archive_settings=(CURRENT_PROJECT_VERSION="$version")
 evaluation_tab=absent
 if [[ $variant == evaluation ]]; then
@@ -175,6 +187,16 @@ app="$archive/Products/Applications/$SCHEME.app"
 python3 -I Scripts/verify-privacy-manifest.py App/PrivacyInfo.xcprivacy "$app"
 python3 -I Scripts/verify-app-icon.py App/Assets.xcassets/AppIcon.appiconset "$app"
 python3 -I Scripts/verify-export-compliance.py project.yml "$app"
+# The key must have reached the archived app: a build that silently lost it would ship with lookup off.
+if [[ "$(plist_value "$app/Info.plist" FoodDataCentralAPIKey)" != "$fdc_key" ]]; then
+  echo "The archived app's FoodDataCentralAPIKey is not the key that was set." >&2
+  exit 1
+fi
+if [[ -n $fdc_key ]]; then
+  echo "Product lookup: key included."
+else
+  echo "Product lookup: no key, so lookup is off in this build."
+fi
 marketing_version="$(plist_value "$app/Info.plist" CFBundleShortVersionString)"
 for key_and_value in "CFBundleIdentifier=$BUNDLE_ID" "CFBundleVersion=$version"; do
   if [[ "$(plist_value "$app/Info.plist" "${key_and_value%%=*}")" != "${key_and_value#*=}" ]]; then
