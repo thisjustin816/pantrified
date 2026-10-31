@@ -181,7 +181,7 @@ Advanced retailer integrations, broader analytics, and additional AI surfaces sh
 
 ## Open decisions
 
-1. Visual design, branding, and app icon.
+1. Visual design and branding. The app icon is chosen.
 2. Future Plus additions/pricing beyond the accepted v1 $0.99 non-consumable offering.
 
 ## Decision discipline

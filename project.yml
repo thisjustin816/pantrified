@@ -26,6 +26,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.thisjustin816.Pantrified$(BUNDLE_ID_SUFFIX)
         PRODUCT_NAME: Pantrified
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_CFBundleDisplayName: Pantrified
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.lifestyle
         INFOPLIST_KEY_UILaunchScreen_Generation: YES

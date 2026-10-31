@@ -95,6 +95,17 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: '1'
         run: python3 -I Scripts/verify-privacy-manifest.py App/PrivacyInfo.xcprivacy build/Pantrified-Evaluation.xcarchive/Products/Applications/Pantrified.app
+      # A valid icon in the source does not show that it ships, so each archived app is checked.
+      - name: Check the Release app carries the app icon
+        if: ${{ !cancelled() && steps.archive.outcome == 'success' }}
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 -I Scripts/verify-app-icon.py App/Assets.xcassets/AppIcon.appiconset build/Pantrified.xcarchive/Products/Applications/Pantrified.app
+      - name: Check the Evaluation app carries the app icon
+        if: ${{ !cancelled() && steps.archive-evaluation.outcome == 'success' }}
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 -I Scripts/verify-app-icon.py App/Assets.xcassets/AppIcon.appiconset build/Pantrified-Evaluation.xcarchive/Products/Applications/Pantrified.app
       # xcodebuild prints thousands of long command lines, so the failure is hard to find in the
       # raw log. Repeat only the diagnostics, once, at the end.
       - name: Summarize failures
