@@ -115,7 +115,7 @@ struct LocalRepositoryTests {
         #expect(row.key.entity == package.rawValue.uuidString)
         #expect(try StoredValueCoding.value(from: row.payload) == .map(["gtin": .string("00036000291452")]))
 
-        for stored in ["036000291452", "00036000291453", "notdigits"] {
+        for stored in ["036000291452", "00036000291453", "notdigits", " 0036000291452", "0036000291452 "] {
             let broken = PackageID()
             var batch = StorageBatch()
             batch.localWrites[LocalRowKey(kind: .packageBarcode, space: space, entity: broken.rawValue.uuidString)] =

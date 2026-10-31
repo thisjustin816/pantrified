@@ -17,8 +17,10 @@ struct AppSmokeTests {
         let key = Bundle.main.object(forInfoDictionaryKey: "FoodDataCentralAPIKey") as? String
 
         #expect(camera?.contains("scan barcodes") == true)
-        // CI builds set no key, so the merged Info.plist must hold the expanded, empty setting.
-        #expect(key == "")
+        // CI builds set no key, so the merged Info.plist must hold the expanded, empty setting. Only a
+        // Bool reaches the expectation, so a failure cannot print a key into the test log.
+        let keyIsEmpty = key?.isEmpty ?? false
+        #expect(keyIsEmpty)
         #expect(Bundle.main.object(forInfoDictionaryKey: "ITSAppUsesNonExemptEncryption") as? Bool == false)
     }
 

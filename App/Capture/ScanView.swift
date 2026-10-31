@@ -71,7 +71,7 @@ private struct ScanView: View {
             unavailable(
                 "Camera access",
                 systemImage: "barcode.viewfinder",
-                "Pantrified uses the camera only to read barcodes. Nothing is recorded or saved."
+                "Pantrified uses the camera only to read barcodes. No photos or video are recorded."
             )
         case .noCamera:
             unavailable(

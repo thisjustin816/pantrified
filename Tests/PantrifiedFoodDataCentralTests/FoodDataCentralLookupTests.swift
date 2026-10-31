@@ -277,4 +277,30 @@ struct FoodDataCentralLookupTests {
         #expect(FoodDataCentralLookup.suggestedName(exact)?.count == FoodDataCentralLookup.longestName)
         #expect(FoodDataCentralLookup.suggestedName(exact + "b")?.count == FoodDataCentralLookup.longestName)
     }
+
+    @Test("a name is also cut by its UTF-8 bytes, so combining marks cannot make it huge")
+    func nameBytes() throws {
+        let marks = String(repeating: "\u{0301}", count: 5_000)
+        let bomb = String(repeating: "a" + marks, count: 150)
+        #expect(bomb.count == 150)
+        #expect((FoodDataCentralLookup.suggestedName(bomb)?.utf8.count ?? 0) <= FoodDataCentralLookup.longestNameBytes)
+
+        let accented = "Cola " + String(repeating: "a" + String(repeating: "\u{0301}", count: 5), count: 150)
+        let name = try #require(FoodDataCentralLookup.suggestedName(accented))
+        #expect(name.utf8.count <= FoodDataCentralLookup.longestNameBytes)
+        #expect(name.utf8.count > FoodDataCentralLookup.longestNameBytes - 11)
+        #expect(accented.hasPrefix(name))
+    }
+
+    @Test("the byte limit counts whole characters and keeps a name exactly at it", arguments: [
+        ("😀", 100, 100),
+        ("👍🏽", 100, 50),
+        ("é", 100, 100),
+    ])
+    func nameBytesWholeCharacters(character: String, repeats: Int, kept: Int) throws {
+        let name = try #require(FoodDataCentralLookup.suggestedName(String(repeating: character, count: repeats)))
+        #expect(name.count == kept)
+        #expect(name == String(repeating: character, count: kept))
+        #expect(name.utf8.count <= FoodDataCentralLookup.longestNameBytes)
+    }
 }

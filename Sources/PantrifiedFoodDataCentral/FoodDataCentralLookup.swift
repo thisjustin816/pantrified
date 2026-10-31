@@ -13,9 +13,11 @@ public struct FoodDataCentralLookup: ProductLookupService {
     static let endpoint = "https://api.nal.usda.gov/fdc/v1/foods/search"
     /// Branded foods are the records with barcodes; a small page keeps the answer small.
     static let fixedQuery = [URLQueryItem(name: "dataType", value: "Branded"), URLQueryItem(name: "pageSize", value: "10")]
-    /// A larger answer than a ten-result page can be is not read.
+    /// Far more than a ten-result page. The transport stops reading an answer that grows past it.
     static let largestBody = 1_000_000
     static let longestName = 100
+    /// Also a byte limit, because one character can hold any number of combining marks.
+    static let longestNameBytes = 400
 
     private let apiKey: String
     private let transport: any HTTPTransport
@@ -72,7 +74,8 @@ public struct FoodDataCentralLookup: ProductLookupService {
     }
 
     /// The record's description as a name a person would type: control characters removed, spaces
-    /// collapsed, all-capitals text in sentence case, and no longer than `longestName`.
+    /// collapsed, all-capitals text in sentence case, and no longer than `longestName` characters or
+    /// `longestNameBytes` bytes of UTF-8. It is cut between characters, never inside one.
     static func suggestedName(_ description: String) -> String? {
         let visible = String(String.UnicodeScalarView(description.unicodeScalars.map {
             CharacterSet.controlCharacters.contains($0) ? " " : $0
@@ -82,9 +85,14 @@ public struct FoodDataCentralLookup: ProductLookupService {
             name = name.lowercased()
             if let first = name.first { name = first.uppercased() + name.dropFirst() }
         }
-        if name.count > longestName {
-            name = String(name.prefix(longestName)).trimmingCharacters(in: .whitespaces)
+        var kept = ""
+        var bytes = 0
+        for character in name.prefix(longestName) {
+            bytes += character.utf8.count
+            guard bytes <= longestNameBytes else { break }
+            kept.append(character)
         }
+        name = kept.trimmingCharacters(in: .whitespaces)
         return name.isEmpty ? nil : name
     }
 
@@ -145,10 +153,58 @@ public protocol HTTPTransport: Sendable {
 /// URLSession with an ephemeral configuration: no cookies, no cache and no credential storage, so
 /// nothing about a lookup is kept on the device, and a short timeout so a slow network gives up
 /// quickly instead of leaving the person waiting.
+///
+/// It sends a request only to FoodData Central's host, follows no redirect, so the key header
+/// never goes anywhere else, and stops reading an answer once its body, after any decompression,
+/// grows past the limit.
 public struct URLSessionTransport: HTTPTransport {
-    private let session: URLSession
+    /// Where requests may go: scheme, host and port must all match.
+    struct Origin: Sendable, Hashable {
+        var scheme: String
+        var host: String
+        var port: Int?
+
+        static let foodDataCentral = Origin(scheme: "https", host: "api.nal.usda.gov", port: nil)
+
+        func allows(_ url: URL?) -> Bool {
+            guard let url else { return false }
+            return url.scheme?.lowercased() == scheme && url.host?.lowercased() == host && url.port == port
+        }
+    }
+
+    private let timeout: TimeInterval
+    private let origin: Origin
+    private let limit: Int
 
     public init(timeout: TimeInterval = 8) {
+        self.init(timeout: timeout, origin: .foodDataCentral, limit: FoodDataCentralLookup.largestBody)
+    }
+
+    init(timeout: TimeInterval, origin: Origin, limit: Int) {
+        self.timeout = timeout
+        self.origin = origin
+        self.limit = limit
+    }
+
+    public func get(_ request: URLRequest) async -> Result<HTTPReply, HTTPFailure> {
+        guard origin.allows(request.url) else { return .failure(.other) }
+        guard !Task.isCancelled else { return .failure(.cancelled) }
+        let download = CappedDownload(limit: limit)
+        // A session per request, because its delegate holds that request's body.
+        let session = URLSession(configuration: configuration(), delegate: download, delegateQueue: nil)
+        let task = session.dataTask(with: request)
+        let result = await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                download.start(task, reporting: continuation)
+            }
+        } onCancel: {
+            task.cancel()
+        }
+        session.finishTasksAndInvalidate()
+        return result
+    }
+
+    private func configuration() -> URLSessionConfiguration {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = timeout
         configuration.timeoutIntervalForResource = timeout
@@ -163,21 +219,84 @@ public struct URLSessionTransport: HTTPTransport {
         configuration.waitsForConnectivity = false
         configuration.tlsMinimumSupportedProtocolVersion = .TLSv12
         #endif
-        session = URLSession(configuration: configuration)
+        return configuration
+    }
+}
+
+/// Collects one task's answer. URLSession hands the delegate the body as it arrives, already
+/// decompressed, so the limit applies to the bytes the app would hold, and the task is cancelled
+/// as soon as they pass it. A body announced as larger than the limit is refused before any of it
+/// is read. Every redirect is refused, so a 3xx answer completes the task as it is.
+final class CappedDownload: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private let limit: Int
+    /// Guarded by `lock`.
+    private var body = Data()
+    /// Guarded by `lock`.
+    private var tooLarge = false
+    /// Guarded by `lock`.
+    private var continuation: CheckedContinuation<Result<HTTPReply, HTTPFailure>, Never>?
+
+    init(limit: Int) {
+        self.limit = limit
     }
 
-    public func get(_ request: URLRequest) async -> Result<HTTPReply, HTTPFailure> {
-        guard request.url?.scheme == "https" else { return .failure(.other) }
-        do {
-            let (data, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse else { return .failure(.other) }
-            return .success(HTTPReply(status: http.statusCode, body: data))
-        } catch let error as URLError {
-            return .failure(HTTPFailure(error))
-        } catch is CancellationError {
-            return .failure(.cancelled)
-        } catch {
-            return .failure(.other)
+    /// The bytes held so far, for tests.
+    var heldBytes: Int { lock.withLock { body.count } }
+
+    func start(_ task: URLSessionDataTask, reporting continuation: CheckedContinuation<Result<HTTPReply, HTTPFailure>, Never>) {
+        lock.withLock { self.continuation = continuation }
+        task.resume()
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping @Sendable (URLSession.ResponseDisposition) -> Void
+    ) {
+        guard response.expectedContentLength <= Int64(limit) else {
+            lock.withLock { tooLarge = true }
+            completionHandler(.cancel)
+            return
         }
+        completionHandler(.allow)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        let over = lock.withLock { () -> Bool in
+            if tooLarge { return true }
+            guard body.count + data.count <= limit else {
+                tooLarge = true
+                body = Data()
+                return true
+            }
+            body.append(data)
+            return false
+        }
+        if over { dataTask.cancel() }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        completionHandler(nil)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
+        let response = task.response
+        let (result, waiting) = lock.withLock { () -> (Result<HTTPReply, HTTPFailure>, CheckedContinuation<Result<HTTPReply, HTTPFailure>, Never>?) in
+            let waiting = continuation
+            continuation = nil
+            if tooLarge { return (.failure(.other), waiting) }
+            if let error { return (.failure((error as? URLError).map(HTTPFailure.init) ?? .other), waiting) }
+            guard let http = response as? HTTPURLResponse else { return (.failure(.other), waiting) }
+            return (.success(HTTPReply(status: http.statusCode, body: body)), waiting)
+        }
+        waiting?.resume(returning: result)
     }
 }

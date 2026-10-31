@@ -86,7 +86,8 @@ public struct GTIN: Sendable, Hashable, Codable, CustomStringConvertible {
 
     public init(from decoder: any Decoder) throws {
         let text = try decoder.singleValueContainer().decode(String.self)
-        guard text.count == 14, let gtin = GTIN(text) else {
+        // Only the exact stored form: no spaces or other padding that parsing would accept.
+        guard let gtin = GTIN(text), gtin.digits == text else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "not a 14-digit GTIN"))
         }
         self = gtin

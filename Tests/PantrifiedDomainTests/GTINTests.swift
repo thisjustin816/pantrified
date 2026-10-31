@@ -174,5 +174,9 @@ struct GTINTests {
         #expect(try JSONDecoder().decode([GTIN].self, from: encoded) == [gtin])
         #expect(throws: DecodingError.self) { try JSONDecoder().decode([GTIN].self, from: Data("[\"036000291452\"]".utf8)) }
         #expect(throws: DecodingError.self) { try JSONDecoder().decode([GTIN].self, from: Data("[\"00036000291453\"]".utf8)) }
+        for padded in [" 0036000291452", "0036000291452 ", "\t0036000291452"] {
+            #expect(padded.count == 14)
+            #expect(throws: DecodingError.self, "\(padded)") { try JSONDecoder().decode([GTIN].self, from: JSONEncoder().encode([padded])) }
+        }
     }
 }

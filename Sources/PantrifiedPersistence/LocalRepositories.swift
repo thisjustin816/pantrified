@@ -110,7 +110,7 @@ public struct PersistentProductEvidence: ProductEvidenceStore {
         }
         guard case .map(let fields) = try StoredValueCoding.value(from: row.payload),
               case .string(let digits)? = fields["gtin"],
-              digits.count == 14, let gtin = GTIN(digits)
+              let gtin = GTIN(digits), gtin.digits == digits
         else { throw PersistenceError.corrupt("an unreadable package barcode") }
         return gtin
     }
