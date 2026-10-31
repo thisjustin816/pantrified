@@ -30,6 +30,13 @@ public protocol StorageLocationRepository: Sendable {
     func locations(in space: SpaceID) async throws -> [StorageLocation]
 }
 
+/// Locations a person can add to. Saving more than one stores every location or none of them, so a
+/// failure part way never leaves a Space with some of its default locations.
+public protocol StorageLocationStore: StorageLocationRepository {
+    /// Adds locations, or changes the name or type of one already stored.
+    func saveAll(_ locations: [StorageLocation], in space: SpaceID) async throws
+}
+
 /// Matches a package to sourced storage guidance. Returns nil when nothing matches; a model may
 /// assist the matching but never supplies the windows.
 public protocol StorageGuidanceRepository: Sendable {

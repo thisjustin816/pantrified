@@ -51,6 +51,12 @@ Not stored here yet, and where each goes when its capability exists:
 - **Recognition job state** never syncs and is device-local; recognition results reach other devices only as package events.
 - **Caches** (lookups, generated text, thumbnails) belong in the Caches directory, never in this store, so clearing them never touches user data.
 
+### The device's own Space
+
+Everything above is filed under a Space ID, so the ID this device uses must be the same on every launch. `LocalSpace.id(in:)` chooses one the first time and keeps it in a small `local-space` file beside the store. A marker that exists but cannot be read is a `PersistenceError.corrupt` and is never replaced, because a new ID would leave the stored data unreachable. This is the Space a signed-out or offline device uses; a shared Space has its ID from its share.
+
+Several locations are saved with `saveAll`, one write: a new Space gets its Fridge, Freezer and Pantry together or not at all.
+
 ### Encoding
 
 `StoredValueCoding` writes a version byte, then the value. Values are tagged: null, bool, 64-bit integer, double and date by their 64-bit patterns, string as a length and its UTF-8 bytes, UUID as its 16 bytes, list and map as a count and their elements. Map keys and record fields are written in UTF-8 byte order, so equal values encode to identical bytes. A record is its kind, entity UUID, creation stamp, minimum reader version and its fields, each with its stamp. The replica header is the clock's latest reading and an optional change token.

@@ -78,6 +78,8 @@ Use cases and capability protocols. Likely interfaces include:
 - `ShoppingExporter`
 - `EntitlementProvider`
 
+`Pantry` is the facade the Today and Food screens use for one Space. It reads what is in the Space with what needs attention (`UseSoon`), adds food by hand (`PutAway`), applies Opened, Used up, Move and Discard with undo (`PackageActions`), and gives a new Space its default locations. It holds no rules of its own; the screens hold no logic beyond showing its results.
+
 Application types must not leak provider DTOs or Apple-framework-native objects.
 
 ## Persistence and files
