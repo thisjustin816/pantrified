@@ -13,7 +13,7 @@ It requires iOS 26 or later.
 
 ## Product status
 
-**The pure-Swift domain and application layers for the first slice are implemented and tested on Linux, and an app shell and its macOS workflows are in place.** Local persistence is built on SwiftData and tested on Linux, on macOS and in the simulator, but no screen uses it yet. Capture, the CloudKit adapter and most Apple model adapters are not built, and nothing has been verified on a device. Competitive research reinforced that the main product risk is inventory-maintenance friction, not the availability of AI recipe features. The first milestone therefore validates the household loop:
+**The pure-Swift domain and application layers for the first slice are implemented and tested on Linux, and an app shell and its macOS workflows are in place.** The app opens on a local SwiftData store and has Today and Food screens, an Add food sheet, and Opened, Used up, Move and Discard with an undo. These are tested in the simulator and have been looked at in simulator screenshots, but nothing has been verified on a device. Capture, the CloudKit adapter, Meals, the shared shopping List and most Apple model adapters are not built. Competitive research reinforced that the main product risk is inventory-maintenance friction, not the availability of AI recipe features. The first milestone therefore validates the household loop:
 
 `capture → correct/put away → use/cook → reconcile → return`
 
