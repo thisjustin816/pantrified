@@ -32,8 +32,10 @@ discarded, and is removed only when you delete the app.
 Builds that include product lookup send a scanned barcode number to USDA
 FoodData Central at api.nal.usda.gov, which uses the U.S. government's
 api.data.gov key service, to suggest the product's name. The request contains
-the barcode number and the app's own access key. It contains nothing about you, your household or your
-other food, and the app sets a fixed app name and language on it instead of
+the barcode number, written in up to four lengths with leading zeros because
+the service stores barcodes in different lengths, and the app's own access
+key. It contains nothing about you, your household or your other food, and
+the app sets a fixed app name and language on it instead of
 your device's details. Like any internet request, it reveals your device's IP
 address to the service. The app keeps no cookies or cache from it and logs
 nothing about it. The service's handling of requests is covered by

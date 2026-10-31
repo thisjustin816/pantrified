@@ -6,8 +6,9 @@ import PantrifiedApplication
 import PantrifiedDomain
 
 /// A product lookup against USDA FoodData Central's branded food search. A request carries the
-/// barcode and the app's api.data.gov key and nothing about the person; the result is a name
-/// suggestion only when the record's own barcode is the one scanned.
+/// barcode, written in each length the service may store it in, and the app's api.data.gov key,
+/// and nothing about the person; the result is a name suggestion only when the record's own
+/// barcode is the one scanned.
 public struct FoodDataCentralLookup: ProductLookupService {
     public static let source = "USDA FoodData Central"
     static let endpoint = "https://api.nal.usda.gov/fdc/v1/foods/search"
@@ -58,7 +59,9 @@ public struct FoodDataCentralLookup: ProductLookupService {
 
     func request(for barcode: GTIN) -> URLRequest {
         var components = URLComponents(string: Self.endpoint)
-        components?.queryItems = [URLQueryItem(name: "query", value: barcode.issuedForm)] + Self.fixedQuery
+        // Separate words in one query match any of them, so one request covers every length.
+        let query = barcode.foodDataCentralForms.joined(separator: " ")
+        components?.queryItems = [URLQueryItem(name: "query", value: query)] + Self.fixedQuery
         // The endpoint is a constant, so building its URL cannot fail.
         var request = URLRequest(url: components!.url!)
         request.httpMethod = "GET"
@@ -242,6 +245,25 @@ public struct FoodDataCentralLookup: ProductLookupService {
                 brandOwner = try? container.decodeIfPresent(String.self, forKey: .brandOwner)
             }
         }
+    }
+}
+
+extension GTIN {
+    /// The digit strings FoodData Central may hold this GTIN as in a record's `gtinUpc`, shortest
+    /// first: the 14 digits cut to each of 8, 12, 13 and 14 digits that drops only leading zeros.
+    /// Its search matches a barcode only as the exact string stored, and records store one in
+    /// different lengths, so a search for one length misses the others.
+    ///
+    /// By what was scanned: a UPC-A, a UPC-E (as the UPC-A it expands to), an EAN-13 starting 0
+    /// and a GTIN-14 starting 00 get 12, 13 and 14 digits; an EAN-13 with another first digit and
+    /// a GTIN-14 starting with one 0 get 13 and 14; any code whose 14 digits start with six zeros,
+    /// an EAN-8 or a UPC-A starting 0000, also gets 8. A UPC-E's own eight digits are not a form,
+    /// since they read as a different GTIN-8, and no other length is one, since `GTIN` reads no
+    /// other length as a GTIN and a record stored that way could never be accepted.
+    var foodDataCentralForms: [String] {
+        [8, 12, 13, 14]
+            .filter { length in digits.prefix(14 - length).allSatisfy { $0 == "0" } }
+            .map { String(digits.suffix($0)) }
     }
 }
 

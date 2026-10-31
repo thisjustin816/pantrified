@@ -28,9 +28,54 @@ private final class FixedTransport: HTTPTransport, @unchecked Sendable {
     }
 }
 
+/// Searches a fixed set of branded records the way FoodData Central's search was observed to: each
+/// space-separated word of `query` matches a record whose `gtinUpc` is exactly that word, and the
+/// answer holds every record any word matches. `matches` can be loosened to return records a real
+/// search should not.
+private final class CatalogTransport: HTTPTransport, @unchecked Sendable {
+    struct Record {
+        var gtinUpc: String
+        var description: String
+        var brandName: String?
+    }
+
+    private let lock = NSLock()
+    private let records: [Record]
+    private let matches: @Sendable (_ gtinUpc: String, _ word: String) -> Bool
+    /// Guarded by `lock`.
+    private var received: [URLRequest] = []
+
+    init(_ records: [Record], matches: @escaping @Sendable (String, String) -> Bool = { $0 == $1 }) {
+        self.records = records
+        self.matches = matches
+    }
+
+    var requests: [URLRequest] { lock.withLock { received } }
+
+    func get(_ request: URLRequest) async -> Result<HTTPReply, HTTPFailure> {
+        lock.withLock { received.append(request) }
+        let query = request.url
+            .flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }?
+            .queryItems?.first { $0.name == "query" }?.value ?? ""
+        let words = query.split(separator: " ").map(String.init)
+        let foods: [[String: Any]] = records
+            .filter { record in words.contains { matches(record.gtinUpc, $0) } }
+            .map { ["description": $0.description, "gtinUpc": $0.gtinUpc, "brandName": $0.brandName ?? NSNull()] }
+        let body = try! JSONSerialization.data(withJSONObject: ["totalHits": foods.count, "foods": foods])
+        return .success(HTTPReply(status: 200, body: body))
+    }
+}
+
+/// Stored in 14 digits, with no brand, like FoodData Central's Coca-Cola can records.
+private let colaCan = CatalogTransport.Record(gtinUpc: "00049000006346", description: "Coca-Cola can")
+/// Stored in 13 digits.
+private let pizza = CatalogTransport.Record(gtinUpc: "0044700361146", description: "EXTRA CHEESY PIZZA", brandName: "LUNCHABLES")
+/// Stored in 12 digits.
+private let cheese = CatalogTransport.Record(gtinUpc: "044700063491", description: "Sliced cheese")
+
 private let cola = GTIN("036000291452")!
 
-private func lookUp(_ transport: FixedTransport, _ barcode: GTIN = cola) async throws -> ProductLookupResult {
+private func lookUp(_ transport: any HTTPTransport, _ barcode: GTIN = cola) async throws -> ProductLookupResult {
     let lookup = try #require(FoodDataCentralLookup(apiKey: "test-key", transport: transport))
     return await lookup.lookUp(barcode)
 }
@@ -56,7 +101,7 @@ struct FoodDataCentralLookupTests {
         #expect(components.host == "api.nal.usda.gov")
         #expect(components.path == "/fdc/v1/foods/search")
         #expect(components.queryItems == [
-            URLQueryItem(name: "query", value: "036000291452"),
+            URLQueryItem(name: "query", value: "036000291452 0036000291452 00036000291452"),
             URLQueryItem(name: "dataType", value: "Branded"),
             URLQueryItem(name: "pageSize", value: "10"),
         ])
@@ -70,17 +115,54 @@ struct FoodDataCentralLookupTests {
         #expect(request.allHTTPHeaderFields?.count == 4)
     }
 
-    @Test("the barcode is searched in the length it was issued as", arguments: [
-        ("4006381333931", "4006381333931"),
-        ("96385074", "96385074"),
-        ("0036000291452", "036000291452"),
+    @Test("each symbology is searched in every length that drops only leading zeros, shortest first", arguments: [
+        // UPC-A, and the same UPC-A as a camera reports it, as EAN-13 with a leading zero.
+        ("044700361146", BarcodeSymbology.upcA, ["044700361146", "0044700361146", "00044700361146"]),
+        ("0049000006346", .ean13, ["049000006346", "0049000006346", "00049000006346"]),
+        // EAN-13 with a first digit other than 0: nothing fits in 12.
+        ("4006381333931", .ean13, ["4006381333931", "04006381333931"]),
+        // EAN-8.
+        ("96385074", .ean8, ["96385074", "000096385074", "0000096385074", "00000096385074"]),
+        // UPC-E, by the UPC-A it expands to, not by its own eight digits.
+        ("01234565", .upcE, ["012345000065", "0012345000065", "00012345000065"]),
+        // A UPC-A with three leading zeros is too long for 8; with four it is the same number as a GTIN-8.
+        ("000123456784", .upcA, ["000123456784", "0000123456784", "00000123456784"]),
+        ("000012345670", .upcA, ["12345670", "000012345670", "0000012345670", "00000012345670"]),
     ])
-    func searchedForm(text: String, query: String) async throws {
-        let transport = FixedTransport(json: #"{"foods": []}"#)
-        _ = try await lookUp(transport, try #require(GTIN(text)))
+    func searchForms(payload: String, symbology: BarcodeSymbology, forms: [String]) throws {
+        let barcode = try GTIN.scanned(payload, as: symbology).get()
+        #expect(barcode.foodDataCentralForms == forms)
+        for form in forms {
+            #expect(form.unicodeScalars.allSatisfy { ("0"..."9").contains($0) })
+            #expect(GTIN(form) == barcode)
+        }
+    }
 
+    @Test("a GTIN-14 read from text is searched like the shorter code it pads", arguments: [
+        ("00049000006346", ["049000006346", "0049000006346", "00049000006346"]),
+        ("04006381333931", ["4006381333931", "04006381333931"]),
+        ("00000096385074", ["96385074", "000096385074", "0000096385074", "00000096385074"]),
+    ])
+    func gtin14Forms(text: String, forms: [String]) throws {
+        #expect(try #require(GTIN(text)).foodDataCentralForms == forms)
+    }
+
+    @Test("one request searches every form, in order, separated by single spaces", arguments: [
+        "044700361146", "4006381333931", "96385074", "00049000006346",
+    ])
+    func searchedForms(text: String) async throws {
+        let barcode = try #require(GTIN(text))
+        let transport = FixedTransport(json: #"{"foods": []}"#)
+        _ = try await lookUp(transport, barcode)
+
+        #expect(transport.requests.count == 1)
         let url = try #require(transport.requests.first?.url)
-        #expect(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first == URLQueryItem(name: "query", value: query))
+        let components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        let query = try #require(components.queryItems?.first { $0.name == "query" }?.value)
+        #expect(query == barcode.foodDataCentralForms.joined(separator: " "))
+        #expect(query.split(separator: " ", omittingEmptySubsequences: false).map(String.init) == barcode.foodDataCentralForms)
+        #expect(query.unicodeScalars.allSatisfy { $0 == " " || ("0"..."9").contains($0) })
+        #expect(components.percentEncodedQuery?.hasPrefix("query=" + barcode.foodDataCentralForms.joined(separator: "%20") + "&") == true)
     }
 
     @Test("an empty key turns lookup off")
@@ -156,6 +238,58 @@ struct FoodDataCentralLookupTests {
     @Test("no results is a normal miss")
     func emptyResult() async throws {
         #expect(try await lookUp(FixedTransport(json: #"{"totalHits": 0, "foods": []}"#)) == .notFound)
+    }
+
+    // MARK: Searching a catalog stored in mixed lengths
+
+    @Test("a UPC-A scan finds a record stored in 14 digits")
+    func upcAFindsFourteenDigitRecord() async throws {
+        let transport = CatalogTransport([pizza, colaCan, cheese])
+        let barcode = try GTIN.scanned("049000006346", as: .upcA).get()
+        #expect(try await lookUp(transport, barcode) == found("Coca-Cola can"))
+        #expect(transport.requests.count == 1)
+    }
+
+    @Test("a UPC-A scan finds a record stored in 13 digits, whichever way the camera reports it", arguments: [
+        ("044700361146", BarcodeSymbology.upcA),
+        ("0044700361146", .ean13),
+    ])
+    func upcAFindsThirteenDigitRecord(payload: String, symbology: BarcodeSymbology) async throws {
+        let transport = CatalogTransport([colaCan, pizza, cheese])
+        let barcode = try GTIN.scanned(payload, as: symbology).get()
+        #expect(try await lookUp(transport, barcode) == found("Lunchables extra cheesy pizza"))
+        #expect(transport.requests.count == 1)
+    }
+
+    @Test("a record stored in the scanned length is still found")
+    func sameLengthRecord() async throws {
+        let barcode = try GTIN.scanned("044700063491", as: .upcA).get()
+        #expect(try await lookUp(CatalogTransport([colaCan, pizza, cheese]), barcode) == found("Sliced cheese"))
+    }
+
+    @Test("a barcode no record holds is not found, after one request")
+    func catalogMiss() async throws {
+        let transport = CatalogTransport([colaCan, pizza, cheese])
+        #expect(try await lookUp(transport, cola) == .notFound)
+        #expect(transport.requests.count == 1)
+    }
+
+    @Test("a record for another barcode is skipped, even when it loosely matches a searched form")
+    func looseMatchSkipped() async throws {
+        let impostors = [
+            // The UPC-A without its leading zero, which is no GTIN length.
+            CatalogTransport.Record(gtinUpc: "44700361146", description: "Short"),
+            // A searched form inside a longer number.
+            CatalogTransport.Record(gtinUpc: "100044700361146", description: "Long"),
+            // The same digits behind a packaging indicator, as on a case.
+            CatalogTransport.Record(gtinUpc: "10044700361143", description: "Case of twelve"),
+            // One digit different, with its own valid check digit.
+            CatalogTransport.Record(gtinUpc: "0044700361153", description: "Neighbor"),
+            colaCan,
+        ]
+        let barcode = try GTIN.scanned("044700361146", as: .upcA).get()
+        #expect(try await lookUp(CatalogTransport(impostors) { _, _ in true }, barcode) == .notFound)
+        #expect(try await lookUp(CatalogTransport(impostors + [pizza]) { _, _ in true }, barcode) == found("Lunchables extra cheesy pizza"))
     }
 
     @Test("an answer that cannot be read is a provider error", arguments: [
