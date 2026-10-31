@@ -1,0 +1,356 @@
+import Foundation
+import PantrifiedDomain
+
+public enum IntakeBatchTag: Sendable {}
+public typealias IntakeBatchID = Identifier<IntakeBatchTag>
+
+/// The app's own folder of staged photos and the batch list. File names are the store's own, and
+/// the store only ever reads or removes names it made, so it can never touch a file it does not
+/// own, such as a photo in the Photos library.
+public protocol StagingFiles: Sendable {
+    func write(_ data: Data, to name: String) throws
+    /// Nil when there is no such file.
+    func read(_ name: String) throws -> Data?
+    /// Removing a file that is not there succeeds.
+    func remove(_ name: String) throws
+    func names() throws -> [String]
+    /// Where a recognizer can read the file. Never handed to anything that writes.
+    func url(for name: String) -> URL
+}
+
+public enum PhotoSource: String, Sendable, Hashable, Codable {
+    case camera
+    /// Copied in from the Photos picker. The original stays in Photos, untouched.
+    case imported
+}
+
+/// One photo in the staging folder. Times come from the app's own records, never from file dates.
+public struct StagedPhoto: Sendable, Hashable, Codable, Identifiable {
+    public let id: IntakePhotoID
+    public let fileName: String
+    public let source: PhotoSource
+    public let sequence: Int
+    public let capturedAt: Date
+    public let contentDigest: String?
+    public internal(set) var observation: PhotoObservation?
+    public internal(set) var failedAttempts = 0
+    /// The file has been deleted; what was read from it may still be in the review.
+    public internal(set) var fileRemoved = false
+}
+
+public enum BatchPhase: String, Sendable, Hashable, Codable {
+    /// Photos are being taken or imported.
+    case capturing
+    /// Done was tapped; photos are being read.
+    case processing
+    case reviewing
+    /// Nothing is left to review. The record is kept for the recovery window.
+    case finished
+}
+
+/// One batch of photos and, once read, its review. It is kept until the person adds or discards
+/// everything in it, across crashes and relaunches. Its photo files are deleted a recovery window
+/// after they were read, or at once when the batch is discarded.
+public struct IntakeBatch: Sendable, Hashable, Codable, Identifiable {
+    public let id: IntakeBatchID
+    public let space: SpaceID
+    public let startedAt: Date
+    public internal(set) var photos: [StagedPhoto] = []
+    public internal(set) var phase: BatchPhase = .capturing
+    public internal(set) var processedAt: Date?
+    public internal(set) var finishedAt: Date?
+    public internal(set) var review: IntakeReview?
+    var nextSequence = 0
+
+    public var livePhotos: [StagedPhoto] { photos.filter { !$0.fileRemoved } }
+}
+
+public enum StagingError: Error, Sendable, Equatable {
+    case batchFull
+    case photoTooLarge
+    case unknownBatch
+    case unknownPhoto
+    /// Photos can be added or removed only before the batch is read.
+    case notCapturing
+    case notRecognized
+    case storage
+}
+
+/// Keeps staged photos and batch records, and deletes them on schedule. Every change is written
+/// before it returns, so a crash or a kill loses at most the change in progress. A photo file is
+/// written before the record that names it; a file no record names is removed by `sweep`.
+public actor StagingStore {
+    public static let manifestName = "batches.json"
+    /// About a day, the recovery window in docs/product-decisions.md.
+    public static let defaultRecoveryWindow: TimeInterval = 24 * 60 * 60
+    public static let maximumPhotoBytes = 40 * 1_024 * 1_024
+    static let photoExtensions: Set<String> = ["jpg", "heic", "png"]
+
+    private let files: any StagingFiles
+    private let time: any TimeSource
+    public let recoveryWindow: TimeInterval
+    private var batches: [IntakeBatch]
+
+    /// Reads the batch list. One that cannot be read is set aside as `batches.unreadable.json`
+    /// rather than overwritten, and the store starts empty.
+    public init(files: any StagingFiles, time: any TimeSource, recoveryWindow: TimeInterval = StagingStore.defaultRecoveryWindow) {
+        self.files = files
+        self.time = time
+        self.recoveryWindow = recoveryWindow
+        do {
+            if let data = try files.read(Self.manifestName) {
+                batches = try JSONDecoder().decode(Manifest.self, from: data).batches
+            } else {
+                batches = []
+            }
+        } catch {
+            if let data = try? files.read(Self.manifestName) { try? files.write(data, to: "batches.unreadable.json") }
+            batches = []
+        }
+    }
+
+    private struct Manifest: Codable {
+        var version = 1
+        var batches: [IntakeBatch]
+    }
+
+    // MARK: Batches
+
+    public var all: [IntakeBatch] { batches }
+
+    public func batch(_ id: IntakeBatchID) -> IntakeBatch? {
+        batches.first { $0.id == id }
+    }
+
+    /// The Space's batch that is not finished, if any: the one to resume.
+    public func unfinished(in space: SpaceID) -> IntakeBatch? {
+        batches.last { $0.space == space && $0.phase != .finished }
+    }
+
+    /// The unfinished batch to carry on with, or a new one.
+    public func open(in space: SpaceID) throws(StagingError) -> IntakeBatch {
+        if let existing = unfinished(in: space) { return existing }
+        let batch = IntakeBatch(id: IntakeBatchID(), space: space, startedAt: time.now())
+        batches.append(batch)
+        try save()
+        return batch
+    }
+
+    // MARK: Capture
+
+    /// Writes a photo's bytes into the staging folder and records it. `fileExtension` is one of jpg,
+    /// heic or png.
+    @discardableResult
+    public func stage(
+        _ data: Data,
+        fileExtension: String,
+        source: PhotoSource,
+        capturedAt: Date? = nil,
+        digest: String? = nil,
+        in id: IntakeBatchID
+    ) throws(StagingError) -> StagedPhoto {
+        guard let index = index(id) else { throw .unknownBatch }
+        guard batches[index].phase == .capturing else { throw .notCapturing }
+        guard batches[index].photos.count < IntakeLimits.photosPerBatch else { throw .batchFull }
+        guard data.count <= Self.maximumPhotoBytes, !data.isEmpty else { throw .photoTooLarge }
+        let ext = Self.photoExtensions.contains(fileExtension.lowercased()) ? fileExtension.lowercased() : "jpg"
+        let photoID = IntakePhotoID()
+        let name = "\(photoID.rawValue.uuidString).\(ext)"
+        do { try files.write(data, to: name) } catch { throw .storage }
+        let photo = StagedPhoto(
+            id: photoID, fileName: name, source: source, sequence: batches[index].nextSequence,
+            capturedAt: capturedAt ?? time.now(), contentDigest: digest
+        )
+        batches[index].photos.append(photo)
+        batches[index].nextSequence += 1
+        do {
+            try save()
+        } catch {
+            batches[index].photos.removeLast()
+            try? files.remove(name)
+            throw error
+        }
+        return photo
+    }
+
+    /// Takes a photo back out before the batch is read, deleting its file.
+    public func removePhoto(_ photo: IntakePhotoID, from id: IntakeBatchID) throws(StagingError) {
+        guard let index = index(id) else { throw .unknownBatch }
+        guard batches[index].phase == .capturing else { throw .notCapturing }
+        guard let position = batches[index].photos.firstIndex(where: { $0.id == photo }) else { throw .unknownPhoto }
+        let removed = batches[index].photos.remove(at: position)
+        try save()
+        try? files.remove(removed.fileName)
+    }
+
+    public func url(of photo: IntakePhotoID, in id: IntakeBatchID) -> URL? {
+        guard let staged = batch(id)?.photos.first(where: { $0.id == photo }), !staged.fileRemoved else { return nil }
+        return files.url(for: staged.fileName)
+    }
+
+    // MARK: Recognition
+
+    /// Moves a capturing batch on to reading. Calling it again changes nothing.
+    public func startProcessing(_ id: IntakeBatchID) throws(StagingError) {
+        guard let index = index(id) else { throw .unknownBatch }
+        guard batches[index].phase == .capturing else { return }
+        batches[index].phase = .processing
+        try save()
+    }
+
+    /// Photos still to read, in order.
+    public func photosToRecognize(in id: IntakeBatchID) -> [StagedPhoto] {
+        batch(id)?.photos.filter { $0.observation == nil && !$0.fileRemoved } ?? []
+    }
+
+    /// Keeps what was read from a photo. Only the first observation of a photo is kept, so a photo
+    /// read twice, as after a relaunch, changes nothing. Returns whether it was kept.
+    @discardableResult
+    public func record(_ observation: PhotoObservation, in id: IntakeBatchID) throws(StagingError) -> Bool {
+        guard let index = index(id) else { throw .unknownBatch }
+        guard let position = batches[index].photos.firstIndex(where: { $0.id == observation.photo }) else { throw .unknownPhoto }
+        guard batches[index].photos[position].observation == nil else { return false }
+        batches[index].photos[position].observation = observation
+        try save()
+        return true
+    }
+
+    /// Counts a failed read. Returns the number of failures so far.
+    @discardableResult
+    public func recordFailure(of photo: IntakePhotoID, in id: IntakeBatchID) throws(StagingError) -> Int {
+        guard let index = index(id) else { throw .unknownBatch }
+        guard let position = batches[index].photos.firstIndex(where: { $0.id == photo }) else { throw .unknownPhoto }
+        batches[index].photos[position].failedAttempts += 1
+        try save()
+        return batches[index].photos[position].failedAttempts
+    }
+
+    public func observations(in id: IntakeBatchID) -> [PhotoObservation] {
+        batch(id)?.photos.compactMap(\.observation) ?? []
+    }
+
+    /// Stores the review made once every photo was read, and starts the recovery window. A batch
+    /// that already has a review keeps it, with the person's edits: grouping runs once per batch.
+    @discardableResult
+    public func finishRecognition(_ id: IntakeBatchID, review: IntakeReview) throws(StagingError) -> IntakeReview {
+        guard let index = index(id) else { throw .unknownBatch }
+        if let existing = batches[index].review { return existing }
+        batches[index].review = review
+        batches[index].phase = review.isFinished ? .finished : .reviewing
+        batches[index].processedAt = time.now()
+        if review.isFinished { batches[index].finishedAt = time.now() }
+        try save()
+        return review
+    }
+
+    // MARK: Review
+
+    /// Changes the review and writes it before returning. Nothing is written when `change` throws.
+    public func updateReview<Result: Sendable>(
+        _ id: IntakeBatchID,
+        _ change: (inout IntakeReview) throws -> Result
+    ) throws -> Result {
+        guard let index = index(id) else { throw StagingError.unknownBatch }
+        guard var review = batches[index].review else { throw StagingError.notRecognized }
+        let result = try change(&review)
+        let before = batches[index]
+        batches[index].review = review
+        if review.isFinished {
+            if batches[index].phase != .finished {
+                batches[index].phase = .finished
+                batches[index].finishedAt = time.now()
+            }
+        } else if batches[index].phase == .finished {
+            batches[index].phase = .reviewing
+            batches[index].finishedAt = nil
+        }
+        do {
+            try save()
+        } catch {
+            batches[index] = before
+            throw error
+        }
+        return result
+    }
+
+    // MARK: Deleting
+
+    /// Deletes the batch's photos and record now.
+    public func discard(_ id: IntakeBatchID) throws(StagingError) {
+        guard let index = index(id) else { return }
+        let removed = batches.remove(at: index)
+        try save()
+        for photo in removed.photos where !photo.fileRemoved { try? files.remove(photo.fileName) }
+    }
+
+    /// Deletes what is due, and returns how many photo files were deleted:
+    ///
+    /// - photo files a recovery window after their batch was read;
+    /// - a batch still capturing a recovery window after its last photo is moved on to reading, so
+    ///   an abandoned capture does not keep photos indefinitely;
+    /// - finished batches a recovery window after they finished;
+    /// - photo files no batch names, left by a crash between writing a file and recording it.
+    @discardableResult
+    public func sweep() throws(StagingError) -> Int {
+        let now = time.now()
+        var doomed: [String] = []
+        var changed = false
+        for index in batches.indices {
+            if let processed = batches[index].processedAt, now.timeIntervalSince(processed) >= recoveryWindow {
+                for photo in batches[index].photos.indices where !batches[index].photos[photo].fileRemoved {
+                    doomed.append(batches[index].photos[photo].fileName)
+                    batches[index].photos[photo].fileRemoved = true
+                    changed = true
+                }
+            }
+            let lastPhoto = batches[index].photos.map(\.capturedAt).max() ?? batches[index].startedAt
+            if batches[index].phase == .capturing, !batches[index].photos.isEmpty, now.timeIntervalSince(lastPhoto) >= recoveryWindow {
+                batches[index].phase = .processing
+                changed = true
+            }
+        }
+        let expired = batches.filter { batch in
+            guard batch.phase == .finished, let finished = batch.finishedAt else { return false }
+            return now.timeIntervalSince(finished) >= recoveryWindow
+        }
+        if !expired.isEmpty {
+            let ids = Set(expired.map(\.id))
+            for batch in expired { doomed += batch.photos.filter { !$0.fileRemoved }.map(\.fileName) }
+            batches.removeAll { ids.contains($0.id) }
+            changed = true
+        }
+        if changed { try save() }
+
+        let named = Set(batches.flatMap { $0.photos.filter { !$0.fileRemoved }.map(\.fileName) })
+        if let present = try? files.names() {
+            for name in present where Self.isPhotoName(name) && !named.contains(name) { doomed.append(name) }
+        }
+        var deleted = 0
+        for name in Set(doomed) where Self.isPhotoName(name) {
+            if (try? files.remove(name)) != nil { deleted += 1 }
+        }
+        return deleted
+    }
+
+    /// Only names the store makes: an uppercase UUID and a photo extension.
+    static func isPhotoName(_ name: String) -> Bool {
+        let parts = name.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 2, photoExtensions.contains(String(parts[1])), parts[0].count == 36 else { return false }
+        return UUID(uuidString: String(parts[0]))?.uuidString == String(parts[0])
+    }
+
+    // MARK: Helpers
+
+    private func index(_ id: IntakeBatchID) -> Int? {
+        batches.firstIndex { $0.id == id }
+    }
+
+    private func save() throws(StagingError) {
+        do {
+            let data = try JSONEncoder().encode(Manifest(batches: batches))
+            try files.write(data, to: Self.manifestName)
+        } catch {
+            throw .storage
+        }
+    }
+}
