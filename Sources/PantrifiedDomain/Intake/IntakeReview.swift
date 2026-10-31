@@ -436,7 +436,10 @@ public struct IntakeReview: Sendable, Hashable, Codable {
     // MARK: Adding
 
     /// Records that these candidates are about to be added. Adding is not an undoable review
-    /// change: it is undone through the inventory, with `beginUndo` and `markReviewing`.
+    /// change: it is undone through the inventory, with `beginUndo` and `markReviewing`. Adding and
+    /// undoing an add each clear the review's undo history, because an older snapshot holds an
+    /// older status and older package identities: restoring it would put an added candidate back
+    /// in review while its package stays in the pantry, or reuse a discarded package's identity.
     public mutating func beginAdd(_ ids: Set<IntakeCandidateID>) {
         pendingAdd = ids
     }
@@ -449,6 +452,7 @@ public struct IntakeReview: Sendable, Hashable, Codable {
     public mutating func markAdded(_ ids: Set<IntakeCandidateID>) {
         for index in candidates.indices where ids.contains(candidates[index].id) { candidates[index].status = .added }
         pendingAdd.subtract(ids)
+        history = []
     }
 
     public mutating func beginUndo(_ ids: Set<IntakeCandidateID>) {
@@ -463,6 +467,16 @@ public struct IntakeReview: Sendable, Hashable, Codable {
             candidates[index].packageIDs = candidates[index].packageIDs.map { _ in PackageID() }
         }
         pendingUndo.subtract(ids)
+        history = []
+    }
+
+    /// Gives these candidates new package identities. For a candidate whose package identity is
+    /// already in the inventory although the candidate is not added, so adding it makes a package
+    /// instead of finding the old one. Not an undoable change.
+    public mutating func renewPackages(_ ids: Set<IntakeCandidateID>) {
+        for index in candidates.indices where ids.contains(candidates[index].id) && candidates[index].status == .reviewing {
+            candidates[index].packageIDs = candidates[index].packageIDs.map { _ in PackageID() }
+        }
     }
 
     // MARK: Helpers

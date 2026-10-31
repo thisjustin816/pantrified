@@ -436,6 +436,59 @@ struct BatchIntakeTests {
         #expect(try await world.pantry.snapshot().entries.count == 2)
     }
 
+    @Test("the review's Undo cannot bring an added candidate back while its package stays in the pantry")
+    func undoAfterAdd() async throws {
+        let world = IntakeWorld()
+        let store = world.launch()
+        let batch = try await world.stage(["rice"], in: store)
+        let review = try await world.process(batch, store)
+        let id = review.summaries[0].id
+        try await store.updateReview(batch) { try $0.setName("Rice", for: id) }
+        _ = try await IntakeAdding(pantry: world.pantry, store: store).add([id], in: batch)
+
+        #expect(try await store.updateReview(batch) { $0.undo() } == false)
+        #expect(await store.batch(batch)?.review?.summaries.isEmpty == true)
+        #expect(try await world.pantry.snapshot().entries.map(\.package.name) == ["Rice"])
+    }
+
+    @Test("after Undo Add, the review's Undo cannot restore an added status, and adding again makes a package")
+    func undoAddThenReviewUndo() async throws {
+        let world = IntakeWorld()
+        let store = world.launch()
+        let batch = try await world.stage(["rice", "beans"], in: store)
+        let review = try await world.process(batch, store)
+        let (rice, beans) = (review.summaries[0].id, review.summaries[1].id)
+        let adding = IntakeAdding(pantry: world.pantry, store: store)
+        try await store.updateReview(batch) { try $0.setName("Rice", for: rice) }
+        let addition = try await adding.add([rice], in: batch)
+        // An edit while the add stands records a snapshot in which the rice is added.
+        try await store.updateReview(batch) { try $0.setName("Frijoles", for: beans) }
+        try await adding.undo(addition)
+
+        _ = try await store.updateReview(batch) { $0.undo() }
+        #expect(await store.batch(batch)?.review?.summaries.map(\.id).contains(rice) == true)
+        let again = try await adding.add([rice], in: batch)
+        #expect(again.packages.count == 1)
+        #expect(try await world.pantry.snapshot().entries.map(\.package.name) == ["Rice"])
+    }
+
+    @Test("a candidate whose package identity is already in the inventory gets a new package when added")
+    func staleIdentity() async throws {
+        let world = IntakeWorld()
+        let store = world.launch()
+        let batch = try await world.stage(["rice"], in: store)
+        let review = try await world.process(batch, store)
+        // A package with the candidate's identity, already discarded, as an undo leaves it.
+        let old = try #require(review.drafts(for: review.readyToAdd).first)
+        _ = try await world.pantry.putAway([old])
+        _ = try await world.pantry.perform(.discard(reason: nil), on: old.id)
+
+        let addition = try await IntakeAdding(pantry: world.pantry, store: store).add(review.readyToAdd, in: batch)
+        #expect(addition.packages.count == 1)
+        #expect(addition.packages != [old.id])
+        #expect(try await world.pantry.snapshot().entries.map(\.package.name) == ["Basmati rice"])
+    }
+
     @Test("candidates without a name stay in review; the rest are added")
     func partialAdd() async throws {
         let world = IntakeWorld()

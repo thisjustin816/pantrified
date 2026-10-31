@@ -25,7 +25,18 @@ public struct IntakeAdding: Sendable {
     /// Adds the ready candidates among `ids`, all or none. Packages keep the candidate's barcode and
     /// printed date; a name or date the person did not set is saved as a proposal.
     public func add(_ ids: [IntakeCandidateID], in batch: IntakeBatchID) async throws -> IntakeAddition {
-        guard let review = await store.batch(batch)?.review else { throw StagingError.notRecognized }
+        guard var review = await store.batch(batch)?.review else { throw StagingError.notRecognized }
+        // A package that already exists for a candidate still in review is stale, such as one an
+        // undo discarded. Putting it away again would find it and add nothing, so it gets a new one.
+        let planned = review.candidates.filter { ids.contains($0.id) && $0.status == .reviewing }
+        let existing = try await pantry.activity(of: planned.flatMap(\.packagesToAdd))
+        let stale = Set(planned.filter { $0.packagesToAdd.contains { existing[$0] != nil } }.map(\.id))
+        if !stale.isEmpty {
+            review = try await store.updateReview(batch) { review in
+                review.renewPackages(stale)
+                return review
+            }
+        }
         let ready = Set(review.readyToAdd).intersection(ids)
         let drafts = review.drafts(for: ids.filter(ready.contains))
         let candidates = Set(ids.filter(ready.contains))
