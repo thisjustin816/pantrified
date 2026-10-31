@@ -17,6 +17,9 @@ What is in place for an upload, what only the owner can decide, and what data le
 - **Shipped manifest:** CI checks that each archived app carries the manifest unchanged.
 - **Limits:** the scan reads Swift source, so it cannot see what a binary dependency calls. The archived
   app's privacy report remains the last check before a release.
+- **Local store:** the app links SwiftData for its local store. The store's own code calls no
+  required-reason API; what SwiftData and Core Data call internally is not covered by the scan
+  (`docs/persistence.md`).
 
 ## Decided by the owner before an upload
 

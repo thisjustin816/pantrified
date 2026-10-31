@@ -10,7 +10,7 @@ Markdown files starts no run.
 |---|---|---|
 | `ci.yml` | Package tests | `swift test` on Linux in the `swift:6.1.2-noble` image. Every test target runs, so a new one needs no change to the workflow |
 | `ci.yml` | Repository hygiene | `Scripts/verify-repo-hygiene.sh` (no tracked generated Xcode project, per-developer signing settings, signing material, environment files or private key text), `shellcheck` at error severity, the tests for the three scripts, the tests for the FoodKeeper converter, a check that the bundled snapshot regenerates unchanged from `Data/FoodKeeper` (`docs/storage-guidance.md`), the tests for the two privacy checks, and the checks that the privacy manifest is well formed and declares exactly the required-reason API categories the code uses (`docs/testflight-readiness.md`) |
-| `ios-build.yml` | Xcode build, tests and Release archive | On one macOS runner: `make generate` (XcodeGen), `make build` and `make test` on an iPhone simulator, `make test-package` (the package tests against Apple's Foundation), `make archive-unsigned`, a Release archive for a device with signing off, and `make archive-evaluation-unsigned`, the same archive with the Evaluation tab compiled in (`docs/evaluation.md`). `Scripts/verify-evaluation-gating.sh` then checks that the Release app's executable has none of the tab's types and the Evaluation app's has them. `Scripts/verify-privacy-manifest.py` checks that each archived app carries the privacy manifest unchanged. The package tests and the archive run even when the build or app tests failed. On failure, a last step repeats only the Xcode error lines in the job summary, and the logs upload as `ios-build-logs` |
+| `ios-build.yml` | Xcode build, tests and Release archive | On one macOS runner: `make generate` (XcodeGen), `make build` and `make test` on an iPhone simulator, `make test-package` (the package tests against Apple's Foundation, including the SwiftData store tests, which compile only there), `make archive-unsigned`, a Release archive for a device with signing off, and `make archive-evaluation-unsigned`, the same archive with the Evaluation tab compiled in (`docs/evaluation.md`). `Scripts/verify-evaluation-gating.sh` then checks that the Release app's executable has none of the tab's types and the Evaluation app's has them. `Scripts/verify-privacy-manifest.py` checks that each archived app carries the privacy manifest unchanged. The package tests and the archive run even when the build or app tests failed. On failure, a last step repeats only the Xcode error lines in the job summary, and the logs upload as `ios-build-logs` |
 
 The runner is the `MACOS_RUNNER` repository variable when set, otherwise `xcode-27`. The iOS 27
 SDK needs the Xcode 27 image; the app's minimum is iOS 26.
@@ -23,8 +23,8 @@ Makefile does not name a model the runner image may lack. `DESTINATION` override
 | Check | What it establishes |
 |---|---|
 | Linux `swift test` | Domain and application behavior on the Linux toolchain |
-| macOS `make test-package` | The same behavior against Apple's Foundation |
-| `make build` and `make test` | The app compiles for the simulator and its hosted tests pass |
+| macOS `make test-package` | The same behavior against Apple's Foundation, and the local store on SwiftData (`docs/persistence.md`) |
+| `make build` and `make test` | The app compiles for the simulator and its hosted tests pass, including the local store opened, written and read back inside the app's sandbox |
 | `make archive-unsigned` | The Release configuration compiles for a device |
 | A TestFlight or Debug build on a physical iPhone | Behavior on that device and iOS version, including the Apple models. Nothing in CI runs on a device, and the simulator does not run the Apple models |
 

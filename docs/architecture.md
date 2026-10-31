@@ -82,7 +82,7 @@ Application types must not leak provider DTOs or Apple-framework-native objects.
 
 ## Persistence and files
 
-SwiftData is local persistence behind repositories.
+SwiftData is local persistence behind repositories. The stored rows, schema, migration and crash behavior are in `persistence.md`.
 
 - Use stable app-owned identifiers; framework/cloud IDs are mappings, not domain identity.
 - Separate durable user state from rebuildable caches/temp state.

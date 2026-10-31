@@ -151,6 +151,7 @@ public final class InMemoryStorageBackend: StorageBackend, @unchecked Sendable {
     }
 
     private let lock = NSLock()
+    /// Guarded by `lock`.
     private var contents = Contents()
 
     public init() {}
