@@ -8,6 +8,9 @@ Pantrified is an iOS household food app for answering three questions with as li
 
 The app is designed around imperfect real-world inventory: approximate quantities are valid, dates may be missing, multiple people may update the same household, and recognition/enrichment can happen after an item is already usable.
 
+Join the [public beta on TestFlight](https://testflight.apple.com/join/VMxXhRW8).
+It requires iOS 26 or later.
+
 ## Product status
 
 **The pure-Swift domain and application layers for the first slice are implemented and tested on Linux, and an app shell and its macOS workflows are in place.** Local persistence is built on SwiftData and tested on Linux, on macOS and in the simulator, but no screen uses it yet. Capture, the CloudKit adapter and most Apple model adapters are not built, and nothing has been verified on a device. Competitive research reinforced that the main product risk is inventory-maintenance friction, not the availability of AI recipe features. The first milestone therefore validates the household loop:
