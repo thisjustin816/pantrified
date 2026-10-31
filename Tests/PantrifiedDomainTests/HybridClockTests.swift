@@ -85,4 +85,25 @@ struct HybridClockTests {
         #expect(first.physicalMillis == .max && first.counter == .max)
         #expect(second == first)
     }
+
+    @Test("a clock resumed from its latest reading equals the original and issues the same next reading", arguments: 0..<5)
+    func resumesFromLatestReading(history: Int) {
+        let replica = ReplicaID()
+        var clock = HybridClock(replica: replica)
+        switch history {
+        case 0: break
+        case 1: _ = clock.tick(now: seconds(0))
+        case 2: clock.observe(HybridTimestamp(physicalMillis: .min, counter: 5, replica: ReplicaID()))
+        case 3:
+            _ = clock.tick(now: seconds(0))
+            clock.adopt(ReplicaID())
+        default: clock.observe(HybridTimestamp(physicalMillis: .max, counter: .max, replica: ReplicaID()))
+        }
+
+        var resumed = HybridClock(resuming: clock.latest)
+
+        #expect(resumed == clock)
+        #expect(resumed.replica == clock.replica)
+        #expect(resumed.tick(now: seconds(-60)) == clock.tick(now: seconds(-60)))
+    }
 }
