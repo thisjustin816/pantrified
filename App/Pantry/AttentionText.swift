@@ -50,10 +50,12 @@ enum AttentionText {
         }
     }
 
-    /// The line under a food's name: where it is, then why it is flagged or what it is dated.
+    /// The line under a food's name: where it is, how much is left, then why it is flagged or what
+    /// it is dated.
     static func detail(for entry: PantryEntry, showsLocation: Bool) -> String {
         var parts: [String] = []
         if showsLocation { parts.append(entry.locationName ?? "Somewhere else") }
+        if let quantity = QuantityText.label(entry.package.quantity) { parts.append(quantity) }
         if let reason = reason(for: entry.assessment) { parts.append(reason) }
         return parts.joined(separator: " · ")
     }
