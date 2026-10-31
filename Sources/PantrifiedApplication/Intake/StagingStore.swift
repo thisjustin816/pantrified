@@ -196,6 +196,9 @@ public actor StagingStore {
     private var setAsideAt: Date?
     /// An unfinished batch expired and the person has not been told yet.
     private var unfinishedExpired = false
+    /// What the file holds. A change whose save fails is undone in memory too, so memory never
+    /// disagrees with the file.
+    private var saved = Manifest(batches: [])
     /// What went wrong reading the batch list in this launch, for the screen to say once.
     public private(set) var loadProblem: StagingLoadProblem?
 
@@ -206,6 +209,7 @@ public actor StagingStore {
         let load = Self.load(files: files, now: time.now())
         (loaded, batches, setAsideAt, unfinishedExpired, readOnly, loadProblem) =
             (load.loaded, load.batches, load.setAsideAt, load.unfinishedExpired, load.readOnly, load.problem)
+        saved = Manifest(batches: batches, setAsideAt: setAsideAt, unfinishedExpired: unfinishedExpired)
     }
 
     private struct Manifest: Codable {
@@ -275,6 +279,7 @@ public actor StagingStore {
             let load = Self.load(files: files, now: time.now())
             (loaded, batches, setAsideAt, unfinishedExpired, readOnly, loadProblem) =
             (load.loaded, load.batches, load.setAsideAt, load.unfinishedExpired, load.readOnly, load.problem)
+        saved = Manifest(batches: batches, setAsideAt: setAsideAt, unfinishedExpired: unfinishedExpired)
         }
         return loaded
     }
@@ -364,7 +369,6 @@ public actor StagingStore {
         do {
             try save()
         } catch {
-            batches[index].photos.removeLast()
             try? files.remove(name)
             throw error
         }
@@ -470,7 +474,6 @@ public actor StagingStore {
     public func recordLookups(_ answers: [(GTIN, LookupAnswer)], in id: IntakeBatchID) throws(StagingError) -> Int {
         try writable()
         guard let index = index(id) else { throw .unknownBatch }
-        let before = batches[index]
         var changed = 0
         for (barcode, answer) in answers {
             let combined = LookupAnswer.combining(batches[index].lookups[barcode], with: answer)
@@ -479,12 +482,7 @@ public actor StagingStore {
             batches[index].review?.record(answer, for: barcode)
         }
         guard changed > 0 else { return 0 }
-        do {
-            try save()
-        } catch {
-            batches[index] = before
-            throw error
-        }
+        try save()
         return changed
     }
 
@@ -499,7 +497,6 @@ public actor StagingStore {
         guard let index = index(id) else { throw StagingError.unknownBatch }
         guard var review = batches[index].review else { throw StagingError.notRecognized }
         let result = try change(&review)
-        let before = batches[index]
         batches[index].review = review
         batches[index].lastActivityAt = time.now()
         if review.isFinished {
@@ -511,12 +508,7 @@ public actor StagingStore {
             batches[index].phase = .reviewing
             batches[index].finishedAt = nil
         }
-        do {
-            try save()
-        } catch {
-            batches[index] = before
-            throw error
-        }
+        try save()
         return result
     }
 
@@ -595,10 +587,12 @@ public actor StagingStore {
 
     private func save() throws(StagingError) {
         try writable()
+        let manifest = Manifest(batches: batches, setAsideAt: setAsideAt, unfinishedExpired: unfinishedExpired)
         do {
-            let data = try JSONEncoder().encode(Manifest(batches: batches, setAsideAt: setAsideAt, unfinishedExpired: unfinishedExpired))
-            try files.write(data, to: Self.manifestName)
+            try files.write(try JSONEncoder().encode(manifest), to: Self.manifestName)
+            saved = manifest
         } catch {
+            (batches, setAsideAt, unfinishedExpired) = (saved.batches, saved.setAsideAt, saved.unfinishedExpired)
             throw .storage
         }
     }

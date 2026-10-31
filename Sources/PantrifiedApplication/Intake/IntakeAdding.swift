@@ -28,6 +28,8 @@ public struct IntakeAdding: Sendable {
         guard var review = await store.batch(batch)?.review else { throw StagingError.notRecognized }
         // A package that already exists for a candidate still in review is stale, such as one an
         // undo discarded. Putting it away again would find it and add nothing, so it gets a new one.
+        // A candidate already being added is finished by `resume`, never added a second time.
+        let ids = ids.filter { !review.pendingAdd.contains($0) }
         let planned = review.candidates.filter { ids.contains($0.id) && $0.status == .reviewing }
         let existing = try await pantry.activity(of: planned.flatMap(\.packagesToAdd))
         let stale = Set(planned.filter { $0.packagesToAdd.contains { existing[$0] != nil } }.map(\.id))
@@ -48,10 +50,12 @@ public struct IntakeAdding: Sendable {
             _ = try await pantry.putAway(drafts)
         } catch {
             // All or nothing: nothing was saved, so nothing is left to finish on the next launch.
-            _ = try? await store.updateReview(batch) { $0.cancelAdd() }
+            _ = try? await store.updateReview(batch) { $0.cancelAdd(candidates) }
             throw error
         }
-        try await store.updateReview(batch) { $0.markAdded(candidates) }
+        // The packages are saved. When marking the candidates fails, the record of the add in progress
+        // finishes it on the next launch, so the add still succeeded.
+        _ = try? await store.updateReview(batch) { $0.markAdded(candidates) }
         return IntakeAddition(batch: batch, candidates: candidates, packages: drafts.map(\.id), notReady: Set(ids).count - candidates.count)
     }
 

@@ -83,6 +83,28 @@ struct StagingStoreTests {
         #expect(await relaunched.batch(batch)?.photos.map(\.sequence) == [0, 1, 2])
     }
 
+    @Test("a change whose save fails is undone in memory too, so the store agrees with its file")
+    func failedSaveUndone() async throws {
+        let world = IntakeWorld()
+        let store = world.launch()
+        let batch = try await world.stage(["rice", "beans"], in: store)
+        let photo = try #require(await store.batch(batch)?.photos.first)
+        world.files.failWrites(to: StagingStore.manifestName)
+        await #expect(throws: StagingError.storage) { try await store.discard(batch) }
+        await #expect(throws: StagingError.storage) { try await store.removePhoto(photo.id, from: batch) }
+        await #expect(throws: StagingError.storage) {
+            try await store.record(PhotoObservation(photo: photo.id, sequence: 0, capturedAt: photo.capturedAt), in: batch)
+        }
+        await #expect(throws: StagingError.storage) { try await store.beginRead(photo.id, in: batch) }
+        world.files.allowWrites()
+        let kept = try #require(await store.batch(batch))
+        #expect(kept == (await world.launch().batch(batch)))
+        #expect(kept.photos.count == 2)
+        #expect(kept.photos[0].observation == nil)
+        #expect(kept.photos[0].readAttempts == 0)
+        #expect(world.files.photoNames.count == 2)
+    }
+
     @Test("a photo taken back before reading is deleted with its file")
     func removePhoto() async throws {
         let world = IntakeWorld()
@@ -568,6 +590,40 @@ struct BatchIntakeTests {
         #expect(addition.packages.count == 1)
         #expect(addition.packages != [old.id])
         #expect(try await world.pantry.snapshot().entries.map(\.package.name) == ["Basmati rice"])
+    }
+
+    @Test("an add whose candidates cannot be marked after the packages were saved still reports them, and never adds them twice")
+    func markFailsAfterSave() async throws {
+        let world = IntakeWorld()
+        let store = world.launch()
+        let batch = try await world.stage(["rice"], in: store)
+        let review = try await world.process(batch, store)
+        let adding = IntakeAdding(pantry: world.pantry, store: store)
+        world.files.failWrites(after: 1)
+        let addition = try await adding.add(review.readyToAdd, in: batch)
+        #expect(addition.packages.count == 1)
+        #expect(try await world.pantry.snapshot().entries.count == 1)
+
+        let again = try await adding.add(review.readyToAdd, in: batch)
+        #expect(again.packages.isEmpty)
+        world.files.allowWrites()
+        try await IntakeAdding(pantry: world.pantry, store: world.launch()).resume(batch)
+        #expect(try await world.pantry.snapshot().entries.count == 1)
+        #expect(await world.launch().batch(batch)?.review?.isFinished == true)
+    }
+
+    @Test("a second add begun while an earlier one is unfinished keeps both on record")
+    func pendingAddsMerge() async throws {
+        let world = IntakeWorld()
+        let store = world.launch()
+        let batch = try await world.stage(["rice", "beans"], in: store)
+        let review = try await world.process(batch, store)
+        let (rice, beans) = (review.summaries[0].id, review.summaries[1].id)
+        try await store.updateReview(batch) { $0.beginAdd([rice]) }
+        try await store.updateReview(batch) { $0.beginAdd([beans]) }
+        #expect(await store.batch(batch)?.review?.pendingAdd == [rice, beans])
+        try await IntakeAdding(pantry: world.pantry, store: world.launch()).resume(batch)
+        #expect(try await world.pantry.snapshot().entries.count == 2)
     }
 
     @Test("candidates without a name stay in review; the rest are added")

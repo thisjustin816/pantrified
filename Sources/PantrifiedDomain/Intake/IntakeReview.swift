@@ -218,7 +218,7 @@ public struct IntakeReview: Sendable, Hashable, Codable {
 
     /// Candidates still under review that can be added as they are.
     public var readyToAdd: [IntakeCandidateID] {
-        reviewing.map(summary).filter(\.isReady).map(\.id)
+        reviewing.filter { !pendingAdd.contains($0.id) }.map(summary).filter(\.isReady).map(\.id)
     }
 
     /// The drafts that adding these candidates puts away: one per package, with the name and date
@@ -436,12 +436,12 @@ public struct IntakeReview: Sendable, Hashable, Codable {
     /// older status and older package identities: restoring it would put an added candidate back
     /// in review while its package stays in the pantry, or reuse a discarded package's identity.
     public mutating func beginAdd(_ ids: Set<IntakeCandidateID>) {
-        pendingAdd = ids
+        pendingAdd.formUnion(ids)
     }
 
-    /// The add failed and nothing was saved; the candidates simply stay in review.
-    public mutating func cancelAdd() {
-        pendingAdd = []
+    /// The add failed and nothing was saved; these candidates simply stay in review.
+    public mutating func cancelAdd(_ ids: Set<IntakeCandidateID>) {
+        pendingAdd.subtract(ids)
     }
 
     public mutating func markAdded(_ ids: Set<IntakeCandidateID>) {
@@ -451,7 +451,7 @@ public struct IntakeReview: Sendable, Hashable, Codable {
     }
 
     public mutating func beginUndo(_ ids: Set<IntakeCandidateID>) {
-        pendingUndo = ids
+        pendingUndo.formUnion(ids)
     }
 
     /// Puts added candidates back under review with new package identities, because the packages

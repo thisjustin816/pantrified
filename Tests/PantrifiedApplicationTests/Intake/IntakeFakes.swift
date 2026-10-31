@@ -9,11 +9,16 @@ final class MemoryStagingFiles: StagingFiles, @unchecked Sendable {
     private var contents: [String: Data] = [:]
     private var failingWrites: Set<String> = []
     private var failingReads = false
+    private var writesLeft: Int?
     private(set) var removed: [String] = []
 
     func write(_ data: Data, to name: String) throws {
         try lock.withLock {
             if failingWrites.contains(name) || failingWrites.contains("*") { throw FakeFailure() }
+            if let left = writesLeft {
+                guard left > 0 else { throw FakeFailure() }
+                writesLeft = left - 1
+            }
             contents[name] = data
         }
     }
@@ -37,7 +42,14 @@ final class MemoryStagingFiles: StagingFiles, @unchecked Sendable {
     func url(for name: String) -> URL { URL(fileURLWithPath: "/staging").appendingPathComponent(name) }
 
     func failWrites(to name: String) { lock.withLock { _ = failingWrites.insert(name) } }
-    func allowWrites() { lock.withLock { failingWrites.removeAll() } }
+    func allowWrites() {
+        lock.withLock {
+            failingWrites.removeAll()
+            writesLeft = nil
+        }
+    }
+    /// Lets this many more writes through, then fails every write.
+    func failWrites(after count: Int) { lock.withLock { writesLeft = count } }
     /// Every read fails, as before the first unlock after a restart.
     func failReads(_ failing: Bool) { lock.withLock { failingReads = failing } }
     func contents(of name: String) -> Data? { lock.withLock { contents[name] } }
