@@ -15,9 +15,25 @@ public struct FoodDataCentralLookup: ProductLookupService {
     static let fixedQuery = [URLQueryItem(name: "dataType", value: "Branded"), URLQueryItem(name: "pageSize", value: "10")]
     /// Far more than a ten-result page. The transport stops reading an answer that grows past it.
     static let largestBody = 1_000_000
+    /// The hard ceiling on a name, applied last whatever the steps before it produce.
     static let longestName = 100
     /// Also a byte limit, because one character can hold any number of combining marks.
     static let longestNameBytes = 400
+    /// A longer name is cut back to a word boundary at or before this many characters, the
+    /// ellipsis included, so the suggestion reads as a name rather than an ingredient list.
+    static let shortName = 60
+    static let ellipsis: Character = "…"
+    /// A brand past these is left out rather than cut, since half a brand names nothing.
+    static let longestBrand = 30
+    static let longestBrandBytes = 120
+    /// `brandOwner` is a company's legal name more often than a brand, so it stands in for a
+    /// missing `brandName` only when it is short and carries no company word.
+    static let longestOwner = 24
+    static let mostOwnerWords = 3
+    static let companyWords: Set<String> = [
+        "inc", "incorporated", "llc", "ltd", "limited", "co", "corp", "corporation", "company", "companies",
+        "lp", "llp", "plc", "gmbh", "holdings", "group", "brands", "enterprises", "industries", "international",
+    ]
 
     private let apiKey: String
     private let transport: any HTTPTransport
@@ -66,25 +82,132 @@ public struct FoodDataCentralLookup: ProductLookupService {
               let response = try? JSONDecoder().decode(SearchResponse.self, from: reply.body)
         else { return .failed(.providerError) }
         for food in response.foods where food.gtinUpc.flatMap(GTIN.init) == barcode {
-            if let name = food.description.flatMap(suggestedName) {
+            if let description = food.description,
+               let name = suggestedName(description, brandName: food.brandName, brandOwner: food.brandOwner) {
                 return .found(ProductSuggestion(name: name, source: source))
             }
         }
         return .notFound
     }
 
-    /// The record's description as a name a person would type: control characters removed, spaces
-    /// collapsed, all-capitals text in sentence case, and no longer than `longestName` characters or
-    /// `longestNameBytes` bytes of UTF-8. It is cut between characters, never inside one.
-    static func suggestedName(_ description: String) -> String? {
-        let visible = String(String.UnicodeScalarView(description.unicodeScalars.map {
+    /// The record as a name a person would type: the brand, when the description does not already
+    /// name it, then the description. Each part has control characters removed and spaces
+    /// collapsed; an all-capitals description is put in sentence case and an all-capitals brand
+    /// has each word capitalized. A name longer than `shortName` characters, or `longestNameBytes`
+    /// bytes of UTF-8, has its description cut back to a word boundary and ends in an ellipsis,
+    /// so the brand is kept. A description with no usable text gives no name, brand or not.
+    static func suggestedName(_ description: String, brandName: String? = nil, brandOwner: String? = nil) -> String? {
+        guard let (lowered, wasCapitals) = cleaned(description) else { return nil }
+        let sentence = wasCapitals ? lowered.prefix(1).uppercased() + lowered.dropFirst() : lowered
+        guard let alone = shortened(sentence, characters: shortName, bytes: longestNameBytes) else { return nil }
+        guard let brand = brand(name: brandName, owner: brandOwner), !mentions(alone, brand) else {
+            return capped(alone)
+        }
+        // After the brand, an all-capitals description reads as a continuation, so it stays lowercase.
+        guard let rest = shortened(
+            lowered,
+            characters: shortName - brand.count - 1,
+            bytes: longestNameBytes - brand.utf8.count - 1
+        ) else { return nil }
+        return capped(brand + " " + rest)
+    }
+
+    /// Control characters become spaces, runs of spaces become one, and text with no lowercase
+    /// letter is lowercased, which the second value reports. Nil when nothing is left.
+    static func cleaned(_ text: String) -> (String, Bool)? {
+        let visible = String(String.UnicodeScalarView(text.unicodeScalars.map {
             CharacterSet.controlCharacters.contains($0) ? " " : $0
         }))
-        var name = visible.split(whereSeparator: \.isWhitespace).joined(separator: " ")
-        if !name.contains(where: \.isLowercase) {
-            name = name.lowercased()
-            if let first = name.first { name = first.uppercased() + name.dropFirst() }
+        let joined = visible.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard !joined.isEmpty else { return nil }
+        let capitals = !joined.contains(where: \.isLowercase)
+        return (capitals ? joined.lowercased() : joined, capitals)
+    }
+
+    /// `brandName` when it is usable, otherwise `brandOwner` when it is short and reads like a brand.
+    static func brand(name: String?, owner: String?) -> String? {
+        if let name, let brand = presentableBrand(name) { return brand }
+        guard let owner, let brand = presentableBrand(owner),
+              brand.count <= longestOwner,
+              brand.split(separator: " ").count <= mostOwnerWords,
+              !words(brand).contains(where: companyWords.contains)
+        else { return nil }
+        return brand
+    }
+
+    /// The brand cleaned like a description, with an all-capitals brand capitalized word by word
+    /// and a mixed-case brand left as written. Nil when it has no letter, is a single character,
+    /// or is past the brand limits.
+    static func presentableBrand(_ text: String) -> String? {
+        guard let (lowered, wasCapitals) = cleaned(text) else { return nil }
+        let brand = wasCapitals ? wordCapitalized(lowered) : lowered
+        guard brand.count >= 2, brand.count <= longestBrand, brand.utf8.count <= longestBrandBytes,
+              brand.contains(where: \.isLetter)
+        else { return nil }
+        return brand
+    }
+
+    /// Capitalizes each letter that starts the text or follows a space, hyphen, ampersand, slash
+    /// or full stop, so "coca-cola" reads "Coca-Cola" and "m&m's" reads "M&M's".
+    static func wordCapitalized(_ text: String) -> String {
+        var result = ""
+        var previous: Character?
+        for character in text {
+            let starts = previous.map { " -&/.".contains($0) } ?? true
+            result += starts && character.isLetter ? character.uppercased() : String(character)
+            previous = character
         }
+        return result
+    }
+
+    /// Whether the brand's words appear together in the text, ignoring case and punctuation, so
+    /// "Lay" is not found in "Layered".
+    static func mentions(_ text: String, _ brand: String) -> Bool {
+        let needle = words(brand)
+        let haystack = words(text)
+        guard !needle.isEmpty, needle.count <= haystack.count else { return false }
+        return (0...(haystack.count - needle.count)).contains {
+            haystack[$0..<($0 + needle.count)].elementsEqual(needle)
+        }
+    }
+
+    static func words(_ text: String) -> [String] {
+        text.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
+    }
+
+    /// The text unchanged when it fits, otherwise cut so that it and an ellipsis fit both limits.
+    /// The cut is between characters, so never inside a grapheme cluster or a scalar, and goes back
+    /// to the last space when it would land inside a word; text with no space in reach is cut
+    /// at the last character that fits. Separators left dangling at the end are dropped. Nil when
+    /// not even one character fits.
+    static func shortened(_ text: String, characters: Int, bytes: Int) -> String? {
+        if text.count <= characters, text.utf8.count <= bytes { return text }
+        let ellipsisBytes = String(ellipsis).utf8.count
+        var end = text.startIndex
+        var count = 0
+        var used = 0
+        while end < text.endIndex {
+            let size = text[end].utf8.count
+            guard count + 2 <= characters, used + size + ellipsisBytes <= bytes else { break }
+            count += 1
+            used += size
+            end = text.index(after: end)
+        }
+        let fitting = text[..<end]
+        guard !fitting.isEmpty else { return nil }
+        var kept = fitting
+        if end < text.endIndex, !text[end].isWhitespace, let space = fitting.lastIndex(where: \.isWhitespace) {
+            kept = fitting[..<space]
+        }
+        let dangling: (Character) -> Bool = { $0.isWhitespace || ",;:&-/+(".contains($0) }
+        while let last = kept.last, dangling(last) { kept = kept.dropLast() }
+        if kept.isEmpty { kept = fitting }
+        return String(kept) + String(ellipsis)
+    }
+
+    /// The last guard: at most `longestName` characters and `longestNameBytes` bytes of UTF-8, cut
+    /// between characters. Nil when nothing is left.
+    static func capped(_ name: String) -> String? {
         var kept = ""
         var bytes = 0
         for character in name.prefix(longestName) {
@@ -92,8 +215,8 @@ public struct FoodDataCentralLookup: ProductLookupService {
             guard bytes <= longestNameBytes else { break }
             kept.append(character)
         }
-        name = kept.trimmingCharacters(in: .whitespaces)
-        return name.isEmpty ? nil : name
+        let trimmed = kept.trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private struct SearchResponse: Decodable {
@@ -102,6 +225,22 @@ public struct FoodDataCentralLookup: ProductLookupService {
         struct Food: Decodable {
             let description: String?
             let gtinUpc: String?
+            let brandName: String?
+            let brandOwner: String?
+
+            private enum CodingKeys: String, CodingKey {
+                case description, gtinUpc, brandName, brandOwner
+            }
+
+            init(from decoder: any Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                description = try container.decodeIfPresent(String.self, forKey: .description)
+                gtinUpc = try container.decodeIfPresent(String.self, forKey: .gtinUpc)
+                // The brand only adds to a name, so a brand of the wrong type is read as absent
+                // rather than failing the whole answer.
+                brandName = try? container.decodeIfPresent(String.self, forKey: .brandName)
+                brandOwner = try? container.decodeIfPresent(String.self, forKey: .brandOwner)
+            }
         }
     }
 }
