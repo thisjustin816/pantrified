@@ -9,7 +9,7 @@ import PantrifiedDomain
 /// barcode, written in each length the service may store it in, and the app's api.data.gov key,
 /// and nothing about the person; the result is a name suggestion only when the record's own
 /// barcode is the one scanned.
-public struct FoodDataCentralLookup: ProductLookupService {
+public struct FoodDataCentralLookup: ProductLookupService, RateLimitReportingLookup {
     public static let source = "USDA FoodData Central"
     static let endpoint = "https://api.nal.usda.gov/fdc/v1/foods/search"
     /// Branded foods are the records with barcodes; a small page keeps the answer small.
@@ -48,12 +48,20 @@ public struct FoodDataCentralLookup: ProductLookupService {
     }
 
     public func lookUp(_ barcode: GTIN) async -> ProductLookupResult {
-        guard !Task.isCancelled else { return .failed(.cancelled) }
+        await lookUpReportingRateLimit(barcode).result
+    }
+
+    /// The result with the rate limit headers that came with it, for `PacedProductLookup`.
+    public func lookUpReportingRateLimit(_ barcode: GTIN) async -> ReportedLookup {
+        guard !Task.isCancelled else { return ReportedLookup(.failed(.cancelled)) }
         switch await transport.get(request(for: barcode)) {
         case .failure(let failure):
-            return .failed(failure.lookupFailure)
+            return ReportedLookup(.failed(failure.lookupFailure))
         case .success(let reply):
-            return Self.result(of: reply, for: barcode)
+            return ReportedLookup(
+                Self.result(of: reply, for: barcode),
+                rateLimit: RateLimitReport(remaining: reply.rateLimitRemaining, retryAfter: reply.retryAfter)
+            )
         }
     }
 
@@ -78,7 +86,8 @@ public struct FoodDataCentralLookup: ProductLookupService {
         switch reply.status {
         case 200..<300: break
         case 401, 403: return .failed(.keyRejected)
-        case 429: return .failed(.rateLimited)
+        // When lookups may resume is the pacing's decision, from the Retry-After it is passed.
+        case 429: return .failed(.rateLimited(resumesAt: nil))
         default: return .failed(.providerError)
         }
         guard reply.body.count <= largestBody,
@@ -270,10 +279,113 @@ extension GTIN {
 public struct HTTPReply: Sendable, Hashable {
     public var status: Int
     public var body: Data
+    /// The answer's Retry-After as seconds from when it arrived, read by `RateLimitHeaders`.
+    public var retryAfter: TimeInterval?
+    /// The answer's X-RateLimit-Remaining, read by `RateLimitHeaders`.
+    public var rateLimitRemaining: Int?
 
-    public init(status: Int, body: Data) {
+    public init(status: Int, body: Data, retryAfter: TimeInterval? = nil, rateLimitRemaining: Int? = nil) {
         self.status = status
         self.body = body
+        self.retryAfter = retryAfter
+        self.rateLimitRemaining = rateLimitRemaining
+    }
+}
+
+/// Reads the rate limit headers of an answer. They come from a remote service, so each is read
+/// strictly and any value outside its bounds is dropped rather than repaired. Neither is ever logged.
+enum RateLimitHeaders {
+    /// Past this a Retry-After is nonsense rather than a long block, and is dropped.
+    static let largestRetryAfter: TimeInterval = 7 * 86_400
+    static let largestRemaining = 10_000_000
+
+    /// The value of the one header with this name, matched without regard to case. Nil when no
+    /// header or more than one has the name.
+    static func value(_ name: String, in fields: [AnyHashable: Any]) -> String? {
+        let matching = fields.filter { ($0.key as? String)?.lowercased() == name.lowercased() }
+        guard matching.count == 1 else { return nil }
+        return matching.first?.value as? String
+    }
+
+    /// Retry-After as a non-negative whole number of seconds, or as an IMF-fixdate HTTP date such
+    /// as `Sun, 06 Nov 1994 08:49:37 GMT`. A date is measured from the answer's own Date header
+    /// when that is readable, so a wrong device clock does not stretch it, and from `now`
+    /// otherwise; a date already past counts as no wait. The result is held between
+    /// `LookupPacing.shortestPause` and `LookupPacing.longestPause`. Nil for anything else,
+    /// including a sign, a fraction, an exponent, non-ASCII digits, a list, or more than
+    /// `largestRetryAfter`.
+    static func retryAfter(_ text: String?, date: String? = nil, now: Date) -> TimeInterval? {
+        guard let text = trimmed(text) else { return nil }
+        let seconds: TimeInterval
+        if let whole = digits(text, longest: 9) {
+            seconds = TimeInterval(whole)
+        } else if let retry = httpDate(text) {
+            let base = trimmed(date).flatMap(httpDate) ?? now
+            seconds = max(0, retry.timeIntervalSince(base))
+        } else {
+            return nil
+        }
+        guard seconds <= largestRetryAfter else { return nil }
+        return LookupPacing.pause(retryAfter: seconds)
+    }
+
+    /// X-RateLimit-Remaining as a whole number from 0 to `largestRemaining`, or nil.
+    static func remaining(_ text: String?) -> Int? {
+        guard let text = trimmed(text), let value = digits(text, longest: 8), value <= largestRemaining else { return nil }
+        return value
+    }
+
+    /// The text without the spaces and tabs HTTP allows around a value, or nil when nothing is left.
+    private static func trimmed(_ text: String?) -> String? {
+        guard let text else { return nil }
+        let blank: (Character) -> Bool = { $0 == " " || $0 == "\t" }
+        let inner = text.drop(while: blank).reversed().drop(while: blank).reversed()
+        return inner.isEmpty ? nil : String(inner)
+    }
+
+    /// The text as a number when it is one to `longest` ASCII digits and nothing else.
+    private static func digits(_ text: String, longest: Int) -> Int? {
+        let bytes = Array(text.utf8)
+        guard (1...longest).contains(bytes.count), bytes.allSatisfy({ (0x30...0x39).contains($0) }) else { return nil }
+        return bytes.reduce(0) { $0 * 10 + Int($1 - 0x30) }
+    }
+
+    private static let weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    private static let months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+    /// An IMF-fixdate, exactly 29 ASCII characters, with a real day of the month. The weekday is
+    /// checked for form only. Obsolete HTTP date forms are not read.
+    static func httpDate(_ text: String) -> Date? {
+        let bytes = Array(text.utf8)
+        guard bytes.count == 29, bytes.allSatisfy({ $0 < 0x80 }) else { return nil }
+        let text = String(decoding: bytes, as: UTF8.self)
+        func part(_ from: Int, _ length: Int) -> String {
+            String(decoding: bytes[from..<(from + length)], as: UTF8.self)
+        }
+        func number(_ from: Int, _ length: Int) -> Int? { digits(part(from, length), longest: length) }
+        guard weekdays.contains(part(0, 3)), part(3, 2) == ", ", bytes[7] == 0x20, bytes[11] == 0x20,
+              bytes[16] == 0x20, bytes[19] == 0x3A, bytes[22] == 0x3A, text.hasSuffix(" GMT"),
+              let day = number(5, 2), let monthIndex = months.firstIndex(of: part(8, 3)),
+              let year = number(12, 4), let hour = number(17, 2), let minute = number(20, 2),
+              let second = number(23, 2),
+              hour < 24, minute < 60, second < 61
+        else { return nil }
+        let month = monthIndex + 1
+        let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
+        let monthDays = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][monthIndex]
+        guard (1...monthDays).contains(day) else { return nil }
+        let days = daysSince1970(year: year, month: month, day: day)
+        return Date(timeIntervalSince1970: TimeInterval(days * 86_400 + hour * 3_600 + minute * 60 + second))
+    }
+
+    /// Days from 1 January 1970 to a date in the proleptic Gregorian calendar.
+    private static func daysSince1970(year: Int, month: Int, day: Int) -> Int {
+        let shifted = month <= 2 ? year - 1 : year
+        let era = (shifted >= 0 ? shifted : shifted - 399) / 400
+        let yearOfEra = shifted - era * 400
+        let dayOfYear = (153 * (month + (month > 2 ? -3 : 9)) + 2) / 5 + day - 1
+        let dayOfEra = yearOfEra * 365 + yearOfEra / 4 - yearOfEra / 100 + dayOfYear
+        return era * 146_097 + dayOfEra - 719_468
     }
 }
 
@@ -456,7 +568,17 @@ final class CappedDownload: NSObject, URLSessionDataDelegate, @unchecked Sendabl
             if tooLarge { return (.failure(.other), waiting) }
             if let error { return (.failure((error as? URLError).map(HTTPFailure.init) ?? .other), waiting) }
             guard let http = response as? HTTPURLResponse else { return (.failure(.other), waiting) }
-            return (.success(HTTPReply(status: http.statusCode, body: body)), waiting)
+            let headers = http.allHeaderFields
+            return (.success(HTTPReply(
+                status: http.statusCode,
+                body: body,
+                retryAfter: RateLimitHeaders.retryAfter(
+                    RateLimitHeaders.value("Retry-After", in: headers),
+                    date: RateLimitHeaders.value("Date", in: headers),
+                    now: Date()
+                ),
+                rateLimitRemaining: RateLimitHeaders.remaining(RateLimitHeaders.value("X-RateLimit-Remaining", in: headers))
+            )), waiting)
         }
         waiting?.resume(returning: result)
     }
