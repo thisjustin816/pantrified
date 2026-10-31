@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import PantrifiedApplication
 import PantrifiedDomain
+import PantrifiedFoodDataCentral
 import PantrifiedGuidanceData
 import PantrifiedPersistence
 
@@ -49,18 +50,28 @@ final class AppLaunch {
             let replica = try store.replica(for: space, transport: OfflineTransport(), time: time)
             let pantry = Pantry(
                 space: space, inventory: replica, locations: store.locations,
-                guidance: Self.guidance(), time: time
+                evidence: store.productEvidence, guidance: Self.guidance(), time: time
             )
             try await pantry.prepare()
             #if DEBUG
             if let scenario = ScreenshotScenario.current { try await scenario.seed(pantry) }
             #endif
-            let model = PantryModel(pantry: pantry, undoWindow: undoWindow)
+            let model = PantryModel(pantry: pantry, undoWindow: undoWindow, lookup: Self.lookup())
             await model.load()
             state = .ready(model)
         } catch {
             state = .unavailable(StoreProblem(error))
         }
+    }
+
+    /// FoodData Central when the build carries a key, otherwise no lookup. A screenshot run never
+    /// looks anything up, so its images do not depend on the network.
+    private static func lookup() -> (any ProductLookupService)? {
+        #if DEBUG
+        if ScreenshotScenario.current != nil { return nil }
+        #endif
+        let key = Bundle.main.object(forInfoDictionaryKey: "FoodDataCentralAPIKey") as? String ?? ""
+        return FoodDataCentralLookup(apiKey: key)
     }
 
     private static func guidance() -> any StorageGuidanceRepository {

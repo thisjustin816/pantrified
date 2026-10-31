@@ -35,6 +35,7 @@ private struct Setup {
     let space: SpaceID
     let locations: MutableLocations
     let inventory: any InventoryRepository
+    let evidence = InMemoryProductEvidence()
 
     init(_ store: InventoryStore, guidance: StorageGuidance? = nil) async throws {
         let world = World()
@@ -43,7 +44,7 @@ private struct Setup {
         self.locations = locations
         inventory = try await store.make(world, holding: [])
         pantry = Pantry(
-            space: world.space, inventory: inventory, locations: locations,
+            space: world.space, inventory: inventory, locations: locations, evidence: evidence,
             guidance: FakeGuidance(result: guidance), time: FixedTime(syncEpoch),
             policy: AttentionPolicy(calendar: utc)
         )
@@ -131,6 +132,62 @@ struct PantryTests {
         #expect(entry.package.printedDate == date(.bestBy, 30))
         #expect(entry.package.confirmedFields == [.name, .printedDate])
         #expect(entry.package.addedAt == syncEpoch)
+    }
+
+    @Test("a scanned barcode is kept beside the food as evidence; food without one keeps none", arguments: InventoryStore.allCases)
+    func barcodeIsKept(store: InventoryStore) async throws {
+        let setup = try await Setup(store)
+        let places = try await setup.prepared()
+        let gtin = try #require(GTIN("036000291452"))
+
+        let scanned = try await setup.pantry.add(NewFood(name: "Cola", location: places.pantry.id, barcode: gtin))
+        let typed = try await setup.pantry.add(NewFood(name: "Rice", location: places.pantry.id))
+
+        #expect(try await setup.evidence.barcode(of: scanned, in: setup.space) == gtin)
+        #expect(try await setup.evidence.barcode(of: typed, in: setup.space) == nil)
+        #expect(await setup.evidence.writes == 1)
+    }
+
+    @Test("two foods with one barcode are two packages, each with the barcode", arguments: InventoryStore.allCases)
+    func repeatedBarcodeIsTwoPackages(store: InventoryStore) async throws {
+        let setup = try await Setup(store)
+        let places = try await setup.prepared()
+        let gtin = try #require(GTIN("036000291452"))
+
+        let first = try await setup.pantry.add(NewFood(name: "Cola", location: places.pantry.id, barcode: gtin))
+        let second = try await setup.pantry.add(NewFood(name: "Cola", location: places.pantry.id, barcode: gtin))
+
+        #expect(first != second)
+        #expect(try await setup.pantry.snapshot().entries.count == 2)
+        #expect(try await setup.evidence.barcode(of: second, in: setup.space) == gtin)
+    }
+
+    @Test("food is saved even when its barcode cannot be kept", arguments: InventoryStore.allCases)
+    func barcodeFailureDoesNotFailTheAdd(store: InventoryStore) async throws {
+        let setup = try await Setup(store)
+        let places = try await setup.prepared()
+        await setup.evidence.setFailWrites(true)
+
+        let id = try await setup.pantry.add(NewFood(name: "Cola", location: places.pantry.id, barcode: GTIN("036000291452")))
+
+        #expect(try await setup.pantry.snapshot().entries.map(\.id) == [id])
+        #expect(try await setup.evidence.barcode(of: id, in: setup.space) == nil)
+    }
+
+    @Test("a name a lookup suggested is kept as a suggestion; a name the person typed is confirmed", arguments: InventoryStore.allCases)
+    func suggestedNameIsNotConfirmed(store: InventoryStore) async throws {
+        let setup = try await Setup(store)
+        let places = try await setup.prepared()
+
+        let suggested = try await setup.pantry.add(NewFood(name: "Cola", nameSource: .lookup, location: places.pantry.id))
+        let typed = try await setup.pantry.add(NewFood(name: "Cola", nameSource: .person, location: places.pantry.id))
+
+        let entries = try await setup.pantry.snapshot().entries
+        let suggestedEntry = try #require(entries.first { $0.id == suggested })
+        let typedEntry = try #require(entries.first { $0.id == typed })
+        #expect(suggestedEntry.package.name == "Cola")
+        #expect(!suggestedEntry.package.confirmedFields.contains(.name))
+        #expect(typedEntry.package.confirmedFields.contains(.name))
     }
 
     @Test("quantity and date are optional", arguments: InventoryStore.allCases)
@@ -262,7 +319,7 @@ struct PantryTests {
         // The same inventory, read by a Pantry whose Space lists only the freezer.
         let narrowed = Pantry(
             space: setup.space, inventory: setup.inventory,
-            locations: MutableLocations([setup.space: [places.freezer]]),
+            locations: MutableLocations([setup.space: [places.freezer]]), evidence: setup.evidence,
             guidance: FakeGuidance(result: nil), time: FixedTime(syncEpoch), policy: AttentionPolicy(calendar: utc)
         )
 
@@ -340,7 +397,7 @@ struct PantryTests {
             let local = LocalStore(backend: backend)
             let replica = try local.replica(for: world.space, transport: CloudLink(world.cloud), time: FixedTime(syncEpoch))
             return Pantry(
-                space: world.space, inventory: replica, locations: local.locations,
+                space: world.space, inventory: replica, locations: local.locations, evidence: local.productEvidence,
                 guidance: FakeGuidance(result: nil), time: FixedTime(syncEpoch), policy: AttentionPolicy(calendar: utc)
             )
         }
@@ -348,7 +405,9 @@ struct PantryTests {
         let first = try launch()
         try await first.prepare()
         let fridge = try #require(try await first.snapshot().locations.first)
-        let milk = try await first.add(NewFood(name: "Milk", location: fridge.id, quantity: .low, printedDate: date(.useBy, 16)))
+        let milk = try await first.add(NewFood(
+            name: "Milk", location: fridge.id, quantity: .low, printedDate: date(.useBy, 16), barcode: GTIN("036000291452")
+        ))
         try await first.perform(.opened, on: milk)
 
         let second = try launch()
@@ -362,5 +421,7 @@ struct PantryTests {
         #expect(entry.package.quantity == .low)
         #expect(entry.package.openedAt == syncEpoch)
         #expect(entry.assessment.state == .useSoon)
+        let barcode = try await LocalStore(backend: backend).productEvidence.barcode(of: milk, in: world.space)
+        #expect(barcode == GTIN("036000291452"))
     }
 }

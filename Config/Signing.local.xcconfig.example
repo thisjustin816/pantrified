@@ -6,3 +6,7 @@ DEVELOPMENT_TEAM = ABCDE12345
 // Appended to com.thisjustin816.Pantrified. Set it, for example to .dev, only if the base
 // identifier is unavailable to your team. A different identifier is a separate app with its own data.
 BUNDLE_ID_SUFFIX =
+
+// Optional. An api.data.gov key for USDA FoodData Central product lookup (docs/capture.md). Empty
+// leaves lookup off. It is copied into the app's Info.plist, so never commit a real key.
+FDC_API_KEY =

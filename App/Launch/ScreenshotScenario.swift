@@ -5,11 +5,11 @@ import PantrifiedDomain
 import PantrifiedPersistence
 
 /// A Debug build started with `-pantrified-scenario sample` runs on a throwaway store that holds
-/// sample food, and `-pantrified-screen today|food|add` picks the screen it opens on. A CI job
+/// sample food, and `-pantrified-screen today|food|add|scan` picks the screen it opens on. A CI job
 /// uses it to take screenshots of the screens. It is compiled out of Release builds.
 struct ScreenshotScenario {
     enum Screen: String {
-        case today, food, add
+        case today, food, add, scan
     }
 
     let screen: Screen
@@ -26,6 +26,7 @@ struct ScreenshotScenario {
         case .today: StartScreen(tab: .today, addingFood: false, showsEvaluation: false, focusesName: false)
         case .food: StartScreen(tab: .food, addingFood: false, showsEvaluation: false, focusesName: false)
         case .add: StartScreen(tab: .today, addingFood: true, showsEvaluation: false, focusesName: false, fillsAddFoodExample: true)
+        case .scan: StartScreen(tab: .today, scanning: true, showsEvaluation: false, focusesName: false)
         }
     }
 

@@ -1,6 +1,6 @@
 # Pantrified Privacy Policy
 
-Last updated: October 30, 2026
+Last updated: October 31, 2026
 
 Pantrified is an iPhone app for managing household food, developed by Justin
 Beeson. This policy covers the current early beta, including TestFlight builds.
@@ -13,6 +13,35 @@ The current app does not send personal information to the developer. It does not
 require a Pantrified account and contains no advertising, analytics, tracking,
 or third-party crash-reporting SDKs.
 
+## Camera and barcode scanning
+
+Pantrified uses the camera only when you tap Scan, and only to read the number
+in a product barcode. The app does not take, keep or save photos or video:
+the camera's frames are shown on screen and decoded by iOS, and only the
+barcode number reaches the app. The camera stops when you leave the scan
+screen or the app. You can turn camera access off in iOS Settings and still add
+food by hand.
+
+A barcode you scan is kept with that food in the app's storage on your device.
+Apart from the product lookup below, it does not leave the device: it is not
+synchronized or sent to the developer. It stays after the food is used up or
+discarded, and is removed only when you delete the app.
+
+## Product lookup
+
+Builds that include product lookup send a scanned barcode number to USDA
+FoodData Central at api.nal.usda.gov, which uses the U.S. government's
+api.data.gov key service, to suggest the product's name. The request contains
+the barcode number and the app's own access key. It contains nothing about you, your household or your
+other food, and the app sets a fixed app name and language on it instead of
+your device's details. Like any internet request, it reveals your device's IP
+address to the service. The app keeps no cookies or cache from it and logs
+nothing about it. The service's handling of requests is covered by
+[api.data.gov](https://api.data.gov/) and the
+[FoodData Central API guide](https://fdc.nal.usda.gov/api-guide). If the lookup
+finds nothing or cannot connect, you enter the name yourself. Scanning works
+without a network connection.
+
 ## Information processed on your device
 
 The app's local storage is designed to hold food inventory, storage locations,
@@ -24,9 +53,9 @@ Recipe generation available in evaluation builds uses Apple's on-device
 language model. Requests and results are processed on your device; the app does
 not send them to the developer or a remote model service.
 
-The current beta does not implement household cloud synchronization, remote
-product or recipe lookups, cloud model generation, camera or photo capture,
-Reminders export, or in-app purchases. This policy must be updated when features
+The current beta does not implement household cloud synchronization, recipe
+lookups, cloud model generation, photo import or photo capture, Reminders
+export, or in-app purchases. This policy must be updated when features
 that change data handling are introduced.
 
 ## Apple services and beta feedback

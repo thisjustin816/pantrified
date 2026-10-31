@@ -10,6 +10,10 @@ settings:
     GENERATE_INFOPLIST_FILE: YES
     CURRENT_PROJECT_VERSION: 1
     MARKETING_VERSION: "0.1"
+    # The api.data.gov key for USDA FoodData Central product lookup, copied into the app's
+    # Info.plist. Empty turns lookup off. Set it on the xcodebuild command line, or in
+    # Config/Signing.local.xcconfig for a local build (docs/capture.md).
+    FDC_API_KEY: ""
 packages:
   Pantrified:
     path: .
@@ -33,12 +37,17 @@ targets:
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+        INFOPLIST_KEY_NSCameraUsageDescription: Pantrified uses the camera to scan barcodes on food packages. Only the barcode number is read; no photos are taken or saved.
+        # Holds only the keys Xcode cannot generate; the rest are merged in from INFOPLIST_KEY_ settings.
+        INFOPLIST_FILE: App/Info.plist
         TARGETED_DEVICE_FAMILY: "1"
     dependencies:
       - package: Pantrified
         product: PantrifiedDomain
       - package: Pantrified
         product: PantrifiedApplication
+      - package: Pantrified
+        product: PantrifiedFoodDataCentral
       - package: Pantrified
         product: PantrifiedFoundationModels
       - package: Pantrified

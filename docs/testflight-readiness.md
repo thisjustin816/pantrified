@@ -5,8 +5,10 @@ What is in place for an upload, what only the owner can decide, and what data le
 ## In place
 
 - **Privacy manifest:** `App/PrivacyInfo.xcprivacy` declares no tracking, no tracking domains, no collected
-  data types and no accessed API types. That is true of the code today: it has no network code and calls no
-  required-reason API.
+  data types and no accessed API types. The code calls no required-reason API. Its only network code is
+  the FoodData Central product lookup (`docs/capture.md`), which sends a scanned barcode and the app's key
+  to answer that one request and is not linked to the person by the app; whether App Store Connect's App
+  Privacy answers list it is decided below.
 - **Manifest lint:** `Scripts/verify-privacy-manifest.py` checks the manifest's structure, such as a
   purpose on each collected data type and a reason on each accessed API type, and that tracking and
   tracking domains agree.
@@ -42,13 +44,21 @@ What is in place for an upload, what only the owner can decide, and what data le
    and `https://github.com/thisjustin816/pantrified/blob/main/SUPPORT.md` as the support URL once these
    pages are published on main. Complete App Privacy for the actual uploaded build. Update the policy
    and disclosures before distributing a build with new data flows. The table below lists those flows.
-4. **Usage descriptions.** Camera and photo access need purpose strings when capture is added.
+4. **Usage descriptions.** `NSCameraUsageDescription`, set in `project.yml`: "Pantrified uses the camera to
+   scan barcodes on food packages. Only the barcode number is read; no photos are taken or saved." Photo
+   library access needs its own string when photo import is added.
+5. **Product lookup key and App Privacy.** A build looks products up only when it carries a FoodData Central
+   key (`FDC_API_KEY`, `docs/capture.md`). The upload workflow does not pass one yet; `docs/capture.md`
+   lists the change and the secret to add. Before uploading a build with a key, decide how App Privacy
+   describes the barcode sent to api.nal.usda.gov with the device's IP address (owner decision 3 in
+   `docs/capture.md`).
 
 Read App Store Connect's current requirements when preparing these; they change.
 
 ## Data flows
 
-Today nothing leaves the device: there is no network code, analytics or account.
+There are no analytics and no account. The only thing that can leave the device is a scanned barcode, sent
+for product lookup in a build that carries a FoodData Central key.
 
 The accepted product decisions add these flows. Each row's privacy answers and the manifest's collected
 data types change when the flow is built.
@@ -56,10 +66,11 @@ data types change when the flow is built.
 | Flow | What leaves the device | To whom | Status |
 |---|---|---|---|
 | Household sync | Inventory, shopping list, consumer profiles and approved evidence crops | Apple iCloud, and the participants of a shared Space | Engine built against a fake transport; no CloudKit code |
-| Product lookup | A barcode or product name | USDA FoodData Central | Not built |
+| Product lookup | A scanned barcode number and the app's api.data.gov key, with the device's IP address as for any request. No name, household data or device details | USDA FoodData Central at api.nal.usda.gov, keyed through api.data.gov | Built; on only in a build with a key, which the upload workflow does not pass yet |
 | Recipe discovery | To be decided when built | Edamam | Not built |
 | Generation on the device | Nothing | Nobody | Built; the on-device model needs a device with Apple Intelligence |
 | Generation in the cloud | The Make Something request context: selected foods, restrictions and preferences | Apple Private Cloud Compute | Not built |
 | Purchases | Purchase and entitlement state | Apple StoreKit | Not built |
 | Reminders export | The shopping selection | The person's own Reminders | Not built |
-| Camera and photos | Nothing; a capture stays on the device, and only an approved crop may sync | Nobody, or iCloud for a crop | Not built |
+| Camera | Nothing. Only the decoded barcode number reaches the app, and it is kept on the device | Nobody | Built: barcode scanning |
+| Photos and evidence crops | Nothing; a capture stays on the device, and only an approved crop may sync | Nobody, or iCloud for a crop | Not built |

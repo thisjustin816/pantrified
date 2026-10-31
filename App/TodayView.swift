@@ -8,6 +8,7 @@ struct TodayView: View {
 
     @Environment(\.scenePhase) private var scenePhase
     @State private var adding: Bool
+    @State private var scanning = StartScreen.current.scanning
 
     init(model: PantryModel, startsAdding: Bool = false) {
         self.model = model
@@ -26,11 +27,15 @@ struct TodayView: View {
             .navigationTitle("Today")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
+                    Button("Scan", systemImage: "barcode.viewfinder") { scanning = true }
+                }
+                ToolbarItem(placement: .primaryAction) {
                     Button("Add food", systemImage: "plus") { adding = true }
                 }
             }
             .navigationDestination(for: PackageID.self) { PackageDetailView(model: model, id: $0) }
             .sheet(isPresented: $adding) { AddFoodView(model: model) }
+            .sheet(isPresented: $scanning) { ScanSheet(model: model) }
             .pantryChrome(model)
         }
         // The day may have changed while the app was in the background.

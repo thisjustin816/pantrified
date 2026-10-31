@@ -82,6 +82,51 @@ struct LocalRepositoryTests {
         #expect(try await PersistentIngredientLinks(backend: backend).links(in: space).isEmpty)
     }
 
+    @Test("package barcodes persist per Space and package, all of a batch in one write", arguments: TestStorage.allCases)
+    func barcodesPersist(storage: TestStorage) async throws {
+        let backend = FaultyBackend(try storage.makeBackend())
+        let evidence = PersistentProductEvidence(backend: backend)
+        let (milk, cola) = (PackageID(), PackageID())
+        let ean = try #require(GTIN("4006381333931"))
+        let upc = try #require(GTIN("036000291452"))
+
+        try await evidence.record([milk: ean, cola: upc], in: space)
+        try await evidence.record([milk: ean], in: space)
+
+        let reopened = PersistentProductEvidence(backend: backend)
+        #expect(try await reopened.barcode(of: milk, in: space) == ean)
+        #expect(try await reopened.barcode(of: cola, in: space) == upc)
+        #expect(try await reopened.barcode(of: PackageID(), in: space) == nil)
+        #expect(try await reopened.barcode(of: milk, in: SpaceID()) == nil)
+
+        backend.failWrites(after: 0)
+        let soup = PackageID()
+        await #expect(throws: InducedFailure.self) { try await evidence.record([soup: ean, milk: upc], in: space) }
+        #expect(try await reopened.barcode(of: soup, in: space) == nil)
+        #expect(try await reopened.barcode(of: milk, in: space) == ean)
+    }
+
+    @Test("a barcode is stored as its 14 digits, and a stored value that is not a GTIN is reported", arguments: TestStorage.allCases)
+    func barcodeRows(storage: TestStorage) async throws {
+        let backend = try storage.makeBackend()
+        let package = PackageID()
+        try await PersistentProductEvidence(backend: backend).record([package: try #require(GTIN("036000291452"))], in: space)
+        let row = try #require(try backend.localRows(of: .packageBarcode, in: space).first)
+        #expect(row.key.entity == package.rawValue.uuidString)
+        #expect(try StoredValueCoding.value(from: row.payload) == .map(["gtin": .string("00036000291452")]))
+
+        for stored in ["036000291452", "00036000291453", "notdigits", " 0036000291452", "0036000291452 "] {
+            let broken = PackageID()
+            var batch = StorageBatch()
+            batch.localWrites[LocalRowKey(kind: .packageBarcode, space: space, entity: broken.rawValue.uuidString)] =
+                .put(StoredValueCoding.encode(.map(["gtin": .string(stored)])))
+            try backend.write(batch)
+            await #expect(throws: PersistenceError.self, "\(stored)") {
+                try await PersistentProductEvidence(backend: backend).barcode(of: broken, in: space)
+            }
+        }
+    }
+
     @Test("local row keys are unique per Space, kind and entity, whatever the kind contains")
     func localKeysAreUnambiguous() {
         let space = SpaceID()

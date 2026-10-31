@@ -9,6 +9,7 @@ private struct Fixture {
     let space = SpaceID()
     let fridge = StorageLocation(name: "Fridge", storageType: .refrigerated)
     let inventory: InMemoryInventory
+    let evidence = InMemoryProductEvidence()
     let putAway: PutAway
 
     init(existing: [Package] = []) {
@@ -18,6 +19,7 @@ private struct Fixture {
         putAway = PutAway(
             inventory: inventory,
             locations: InMemoryLocations(locationsBySpace: [space: [fridge]]),
+            evidence: evidence,
             time: FixedTime(t0)
         )
     }
@@ -82,11 +84,79 @@ struct PutAwayTests {
         let f = Fixture()
         var a = f.draft("Milk")
         var b = f.draft("Milk")
-        a.barcode = "0001"
-        b.barcode = "0001"
+        a.barcode = GTIN("036000291452")
+        b.barcode = GTIN("036000291452")
         _ = try await f.putAway.putAway([a, b])
 
         #expect(try await f.inventory.activePackages(in: f.space).count == 2)
+        #expect(try await f.evidence.barcode(of: a.id, in: f.space) == GTIN("036000291452"))
+        #expect(try await f.evidence.barcode(of: b.id, in: f.space) == GTIN("036000291452"))
+    }
+
+    @Test("a batch's barcodes are kept in one write after its packages are saved")
+    func barcodesKeptInOneWrite() async throws {
+        let f = Fixture()
+        var a = f.draft("Milk")
+        var b = f.draft("Rice")
+        let c = f.draft("Soup")
+        a.barcode = GTIN("036000291452")
+        b.barcode = GTIN("4006381333931")
+
+        let result = try await f.putAway.putAway([a, b, c])
+
+        #expect(result.barcodesNotKept.isEmpty)
+        #expect(await f.evidence.writes == 1)
+        #expect(await f.evidence.barcodes[f.space] == [a.id: GTIN("036000291452")!, b.id: GTIN("4006381333931")!])
+    }
+
+    @Test("a batch with no barcodes writes no evidence")
+    func noBarcodesNoWrite() async throws {
+        let f = Fixture()
+        _ = try await f.putAway.putAway([f.draft("Soup")])
+
+        #expect(await f.evidence.writes == 0)
+    }
+
+    @Test("a barcode that cannot be kept is reported, and the packages stay saved")
+    func barcodeFailureIsReported() async throws {
+        let f = Fixture()
+        await f.evidence.setFailWrites(true)
+        var draft = f.draft("Milk")
+        draft.barcode = GTIN("036000291452")
+
+        let result = try await f.putAway.putAway([draft])
+
+        #expect(result.created == [draft.id])
+        #expect(result.barcodesNotKept == [draft.id])
+        #expect(try await f.inventory.package(draft.id) != nil)
+    }
+
+    @Test("a retry keeps a barcode an earlier attempt could not")
+    func retryKeepsBarcode() async throws {
+        let f = Fixture()
+        await f.evidence.setFailWrites(true)
+        var draft = f.draft("Milk")
+        draft.barcode = GTIN("036000291452")
+        _ = try await f.putAway.putAway([draft])
+        await f.evidence.setFailWrites(false)
+
+        let retry = try await f.putAway.putAway([draft])
+
+        #expect(retry.alreadyPresent == [draft.id])
+        #expect(retry.barcodesNotKept.isEmpty)
+        #expect(try await f.evidence.barcode(of: draft.id, in: f.space) == GTIN("036000291452"))
+    }
+
+    @Test("when the packages fail to save, no barcode is kept")
+    func failedSaveKeepsNoBarcode() async throws {
+        let f = Fixture()
+        await f.inventory.setFailOnSave(true)
+        var draft = f.draft("Milk")
+        draft.barcode = GTIN("036000291452")
+
+        await #expect(throws: FakeFailure.self) { try await f.putAway.putAway([draft]) }
+
+        #expect(await f.evidence.writes == 0)
     }
 
     @Test("one unready draft saves nothing and names the drafts that need work")

@@ -20,6 +20,7 @@ struct ScreenshotScenarioTests {
         #expect(screen([]) == .today)
         #expect(screen(["-pantrified-screen", "food"]) == .food)
         #expect(screen(["-pantrified-screen", "add"]) == .add)
+        #expect(screen(["-pantrified-screen", "scan"]) == .scan)
         #expect(screen(["-pantrified-screen", "nonsense"]) == .today)
         #expect(screen(["-pantrified-screen"]) == .today)
     }
@@ -38,9 +39,24 @@ struct ScreenshotScenarioTests {
         #expect(StartScreen().addingFood == false)
     }
 
+    @Test("only the scan screen opens the scanner, over Today")
+    func scanScreen() {
+        func start(_ screen: String) -> StartScreen? {
+            ScreenshotScenario(arguments: ["Pantrified", "-pantrified-scenario", "sample", "-pantrified-screen", screen])?.startScreen
+        }
+        #expect(start("scan")?.tab == .today)
+        #expect(start("scan")?.scanning == true)
+        #expect(start("scan")?.addingFood == false)
+        #expect(start("scan")?.fillsAddFoodExample == false)
+        for screen in ["today", "food", "add"] {
+            #expect(start(screen)?.scanning == false)
+        }
+        #expect(StartScreen().scanning == false)
+    }
+
     @Test("a screenshot run hides the Evaluate tab and keeps the keyboard down; a normal launch does neither")
     func screenshotRunLooksLikeTheStoreBuild() {
-        for screen in ["today", "food", "add"] {
+        for screen in ["today", "food", "add", "scan"] {
             let start = ScreenshotScenario(arguments: ["Pantrified", "-pantrified-scenario", "sample", "-pantrified-screen", screen])?.startScreen
             #expect(start?.showsEvaluation == false)
             #expect(start?.focusesName == false)

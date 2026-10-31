@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   screenshots:
-    name: Screenshots of Today, Food and Add food
+    name: Screenshots of Today, Food, Add food and Scan
     runs-on: ${{ vars.MACOS_RUNNER || 'xcode-27' }}
     timeout-minutes: 45
     steps:

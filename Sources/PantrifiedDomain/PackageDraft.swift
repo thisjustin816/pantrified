@@ -63,7 +63,7 @@ public struct PackageDraft: Sendable, Hashable, Identifiable {
     public let id: PackageID
     public let spaceID: SpaceID
     /// Product evidence only. A repeated barcode is not proof of the same physical package.
-    public var barcode: String?
+    public var barcode: GTIN?
     public var name = DraftField<String>()
     public var quantity = DraftField<Quantity>()
     public var printedDate = DraftField<PrintedDate>()
@@ -76,7 +76,7 @@ public struct PackageDraft: Sendable, Hashable, Identifiable {
         printedDate.source == .userConfirmed ? nil : recognizedDateChoice
     }
 
-    public init(id: PackageID = PackageID(), spaceID: SpaceID, barcode: String? = nil) {
+    public init(id: PackageID = PackageID(), spaceID: SpaceID, barcode: GTIN? = nil) {
         self.id = id
         self.spaceID = spaceID
         self.barcode = barcode

@@ -92,7 +92,7 @@ struct World {
             store: store,
             time: time,
             actions: PackageActions(inventory: replica, locations: locations, time: time),
-            putAway: PutAway(inventory: replica, locations: locations, time: time),
+            putAway: PutAway(inventory: replica, locations: locations, evidence: InMemoryProductEvidence(), time: time),
             markCooked: MarkCooked(inventory: replica, time: time),
             shopping: ShoppingListActions(repository: replica, time: time)
         )

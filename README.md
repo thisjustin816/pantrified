@@ -13,7 +13,7 @@ It requires iOS 26 or later.
 
 ## Product status
 
-**The pure-Swift domain and application layers for the first slice are implemented and tested on Linux, and an app shell and its macOS workflows are in place.** The app opens on a local SwiftData store and has Today and Food screens, an Add food sheet, and Opened, Used up, Move and Discard with an undo. These are tested in the simulator and have been looked at in simulator screenshots, but nothing has been verified on a device. Capture, the CloudKit adapter, Meals, the shared shopping List and most Apple model adapters are not built. Competitive research reinforced that the main product risk is inventory-maintenance friction, not the availability of AI recipe features. The first milestone therefore validates the household loop:
+**The pure-Swift domain and application layers for the first slice are implemented and tested on Linux, and an app shell and its macOS workflows are in place.** The app opens on a local SwiftData store and has Today and Food screens, an Add food sheet, and Opened, Used up, Move and Discard with an undo. A Scan button reads one product barcode with the camera and opens Add food with it, suggesting a name from USDA FoodData Central in builds with a key. These are tested in the simulator and have been looked at in simulator screenshots, but nothing has been verified on a device, and the simulator has no camera. Date recognition, photo import, continuous capture, the CloudKit adapter, Meals, the shared shopping List and most Apple model adapters are not built. Competitive research reinforced that the main product risk is inventory-maintenance friction, not the availability of AI recipe features. The first milestone therefore validates the household loop:
 
 `capture → correct/put away → use/cook → reconcile → return`
 
@@ -48,6 +48,7 @@ See GitHub issue #1 for the pilot and completion criteria.
 - [`docs/dietary-validation.md`](docs/dietary-validation.md): hard-restriction validation, classification data and its limits, and the Make Something request context.
 - [`docs/branching-and-ci.md`](docs/branching-and-ci.md): how work is branched, merged and verified.
 - [`docs/ci.md`](docs/ci.md): the workflows, what each check establishes, and what is not built yet.
+- [`docs/capture.md`](docs/capture.md): barcode scanning, camera permission states, GTIN normalization, where barcodes are kept, and the FoodData Central lookup and its key.
 - [`docs/date-recognition.md`](docs/date-recognition.md): reading printed dates and labels from recognized text, and how ambiguous dates are handled.
 - [`docs/testflight-readiness.md`](docs/testflight-readiness.md): the privacy manifest, what is decided before an upload, and what data leaves the device.
 - [`docs/testflight.md`](docs/testflight.md): the TestFlight upload workflow, its secrets and the first run.

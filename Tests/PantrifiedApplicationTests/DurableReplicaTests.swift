@@ -63,7 +63,7 @@ private struct StoredDevice {
         var draft = PackageDraft(spaceID: world.space)
         draft.name.confirm(name)
         draft.location = world.fridge.id
-        _ = try await PutAway(inventory: replica, locations: world.locations, time: time).putAway([draft])
+        _ = try await PutAway(inventory: replica, locations: world.locations, evidence: InMemoryProductEvidence(), time: time).putAway([draft])
         return draft.id
     }
 }
