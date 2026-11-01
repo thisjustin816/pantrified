@@ -393,9 +393,10 @@ public struct PhotoGrouper: Sendable {
     }
 
     /// The most lookups one pair can make: every name word of both photos, each looked up whole and
-    /// with two keys a letter.
+    /// with two keys a letter, and every name word of one photo compared with every name word of
+    /// the other.
     public var nearLookupsPerPair: Int {
-        2 * policy.nearWordsPerName * (1 + 2 * policy.nearWordMaximumLetters)
+        2 * policy.nearWordsPerName * (1 + 2 * policy.nearWordMaximumLetters) + policy.nearWordsPerName * policy.nearWordsPerName
     }
 
     /// Adds `detailPhotoAfter` or `detailPhotoBefore` to a front and a photo of a package's details
@@ -526,7 +527,15 @@ public struct PhotoGrouper: Sendable {
             // words only, since "mustard" and "custard" could be two products.
             let bothFronts = !a.showsDetails && !b.showsDetails
             let nearly = bothFronts ? (Set<String>(), Set<String>()) : (nearA, nearB)
-            let sharesProminentWord = !a.prominent.isDisjoint(with: b.prominent) || !nearly.0.isEmpty || !nearly.1.isEmpty
+            var sharesProminentWord = !a.prominent.isDisjoint(with: b.prominent)
+            if !sharesProminentWord, !bothFronts {
+                sharesProminentWord = a.near.queries.contains { x in
+                    b.near.queries.contains { y in
+                        lookups += 1
+                        return LabelText.isOneEditApart(x.word, y.word)
+                    }
+                }
+            }
             let aLacks = a.prominent.subtracting(b.tokens).subtracting(nearly.0)
             let bLacks = b.prominent.subtracting(a.tokens).subtracting(nearly.1)
             if sharesProminentWord, !aLacks.isEmpty, !bLacks.isEmpty {

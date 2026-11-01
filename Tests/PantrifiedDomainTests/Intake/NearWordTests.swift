@@ -55,6 +55,20 @@ struct NearWordTests {
         #expect(!signals.contains(.differentLabelWords))
     }
 
+    @Test("a front's name one letter off a maker's address on the back does not make their names share a word")
+    func addressIsNotAName() {
+        let photos = [
+            Fixture.photo(0, lines: Fixture.front("Minis vanilla", brand: "Toacker")),
+            Fixture.photo(1, lines: [
+                Fixture.line("Project verified", row: 0.05, size: 0.02),
+                Fixture.line("I: A. LOACKER SPA, 39054 AUNA DI SOTTO (BZ), ITALY. PRODUCT OF ITALY.", row: 0.1, size: 0.008),
+            ] + Fixture.back([]), codes: [.product(Fixture.beans)]),
+        ]
+        let signals = grouper.evidence(between: photos[0], and: photos[1])?.signals ?? []
+        #expect(signals.contains(.someLabelWords))
+        #expect(!signals.contains(.differentLabelWords))
+    }
+
     @Test("words one letter off never reach a merge on their own points")
     func nearNeverMerges() {
         // Some words in common and a similar image: 50 points, then 20 for the word one letter off.
