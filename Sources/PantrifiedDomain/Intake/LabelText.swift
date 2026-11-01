@@ -258,22 +258,21 @@ public enum LabelText {
             .folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil).lowercased()
         let words = folded.split(whereSeparator: { !$0.isLetter }).map(String.init)
         guard !words.isEmpty else { return nil }
-        func has(_ keywords: Set<String>) -> Bool {
-            words.contains { word in
-                keywords.contains(word) || keywords.contains { keyword in
-                    keyword.count >= panelWordTolerantLetters && isOneEditApart(word, keyword)
-                }
-            }
+        var found: Set<String> = []
+        for word in words {
+            if panelWords.contains(word) { found.insert(word) }
+            if tolerantPanelLetters.contains(word.unicodeScalars.count) { found.formUnion(panelWordIndex.near(.init(word))) }
         }
+        func has(_ keywords: Set<String>) -> Bool { !found.isDisjoint(with: keywords) }
         let hasDigit = folded.contains(where: \.isNumber)
-        if has(["nutrition", "supplement"]), has(["facts", "fact", "information", "info", "label"]) { return .heading }
-        if has(["serving", "servings", "serv", "svg"]), hasDigit || has(["size", "per", "container"]) { return .heading }
-        if has(["ingredients", "ingredient", "allergen", "allergens", "allergy"]) { return .heading }
+        if has(titleWords), has(titleEndWords) { return .heading }
+        if has(servingWords), hasDigit || has(servingEndWords) { return .heading }
+        if has(ingredientWords) { return .heading }
         if has(["daily"]), has(["value", "values"]) { return .heading }
         if words.contains("dv"), folded.contains("%") { return .heading }
         if let first = words.first, first == "contains" || (first == "may" && words.dropFirst().first == "contain"),
            has(allergenWords) { return .heading }
-        if has(["calories", "calorie", "kcal"]), hasDigit { return .nutrient }
+        if has(calorieWords), hasDigit { return .nutrient }
         if has(nutrientWords), hasNutrientAmount(folded) { return .nutrient }
         // An ingredients list running on from the line above it.
         if folded.filter({ $0 == "," }).count >= 3 { return .nutrient }
@@ -298,6 +297,28 @@ public enum LabelText {
 
     /// Panel words this long or longer also match a word one letter off.
     static let panelWordTolerantLetters = 5
+
+    private static let titleWords: Set<String> = ["nutrition", "supplement"]
+    private static let titleEndWords: Set<String> = ["facts", "fact", "information", "info", "label"]
+    private static let servingWords: Set<String> = ["serving", "servings", "serv", "svg"]
+    private static let servingEndWords: Set<String> = ["size", "per", "container"]
+    private static let ingredientWords: Set<String> = ["ingredients", "ingredient", "allergen", "allergens", "allergy"]
+    private static let calorieWords: Set<String> = ["calories", "calorie", "kcal"]
+
+    /// Every word a panel rule looks for.
+    private static let panelWords: Set<String> = titleWords.union(titleEndWords).union(servingWords).union(servingEndWords)
+        .union(ingredientWords).union(calorieWords).union(nutrientWords).union(allergenWords).union(["daily", "value", "values"])
+
+    /// The lengths of words that can be one letter off a panel word long enough to be tolerant.
+    private static let tolerantPanelLetters: ClosedRange<Int> =
+        (panelWordTolerantLetters - 1)...(panelWords.map(\.unicodeScalars.count).max() ?? 0) + 1
+
+    /// The panel words long enough to match a word one letter off.
+    private static let panelWordIndex: NearWords = {
+        var index = NearWords()
+        for word in panelWords where word.unicodeScalars.count >= panelWordTolerantLetters { index.add(word) }
+        return index
+    }()
 
     private static let nutrientWords: Set<String> = [
         "fat", "sodium", "cholesterol", "cholest", "carbohydrate", "carbohydrates", "carb", "carbs", "fiber",
@@ -354,4 +375,85 @@ public enum LabelText {
         "new", "natural", "naturally", "flavored", "flavor", "artificial", "free", "gluten", "non", "gmo",
         "organic", "certified", "usda", "grade", "quality", "fresh", "original", "classic", "family", "size",
     ])
+}
+
+/// Words prepared for finding words one letter off without comparing every word with every other:
+/// each word with one letter removed, and with one letter replaced by a mark that is never a
+/// letter. Two words are one letter off exactly when one is the other with a letter removed (a
+/// letter added or dropped), or when they share a replacement key at the same place (a letter
+/// changed).
+struct NearWords: Sendable {
+    struct Query: Sendable {
+        let word: String
+        let removals: [String]
+        let replacements: [String]
+
+        init(_ word: String) {
+            self.word = word
+            (removals, replacements) = NearWords.keys(word)
+        }
+    }
+
+    private(set) var words: Set<String> = []
+    /// Each key, with the words it was made from.
+    private var removals: [String: [String]] = [:]
+    private var replacements: [String: [String]] = [:]
+    /// The name words to look for in another photo.
+    var queries: [Query] = []
+
+    mutating func add(_ word: String) {
+        guard words.insert(word).inserted else { return }
+        let keys = Self.keys(word)
+        for key in keys.removals { removals[key, default: []].append(word) }
+        for key in keys.replacements { replacements[key, default: []].append(word) }
+    }
+
+    static func keys(_ word: String) -> (removals: [String], replacements: [String]) {
+        let scalars = Array(word.unicodeScalars)
+        var removals: [String] = []
+        var replacements: [String] = []
+        for index in scalars.indices {
+            var removed = String.UnicodeScalarView()
+            removed.append(contentsOf: scalars[..<index])
+            removed.append(contentsOf: scalars[(index + 1)...])
+            removals.append(String(removed))
+            var replaced = String.UnicodeScalarView()
+            replaced.append(contentsOf: scalars[..<index])
+            replaced.append("*")
+            replaced.append(contentsOf: scalars[(index + 1)...])
+            replacements.append(String(replaced))
+        }
+        return (removals, replacements)
+    }
+
+    /// The words here one letter off the query's word.
+    func near(_ query: Query) -> Set<String> {
+        var found: Set<String> = []
+        for word in removals[query.word] ?? [] { found.insert(word) }
+        for key in query.removals where words.contains(key) { found.insert(key) }
+        for key in query.replacements {
+            for word in replacements[key] ?? [] where word != query.word { found.insert(word) }
+        }
+        return found
+    }
+
+    /// Whether the query's word is one letter off a word here other than the batch's common words.
+    /// Adds each lookup made to `lookups`.
+    func hasNear(_ query: Query, ignoring common: Set<String>, lookups: inout Int) -> Bool {
+        guard !common.contains(query.word) else { return false }
+        func usable(_ found: [String]?) -> Bool {
+            found?.contains { $0 != query.word && !common.contains($0) } ?? false
+        }
+        lookups += 1
+        if usable(removals[query.word]) { return true }
+        for key in query.removals {
+            lookups += 1
+            if words.contains(key), !common.contains(key) { return true }
+        }
+        for key in query.replacements {
+            lookups += 1
+            if usable(replacements[key]) { return true }
+        }
+        return false
+    }
 }

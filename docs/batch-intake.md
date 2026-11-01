@@ -96,7 +96,10 @@ candidate whose newest photo is three shots or 15 seconds old (`SettlingPolicy`)
 its thumbnails, as a hint only.
 
 **Cost.** Grouping 120 photos scores 7,140 pairs; grouping again after each of 120 arrivals scores
-287,980 pairs in all. A test holds both counts, so a change that makes grouping costlier fails. On the
+287,980 pairs in all. What grouping reads from a photo (its words, name, amounts, panel, dates and the
+forms of its words one letter off) is worked out once, when the photo arrives, and kept. A test holds
+the pair counts, and that the lookups for words one letter off stay within their bound per pair, so a
+change that makes grouping costlier fails. On the
 Linux development machine the 120 arrivals took about 1.1 seconds in a release build and 2.3 to 3.3
 seconds in a debug build, and one grouping of all 120 about 23 ms in release. A phone has not been
 measured.
@@ -133,17 +136,36 @@ the same photos in any order give the same groups. All weights and thresholds ar
 | Feature prints within 0.5 | 25 | Looks alike. Supporting evidence only. |
 | Three or more shared label words, covering half the shorter label | 50 | Front and back of one package usually repeat the brand and product name. |
 | Two shared words, or one of five letters or more | 25 | A brand alone. Supporting evidence only. |
+| A name word one letter off a word on the other photo | 20 | A misread ("Toacker" for "Loacker"). Counts toward a suggestion only, never toward a merge. |
 | Taken one straight after the other, within 20 seconds | 15 | People photograph one package at a time. Never enough alone. |
 | A photo of only a date, taken straight after | 45 | The usual order is front, then date. With the 15 above, it groups. |
 | A photo of only a date, taken straight before | 15 | Less usual; with the 15 above it is only a suggestion. |
 
-A pair at **60** or more is grouped; a pair from **30** up to 60 is shown on both cards as "Might be the
-same as …" with Merge and Not the same. Pairs join strongest first.
+A pair at **60** or more, not counting the points for words one letter off, is grouped; a pair from
+**30** up to 60, counting them, is shown on both cards as "Might be the same as …" with Merge and Not
+the same. Pairs join strongest first.
 
 Label words are lower case, without accents, at least three letters, with no digits, and not in a list
 of words printed on most packages (units, nutrition panel words, date labels, months, storage
 instructions, legal and marketing filler). A word on more than four photos and more than 30% of the
 batch, such as a store brand, is ignored for that batch.
+
+**Words one letter off.** Recognition often gets one letter wrong ("Toacker" for the stylized
+"Loacker", "Sparking" for "Sparkling"), and exact matching then loses the word. Each word of a photo's
+name (at most 4) is looked for one letter off (one letter added, dropped or changed, not two letters
+swapped) among the other photo's label words (at most 64, from its tallest lines first). Both words
+must have at least **7 letters** (`nearWordLetters`) and at most 20. Shorter words one letter apart are
+too often different products: coffee and toffee, skim and skip, salt and malt. Lemon and melon are two
+changes apart and never match. A word on most of the batch's photos is never matched this way either. A
+match is shown as "words on the label" and adds 20 points that count toward a suggestion only. Each
+photo's words are prepared once, with every word's one-letter-removed and one-letter-replaced forms, so
+a pair needs at most a fixed number of lookups (`PhotoGrouper.nearLookupsPerPair`, 328 with these
+values) and no word-by-word comparison.
+
+What 7 letters cannot prevent: two products whose names differ by one letter in a long word, such as
+mustard and custard, roasted and toasted, or noodles and doodles, can match one letter off. Between two
+fronts that changes nothing below, and the pair gains at most a suggestion; between a front and a back
+it can hide their difference (see below).
 
 **Panels.** No line of a nutrition, supplement or ingredients panel, or of an allergen statement, gives
 label words, a name or a prominent amount (`LabelText.isPanelLine`). A panel line is one with a panel's
@@ -162,7 +184,12 @@ when:
 - they show **different barcodes**: two products, however alike (no suggestion either);
 - their **names differ by a distinguishing word**: the two prominent names share a word but each has a
   word that appears nowhere on the other photo, such as baking soda and baking powder, whole milk and
-  skim milk, vanilla and strawberry yogurt (shown as a suggestion when they are otherwise alike);
+  skim milk, vanilla and strawberry yogurt (shown as a suggestion when they are otherwise alike). Two
+  fronts are compared on exact words only, so "Mustard" and "Custard" fronts stay apart. When either
+  photo shows a barcode, a date or a panel, a name word one letter off a word on the other photo
+  counts as that word, misread, both for sharing a word and for lacking one: a back reading "Sparking
+  water" does not differ from a "Sparkling water" front, while a "Toacker Vanilla" front and a
+  "Loacker Chocolate" back still differ by flavor;
 - they show **different prominent percentages or net contents**: 2% and 1% milk, 16 oz and 32 oz.
   Percentages count only on large lines that hold a real word, so nutrition panels do not count.
 
