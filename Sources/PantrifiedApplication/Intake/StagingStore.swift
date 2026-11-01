@@ -34,7 +34,9 @@ public struct StagedPhoto: Sendable, Hashable, Codable, Identifiable {
     public let contentDigest: String?
     public internal(set) var observation: PhotoObservation?
     /// Reads started and not cancelled. Counted before each read, so a read that crashes the app or
-    /// is stopped by the system counts as well as one that fails.
+    /// is stopped by the system counts as well as one that fails. A read that finished but whose
+    /// result could not be kept on a storage error hands its count to the next read of the photo
+    /// while the app keeps running.
     public internal(set) var readAttempts = 0
     /// Read too many times without a result. It is kept with nothing read from it.
     public internal(set) var couldNotRead = false
@@ -229,6 +231,12 @@ public actor StagingStore {
     private var saved = Manifest(batches: [])
     /// What went wrong reading the batch list in this launch, for the screen to say once.
     public private(set) var loadProblem: StagingLoadProblem?
+    /// Photos with a read `beginRead` counted that has not yet been kept or cancelled.
+    private var readsCounted: Set<IntakePhotoID> = []
+    /// Photos whose counted read finished but whose result could not be kept on a storage error. Their
+    /// next read takes over that count, so storage trouble cannot use up a good photo's reads. Kept in
+    /// memory only: after a relaunch such a read counts like one that crashed.
+    private var readNotKept: Set<IntakePhotoID> = []
 
     public init(files: any StagingFiles, time: any TimeSource, recoveryWindow: TimeInterval = StagingStore.defaultRecoveryWindow) {
         self.files = files
@@ -485,12 +493,14 @@ public actor StagingStore {
         guard batches[index].photos[position].observation == nil else { return false }
         do {
             try files.write(try JSONEncoder().encode(observation), to: Self.observationName(observation.photo))
+            batches[index].photos[position].observation = observation
+            batches[index].photos[position].couldNotRead = couldNotRead
+            try save()
         } catch {
+            if readsCounted.remove(observation.photo) != nil, !couldNotRead { readNotKept.insert(observation.photo) }
             throw .storage
         }
-        batches[index].photos[position].observation = observation
-        batches[index].photos[position].couldNotRead = couldNotRead
-        try save()
+        readsCounted.remove(observation.photo)
         return true
     }
 
@@ -500,8 +510,11 @@ public actor StagingStore {
         try writable()
         guard let index = index(id) else { throw .unknownBatch }
         guard let position = batches[index].photos.firstIndex(where: { $0.id == photo }) else { throw .unknownPhoto }
-        batches[index].photos[position].readAttempts += 1
-        try save()
+        if readNotKept.remove(photo) == nil {
+            batches[index].photos[position].readAttempts += 1
+            try save()
+        }
+        readsCounted.insert(photo)
         return batches[index].photos[position].readAttempts
     }
 
@@ -514,6 +527,7 @@ public actor StagingStore {
         guard batches[index].photos[position].readAttempts > 0 else { return }
         batches[index].photos[position].readAttempts -= 1
         try save()
+        readsCounted.remove(photo)
     }
 
     public func observations(in id: IntakeBatchID) -> [PhotoObservation] {

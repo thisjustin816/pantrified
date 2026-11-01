@@ -80,7 +80,9 @@ read a batch twice at once. Its rules (`ReadingPolicy` and `LookupPolicy`, pure 
 
 A cancelled read keeps its slot until it ends, so the most decoded photos in memory for reading is the
 number of slots. Every attempt is counted in the store before it starts; a read cancelled by closing the
-batch is taken back.
+batch is taken back. A read that finished but whose result could not be kept on a storage error hands its
+count to the photo's next read, so storage trouble cannot mark a good photo "could not read". The store
+keeps that in memory only, so after a relaunch such a read counts like one that crashed.
 
 **Grouping as photos arrive.** After each read, `LiveGrouping` runs `PhotoGrouper` again over every
 observation read so far, unchanged. Grouping is a pure function of the set of observations, so the

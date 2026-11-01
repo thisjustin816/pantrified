@@ -601,6 +601,30 @@ struct BatchIntakeTests {
         #expect(await recognizer.reads == 2)
     }
 
+    @Test("reads whose results could not be kept do not use up the photo's reads, so it is read once storage works")
+    func storageErrorsKeepReads() async throws {
+        let world = IntakeWorld()
+        let store = world.launch()
+        let batch = try await world.stage(["rice"], in: store)
+        let photo = try #require(await store.batch(batch)?.photos.first)
+        let recognizer = FakeRecognizer(files: world.files, readings: IntakeFixture.readings)
+        let pipeline = world.pipeline(store, recognizer: recognizer)
+        world.files.failWrites(to: StagingStore.observationName(photo.id))
+        // As many failed runs as a photo has reads (`IntakePipeline.attemptsPerPhoto`).
+        for _ in 1...2 {
+            await #expect(throws: StagingError.notRecognized) {
+                _ = try await pipeline.finish(batch, locations: world.locations, defaultLocation: world.locations[0].id)
+            }
+        }
+
+        world.files.allowWrites()
+        let review = try await pipeline.finish(batch, locations: world.locations, defaultLocation: world.locations[0].id)
+        #expect(review.summaries.map(\.name) == ["Basmati rice"])
+        #expect(await recognizer.reads == 3)
+        #expect(await store.batch(batch)?.photos.first?.couldNotRead == false)
+        #expect(await store.batch(batch)?.photos.first?.readAttempts == 1)
+    }
+
     @Test("a photo that crashes the reader is counted before each read, and after two crashes it is kept as unreadable", .timeLimit(.minutes(1)))
     func crashingPhoto() async throws {
         let world = IntakeWorld()
