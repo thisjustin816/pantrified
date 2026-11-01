@@ -44,6 +44,7 @@ final class AppLaunch {
     func start() async {
         guard !started else { return }
         started = true
+        ReadExportFiles.temporary.removeAll()
         do {
             let files = try files()
             let store = try LocalPersistence.open(files)

@@ -33,6 +33,7 @@ struct IntakeReviewView: View {
             .navigationTitle("Review")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbar }
+            .readExportMenu(intake)
             .environment(\.editMode, $editMode)
             .safeAreaInset(edge: .bottom) { bottomBar }
             .sheet(item: $editing) { target in
