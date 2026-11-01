@@ -47,23 +47,28 @@ struct ScreenshotScenario {
         let place: Int
         var quantity: Quantity = .unknown
         var date: (label: PrintedDateLabel, daysFromNow: Int)?
+        var barcode: GTIN?
 
         static func == (a: Sample, b: Sample) -> Bool {
             a.name == b.name && a.place == b.place && a.quantity == b.quantity
-                && a.date?.label == b.date?.label && a.date?.daysFromNow == b.date?.daysFromNow
+                && a.date?.label == b.date?.label && a.date?.daysFromNow == b.date?.daysFromNow && a.barcode == b.barcode
         }
     }
 
     /// Enough variety to show every state: past guidance, use soon from a printed date, use soon
     /// from sourced guidance with no date, fine, and unknown, with one long name to test wrapping.
+    /// The yogurt's barcode and the rice are what the batch review remembers places from.
     static let samples: [Sample] = [
         Sample(name: "Chicken thighs", place: 0, date: (.useBy, -1)),
         Sample(name: "Spinach", place: 0, quantity: .aboutHalf, date: (.useBy, 2)),
         Sample(name: "Asparagus", place: 0),
-        Sample(name: "Organic whole milk Greek yogurt with honey and vanilla, family size", place: 0, quantity: .full, date: (.bestBy, 12)),
+        Sample(
+            name: "Organic whole milk Greek yogurt with honey and vanilla, family size", place: 0, quantity: .full,
+            date: (.bestBy, 12), barcode: yogurt
+        ),
         Sample(name: "Eggs", place: 0, quantity: .aboutHalf),
         Sample(name: "Frozen peas", place: 1, quantity: .full),
-        Sample(name: "Rice", place: 2, quantity: .aboutHalf),
+        Sample(name: "Basmati rice", place: 2, quantity: .aboutHalf),
         Sample(name: "Canned tomatoes", place: 2, date: (.bestBy, 400)),
     ]
 
@@ -74,7 +79,8 @@ struct ScreenshotScenario {
                 name: sample.name,
                 location: locations[sample.place].id,
                 quantity: sample.quantity,
-                printedDate: sample.date.flatMap { Self.printedDate($0.label, daysFromNow: $0.daysFromNow, now: now) }
+                printedDate: sample.date.flatMap { Self.printedDate($0.label, daysFromNow: $0.daysFromNow, now: now) },
+                barcode: sample.barcode
             ))
         }
     }
@@ -103,9 +109,12 @@ struct ScreenshotScenario {
     static let yogurt = GTIN("4006381333931")!
     static let beans = GTIN("036000291452")!
 
-    /// A batch that shows each kind of candidate: a front, back and barcode grouped with a date read
-    /// from the label, two near-identical products kept apart and flagged, a date that reads two
-    /// ways, a place read from "Keep frozen", a name from the barcode lookup, and a photo with no name.
+    /// A batch that shows each kind of candidate in each kind of place: a front, back and barcode
+    /// grouped with a date read from the label, in the fridge because the sample yogurt with that
+    /// barcode is; two near-identical products kept apart and flagged, in the pantry from FoodKeeper;
+    /// a date that reads two ways, in the pantry where the sample rice is; the freezer read from
+    /// "Keep frozen"; cottage cheese in the fridge from FoodKeeper; and, needing a place, a name from
+    /// the barcode lookup and a photo with no name.
     static func samplePhotos(now: Date) -> [SamplePhoto] {
         let useBy = Calendar.current.date(byAdding: .day, value: 12, to: now) ?? now
         let parts = Calendar.current.dateComponents([.year, .month, .day], from: useBy)
@@ -115,11 +124,12 @@ struct ScreenshotScenario {
         return [
             SamplePhoto(lines: [("CHOBANI", 0.08, 0.09), ("GREEK YOGURT", 0.2, 0.1), ("Plain nonfat", 0.6, 0.03)], secondsAfterLast: 0),
             SamplePhoto(lines: [("Chobani greek yogurt", 0.1, 0.03), ("Plain nonfat", 0.2, 0.03), (printed, 0.8, 0.02)], codes: [.product(yogurt)]),
-            SamplePhoto(lines: [("ARM & HAMMER", 0.08, 0.09), ("BAKING SODA", 0.2, 0.1)], secondsAfterLast: 40),
-            SamplePhoto(lines: [("CLABBER GIRL", 0.08, 0.09), ("BAKING POWDER", 0.2, 0.1)], secondsAfterLast: 12),
+            SamplePhoto(lines: [("BAKING SODA", 0.2, 0.1), ("Pure, 1 lb", 0.6, 0.03)], secondsAfterLast: 40),
+            SamplePhoto(lines: [("BAKING POWDER", 0.2, 0.1), ("Double acting, 8.1 oz", 0.6, 0.03)], secondsAfterLast: 12),
             SamplePhoto(lines: [("Basmati rice", 0.2, 0.1), (String(format: "BEST BEFORE 05/06/%02d", nextYear), 0.85, 0.02)], secondsAfterLast: 40),
             SamplePhoto(lines: [("Birds Eye", 0.08, 0.08), ("Sweet peas", 0.2, 0.1), ("KEEP FROZEN", 0.9, 0.02)], secondsAfterLast: 40),
             SamplePhoto(lines: [("Ingredients: black beans, water, salt", 0.5, 0.02)], codes: [.product(beans)], secondsAfterLast: 40),
+            SamplePhoto(lines: [("COTTAGE CHEESE", 0.2, 0.1), ("Small curd, 4% milkfat", 0.6, 0.03)], secondsAfterLast: 40),
             SamplePhoto(secondsAfterLast: 40),
         ]
     }
@@ -145,7 +155,9 @@ struct ScreenshotScenario {
 
     /// A plain tinted square standing in for a photo.
     static func placeholder(_ index: Int) -> Data {
-        let colors: [UIColor] = [.systemTeal, .systemTeal, .systemOrange, .systemRed, .systemYellow, .systemGreen, .systemBrown, .systemGray]
+        let colors: [UIColor] = [
+            .systemTeal, .systemTeal, .systemOrange, .systemRed, .systemYellow, .systemGreen, .systemBrown, .systemIndigo, .systemGray,
+        ]
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: 240, height: 240))
         return renderer.pngData { context in
             colors[index % colors.count].withAlphaComponent(0.55).setFill()
