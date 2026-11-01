@@ -1,0 +1,206 @@
+{
+  "app" : {
+    "build" : "57",
+    "device" : "iPhone17,1",
+    "system" : "iOS 27.0",
+    "version" : "0.1"
+  },
+  "batchDay" : "2027-01-15",
+  "corrections" : {
+    "deletedPhotos" : [
+
+    ],
+    "packages" : [
+      {
+        "count" : 1,
+        "dateDecided" : false,
+        "fromGroups" : [
+          0
+        ],
+        "mergedByPerson" : false,
+        "nameDecided" : false,
+        "photos" : [
+          0
+        ],
+        "place" : {
+          "kind" : "fridge",
+          "position" : 1,
+          "source" : "standard"
+        },
+        "status" : "reviewing",
+        "suggestedWith" : [
+
+        ]
+      },
+      {
+        "count" : 1,
+        "dateDecided" : false,
+        "fromGroups" : [
+          0
+        ],
+        "mergedByPerson" : false,
+        "nameDecided" : false,
+        "photos" : [
+          1
+        ],
+        "place" : {
+          "kind" : "fridge",
+          "position" : 1,
+          "source" : "standard"
+        },
+        "status" : "reviewing",
+        "suggestedWith" : [
+
+        ]
+      }
+    ],
+    "splitGroups" : [
+      0
+    ]
+  },
+  "distanceKeptUpTo" : 1,
+  "format" : "pantrified.read-export",
+  "groups" : [
+    {
+      "barcode" : "05012345678900",
+      "links" : [
+        {
+          "matchedWith" : 0,
+          "photo" : 1,
+          "score" : 60,
+          "signals" : [
+            "takenRightAfter"
+          ]
+        }
+      ],
+      "photos" : [
+        0,
+        1
+      ],
+      "proposals" : {
+        "barcodeSeenApart" : false,
+        "datesDisagree" : false,
+        "labelName" : {
+          "text" : "Toacker Minis"
+        },
+        "nameSource" : "label",
+        "place" : {
+          "kind" : "fridge",
+          "position" : 1,
+          "source" : "standard"
+        },
+        "refusedCodes" : [
+
+        ],
+        "sawLink" : false
+      },
+      "sharedPhotos" : [
+
+      ]
+    }
+  ],
+  "lookups" : [
+
+  ],
+  "pairs" : [
+    {
+      "first" : 0,
+      "oneLetterOffPoints" : 0,
+      "score" : 60,
+      "second" : 1,
+      "shotOrderPoints" : 45,
+      "signals" : [
+        {
+          "points" : 15,
+          "signal" : "takenRightAfter"
+        }
+      ]
+    }
+  ],
+  "photos" : [
+    {
+      "codes" : [
+
+      ],
+      "hasFeaturePrint" : false,
+      "kind" : "package",
+      "lines" : [
+        {
+          "box" : {
+            "height" : 0.09,
+            "width" : 0.7,
+            "x" : 0.1,
+            "y" : 0.08
+          },
+          "confidence" : 0.9,
+          "text" : "Toacker"
+        },
+        {
+          "box" : {
+            "height" : 0.1,
+            "width" : 0.7,
+            "x" : 0.1,
+            "y" : 0.2
+          },
+          "confidence" : 0.9,
+          "text" : "Minis"
+        }
+      ],
+      "removed" : false,
+      "role" : "front",
+      "secondsAfterFirst" : 0,
+      "sequence" : 0,
+      "showsPanel" : false
+    },
+    {
+      "codes" : [
+        {
+          "kind" : "product",
+          "product" : "05012345678900"
+        }
+      ],
+      "hasFeaturePrint" : false,
+      "kind" : "package",
+      "lines" : [
+        {
+          "box" : {
+            "height" : 0.03,
+            "width" : 0.7,
+            "x" : 0.1,
+            "y" : 0.5
+          },
+          "confidence" : 0.9,
+          "text" : "Nutrition Facts"
+        },
+        {
+          "box" : {
+            "height" : 0.03,
+            "width" : 0.7,
+            "x" : 0.1,
+            "y" : 0.55
+          },
+          "confidence" : 0.9,
+          "text" : "Calories 50"
+        }
+      ],
+      "removed" : false,
+      "role" : "back",
+      "secondsAfterFirst" : 6,
+      "sequence" : 1,
+      "showsPanel" : true
+    }
+  ],
+  "suggestions" : [
+
+  ],
+  "version" : 1,
+  "withheld" : {
+    "barcodes" : 0,
+    "lines" : 0,
+    "linesByCheck" : 0,
+    "names" : 0,
+    "photos" : [
+
+    ]
+  }
+}
