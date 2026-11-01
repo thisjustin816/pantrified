@@ -134,6 +134,30 @@ struct PantryTests {
         #expect(entry.package.addedAt == syncEpoch)
     }
 
+    @Test("an edit shows in the snapshot, a corrected date changes what needs attention, and undo reverses it", arguments: InventoryStore.allCases)
+    func editShowsInSnapshot(store: InventoryStore) async throws {
+        let setup = try await Setup(store)
+        let places = try await setup.prepared()
+        let id = try await setup.pantry.add(NewFood(name: "Mayo", location: places.fridge.id, printedDate: date(.bestBy, 30)))
+        #expect(try await setup.pantry.snapshot().entries.first?.needsAttention == false)
+
+        let outcome = try await setup.pantry.edit(
+            PackageEdit(name: .set("Mayonnaise"), printedDate: .set(date(.bestBy, 16))), on: id
+        )
+
+        let edited = try #require(try await setup.pantry.snapshot().entries.first)
+        #expect(edited.package.name == "Mayonnaise")
+        #expect(edited.package.printedDate == date(.bestBy, 16))
+        #expect(edited.needsAttention)
+        guard case .applied(let tokens) = outcome else { Issue.record("not applied"); return }
+
+        try await setup.pantry.undo(tokens)
+
+        let undone = try #require(try await setup.pantry.snapshot().entries.first)
+        #expect(undone.package.name == "Mayo")
+        #expect(undone.needsAttention == false)
+    }
+
     @Test("an entry carries every window of the guidance matched to it, and none when nothing matched", arguments: InventoryStore.allCases)
     func entryCarriesGuidance(store: InventoryStore) async throws {
         let guidance = StorageGuidance(

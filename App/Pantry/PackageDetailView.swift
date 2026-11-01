@@ -8,6 +8,7 @@ struct PackageDetailView: View {
     let id: PackageID
 
     @Environment(\.dismiss) private var dismiss
+    @State private var editing = false
 
     private var entry: PantryEntry? { model.snapshot?.entries.first { $0.id == id } }
 
@@ -25,6 +26,16 @@ struct PackageDetailView: View {
         }
         .navigationTitle(entry?.package.name ?? "Food")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if let entry {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Edit") { editing = true }
+                }
+            }
+        }
+        .sheet(isPresented: $editing) {
+            if let entry { EditFoodView(model: model, entry: entry) }
+        }
         .pantryChrome(model)
     }
 
