@@ -374,7 +374,7 @@ struct BatchCaptureView: View {
         }
     }
 
-    /// Copies each picked photo into the staging folder without its location. The originals stay in
+    /// Copies each picked photo into the staging folder without its file's metadata. The originals stay in
     /// Photos, untouched. The time it was taken and the duplicate check come from the original.
     private func importPhotos(_ items: [PhotosPickerItem]) async {
         importing = true

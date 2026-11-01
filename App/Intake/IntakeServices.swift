@@ -89,19 +89,24 @@ enum PhotoFormat {
         return formatter.date(from: text)
     }
 
-    /// The same image without its location. The image data is copied unchanged where the format
-    /// allows it, and otherwise written again from the original with every other property kept, so
-    /// its orientation and the time it was taken stay. Nil when the bytes are not an image.
+    /// The longest side of a picked photo's copy. Above what reading uses
+    /// (`VisionPhotoRecognizer.maximumPixels`), so nothing it reads is lost.
+    static let copyPixels = 4_032
+
+    /// A copy of a picked photo with none of its file's metadata: no location, camera or times. The
+    /// image is drawn upright, at most `copyPixels` on its longest side, and written as JPEG, so
+    /// every format the picker gives is handled the same way. Nil when the bytes are not an image.
     static func withoutLocation(_ data: Data) -> Data? {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil), let type = CGImageSourceGetType(source) else { return nil }
-        let copied = NSMutableData()
-        if let destination = CGImageDestinationCreateWithData(copied, type, 1, nil),
-           CGImageDestinationCopyImageSource(destination, source, [kCGImageMetadataShouldExcludeGPS: true] as CFDictionary, nil) {
-            return copied as Data
-        }
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: copyPixels,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+        ]
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
         let written = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(written, type, 1, nil) else { return nil }
-        CGImageDestinationAddImageFromSource(destination, source, 0, [kCGImagePropertyGPSDictionary: kCFNull] as CFDictionary)
+        guard let destination = CGImageDestinationCreateWithData(written, "public.jpeg" as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.92] as CFDictionary)
         return CGImageDestinationFinalize(destination) ? written as Data : nil
     }
 

@@ -150,27 +150,29 @@ struct BatchIntakeAppTests {
         #expect(PhotoFormat.thumbnail(of: png) != nil)
     }
 
-    @Test("a picked photo's copy loses its location and keeps its image and the time it was taken")
+    @Test("a picked photo's copy keeps its image and none of its file's metadata")
     func withoutLocation() throws {
         let png = try Self.drawnLabel(text: "A", qr: nil)
         let source = try #require(CGImageSourceCreateWithData(png as CFData, nil))
         let image = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
-        for type in ["public.jpeg", "public.heic"] {
-            let tagged = NSMutableData()
-            let destination = try #require(CGImageDestinationCreateWithData(tagged, type as CFString, 1, nil))
-            let properties: [CFString: Any] = [
-                kCGImagePropertyGPSDictionary: [kCGImagePropertyGPSLatitude: 47.6, kCGImagePropertyGPSLatitudeRef: "N"],
-                kCGImagePropertyExifDictionary: [kCGImagePropertyExifDateTimeOriginal: "2026:10:30 18:05:00"],
-            ]
-            CGImageDestinationAddImage(destination, image, properties as CFDictionary)
-            guard CGImageDestinationFinalize(destination) else { continue }
-            let original = tagged as Data
-            #expect(PhotoFormat.hasLocation(original))
-            let copy = try #require(PhotoFormat.withoutLocation(original))
-            #expect(!PhotoFormat.hasLocation(copy))
-            #expect(PhotoFormat.takenAt(copy) == PhotoFormat.takenAt(original))
-            #expect(PhotoFormat.thumbnail(of: copy) != nil)
-        }
+        let tagged = NSMutableData()
+        let destination = try #require(CGImageDestinationCreateWithData(tagged, "public.jpeg" as CFString, 1, nil))
+        let properties: [CFString: Any] = [
+            kCGImagePropertyGPSDictionary: [kCGImagePropertyGPSLatitude: 47.6, kCGImagePropertyGPSLatitudeRef: "N"],
+            kCGImagePropertyExifDictionary: [kCGImagePropertyExifDateTimeOriginal: "2026:10:30 18:05:00"],
+        ]
+        CGImageDestinationAddImage(destination, image, properties as CFDictionary)
+        #expect(CGImageDestinationFinalize(destination))
+        let original = tagged as Data
+        #expect(PhotoFormat.hasLocation(original))
+        #expect(PhotoFormat.takenAt(original) != nil)
+
+        let copy = try #require(PhotoFormat.withoutLocation(original))
+        #expect(!PhotoFormat.hasLocation(copy))
+        #expect(PhotoFormat.takenAt(copy) == nil)
+        #expect(PhotoFormat.fileExtension(of: copy) == "jpg")
+        let copied = try #require(CGImageSourceCreateWithData(copy as CFData, nil).flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) })
+        #expect(copied.width == image.width && copied.height == image.height)
         #expect(PhotoFormat.withoutLocation(Data("not an image".utf8)) == nil)
     }
 

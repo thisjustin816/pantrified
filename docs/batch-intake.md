@@ -244,11 +244,10 @@ can be read are kept, and the batch screen says a batch could not be opened. The
 it named are deleted a day later. A list written by a newer version of the app is opened read only and
 nothing in it is changed or deleted.
 
-A copy of a photo picked from the library is kept without its location (`PhotoFormat.withoutLocation`:
-the image data is copied unchanged where the format allows, otherwise written again); other details
-in its file, such as the camera model, stay until it is deleted with the batch. The time it was taken and
-the duplicate check come from the original. Nothing in it is read except the image and that time.
-Photos the camera takes carry no location.
+A copy of a photo picked from the library keeps none of its file's metadata: `PhotoFormat.withoutLocation`
+draws the image upright, at most 4,032 pixels on its longest side, and writes it as JPEG, so no location,
+camera model or time is kept. The time it was taken and the duplicate check are read from the original
+first, and nothing else in it is read. Photos the camera takes carry no location.
 
 ## What leaves the device
 
