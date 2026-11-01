@@ -876,6 +876,27 @@ struct BatchIntakeTests {
         #expect(try await world.pantry.snapshot().entries.map(\.package.name) == ["Basmati rice"])
     }
 
+    @Test("an unfinished batch with an add cut off is kept past three days, finished on relaunch, and then expires as usual")
+    func pendingAddOutlivesExpiry() async throws {
+        let world = IntakeWorld()
+        let store = world.launch()
+        let batch = try await world.stage(["rice", "beans"], in: store)
+        let review = try await world.process(batch, store)
+        // What `add` does for the rice, stopped before its package is saved.
+        try await store.updateReview(batch) { $0.beginAdd([review.summaries[0].id]) }
+
+        world.time.advance(hours: 24 * 4)
+        let relaunched = world.launch()
+        #expect(try await relaunched.sweep() == 0)
+        #expect(await relaunched.takeExpiryNotice() == false)
+        try await IntakeAdding(pantry: world.pantry, store: relaunched).resume(batch)
+        #expect(try await world.pantry.snapshot().entries.map(\.package.name) == ["Basmati rice"])
+
+        world.time.advance(hours: 72)
+        #expect(try await relaunched.sweep() == 2)
+        #expect(await relaunched.batch(batch) == nil)
+    }
+
     @Test("an undo cut off part way is finished on relaunch")
     func killDuringUndo() async throws {
         let world = IntakeWorld()

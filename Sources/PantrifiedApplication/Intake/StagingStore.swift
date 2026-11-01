@@ -593,7 +593,8 @@ public actor StagingStore {
 
     /// Deletes what is due, and returns how many photo files were deleted:
     ///
-    /// - an unfinished batch, entirely, `unfinishedBatchLifetime` after its last activity;
+    /// - an unfinished batch, entirely, `unfinishedBatchLifetime` after its last activity, unless an
+    ///   add from it is on record and not finished yet;
     /// - a finished batch, with its photos, a recovery window after it finished;
     /// - photo files no batch names, left by a crash between writing a file and recording it, once
     ///   no damaged batch list is set aside;
@@ -616,6 +617,8 @@ public actor StagingStore {
                 guard let finished = batch.finishedAt else { return false }
                 return now.timeIntervalSince(finished) >= recoveryWindow
             }
+            // An add on record is food the person put away; the batch waits for it to be finished.
+            guard batch.review?.pendingAdd.isEmpty != false else { return false }
             return now.timeIntervalSince(batch.lastActivityAt) >= Self.unfinishedBatchLifetime
         }
         if !expired.isEmpty {

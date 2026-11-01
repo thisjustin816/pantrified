@@ -229,7 +229,8 @@ progress, and a change whose save fails is undone in memory too:
 **Deleting.** One clock for an unfinished batch: it is deleted entirely, photo files, what was read
 from them and the review, 3 days (`StagingStore.unfinishedBatchLifetime`) after it was last used. Use is
 opening the batch screen, taking, picking or removing a photo, changing the review, and adding or undoing
-an add; reading on its own is not use. A finished batch, one with everything added or deleted, keeps its
+an add; reading on its own is not use. An unfinished batch holding an add that a kill cut off is kept
+until a launch finishes that add, however long that takes, so the food is not lost to expiry. A finished batch, one with everything added or deleted, keeps its
 photos for the one-day recovery window (`StagingStore.defaultRecoveryWindow`) so Add can be undone, then is
 deleted with them. **Discard** deletes the photos and the batch at once. Deleting runs while the app is
 open: at launch, whenever the app becomes active, and when the batch screen opens; an app that stays closed
