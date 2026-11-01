@@ -237,8 +237,10 @@ not used for any name or date, since it cannot say which product it belongs to.
 **Alternatives not taken.** Clustering by time gaps alone (fast, but one slow shot splits a package and
 two quick packages merge); a single text similarity score with one threshold (merges near-identical
 products, the failure the owner's research names); average or complete linkage (more cautious than
-needed once barcodes and differing names already block merges, and harder to explain); and an on-device
-model to judge pairs (not explainable, not testable on Linux, and model confidence is not calibrated).
+needed once barcodes and differing names already block merges, and harder to explain); and a model to
+judge pairs as the first or only step (not explainable, not testable on Linux, and model confidence is not
+calibrated). A model used for suggestions and name proposals after the rules, on doubtful items only, is
+planned (`ai-runtime.md`, Reading labels with a model).
 
 ## Candidates and proposals
 
