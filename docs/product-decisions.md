@@ -54,6 +54,9 @@ Competitive research reinforced the core execution hypothesis: Pantrified wins o
 - Vision OCR and barcode recognition are the deterministic baseline.
 - The capture stream may group front/barcode/date observations into package candidates, but uncertainty must remain visible and reviewable.
 - Review/put-away supports reassign, merge, split, field edits, and bulk location assignment.
+- Grouping is automatic. The person photographs everything, the app groups the photos into package candidates, and merge and split exist to correct a mistake. Front, back, barcode and date photos of one package belong in one candidate without the person asking.
+- Review/put-away shows candidates in sections by place (Fridge, Freezer, Pantry, and a section for anything with no place yet). The app proposes a place for each candidate automatically. The person presses and drags a candidate, or a selection, to another section. Every move is also available from a menu and as a VoiceOver action, and every move has undo.
+- Moving a candidate between sections should feel good: it lifts under the finger, the section it will land in highlights, it settles with a spring, and there is a light haptic. With Reduce Motion on, the same moves happen without the motion. Decided; not built yet (`batch-intake.md`).
 - Bulk location acceptance has undo, and useful location corrections may inform future defaults.
 - Existing photos may be imported with the system Photos picker.
 - New captures are temporary app-owned files, not saved to Photos by default.
