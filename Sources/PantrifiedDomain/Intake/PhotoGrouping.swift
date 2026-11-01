@@ -400,9 +400,9 @@ public struct PhotoGrouper: Sendable {
     }
 
     /// Adds `detailPhotoAfter` or `detailPhotoBefore` to a front and a photo of a package's details
-    /// taken one right after the other. Not when either photo's words or looks point more strongly
-    /// to another photo of the other kind: a back that shares its brand with the next front, after
-    /// a front photographed alone, belongs with that next front.
+    /// taken one right after the other. Not when either photo's words or looks point more strongly,
+    /// by at least `suggestAt`, to another photo of the other kind: a back that shares its name with
+    /// the next front, after a front photographed alone, belongs with that next front.
     private func withShotOrder(_ pairs: [Pair], _ photos: [PreparedPhoto]) -> [Pair] {
         func isFront(_ index: Int) -> Bool { !photos[index].showsDetails && !photos[index].prominent.isEmpty }
         func isDetail(_ index: Int) -> Bool { photos[index].showsDetails && !photos[index].isDateOnly }
@@ -417,8 +417,10 @@ public struct PhotoGrouper: Sendable {
                 strongest[photo] = Array(links.prefix(2))
             }
         }
+        // Only a link worth a suggestion on its own counts: a brand alone in a maker's address does
+        // not take a back away from the front taken right before it.
         func strongerElsewhere(_ photo: Int, than content: Int, besides partner: Int) -> Bool {
-            strongest[photo]?.contains { $0.partner != partner && $0.content > content } ?? false
+            strongest[photo]?.contains { $0.partner != partner && $0.content > content && $0.content >= policy.suggestAt } ?? false
         }
 
         return pairs.map { pair in

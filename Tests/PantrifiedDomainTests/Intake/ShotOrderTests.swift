@@ -68,6 +68,16 @@ struct ShotOrderTests {
         #expect(grouper.group(photos).sequences(photos) == [[0], [1, 2]])
     }
 
+    @Test("a brand alone shared with another front does not take a back away from the front taken right before it")
+    func brandAloneDoesNotCompete() {
+        let photos = [
+            Fixture.photo(0, lines: Fixture.front("Minis", brand: "Toacker")),
+            Fixture.photo(1, lines: [Fixture.line("I: A. LOACKER SPA, 39054 AUNA DI SOTTO (BZ), ITALY. PRODUCT OF ITALY.", row: 0.1, size: 0.01)] + Fixture.back([]), codes: [.product(Fixture.beans)]),
+            Fixture.photo(2, seconds: 300, lines: Fixture.front("Napolitaner wafers", brand: "Loacker")),
+        ]
+        #expect(grouper.group(photos).sequences(photos) == [[0, 1], [2]])
+    }
+
     @Test("a front whose own back comes later does not take the other product's back taken right after it")
     func frontKeepsItsOwnBack() {
         let photos = [
