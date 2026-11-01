@@ -111,6 +111,26 @@ struct PhotoGroupingTests {
         #expect(result.suggestions.first?.signals.contains(.differentLabelWords) == true)
     }
 
+    @Test("a flavor printed small right under the name tells two fronts of one brand apart")
+    func flavorUnderName() {
+        func front(_ flavor: String) -> [RecognizedTextLine] {
+            [
+                Fixture.line("Loacker", row: 0.36, size: 0.04), Fixture.line("Minis", row: 0.43, size: 0.05),
+                Fixture.line(flavor, row: 0.5, size: 0.016), Fixture.line("Crispy wafers with \(flavor) cream filling", row: 0.535, size: 0.012),
+            ]
+        }
+        let flavors = [
+            Fixture.photo(0, lines: front("VANILLA"), print: Fixture.print(7)),
+            Fixture.photo(1, lines: front("CHOCOLATE"), print: Fixture.print(7, offset: 0.1)),
+        ]
+        #expect(grouper.group(flavors).groups.count == 2)
+        let same = [
+            Fixture.photo(0, lines: front("VANILLA"), print: Fixture.print(7)),
+            Fixture.photo(1, lines: front("VANILLA"), print: Fixture.print(7, offset: 0.1)),
+        ]
+        #expect(grouper.group(same).groups.count == 1)
+    }
+
     @Test("products that differ by a printed percentage or size stay two candidates", arguments: [
         (["2% Reduced fat milk"], ["1% Low fat milk"]),
         (["2% Milk"], ["1% Milk"]),

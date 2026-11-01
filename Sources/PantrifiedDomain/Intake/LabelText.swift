@@ -76,30 +76,55 @@ public enum LabelText {
 
     /// The prominent name and the height of its tallest line, so photos can be compared.
     public static func prominentLine(in lines: [RecognizedTextLine]) -> (name: String, height: Double)? {
+        guard let block = nameBlock(in: lines) else { return nil }
+        let name = tidyName(block.ordered[block.lines].map(\.text).joined(separator: " "))
+        return name.isEmpty ? nil : (name, block.ordered[block.tallest].box.height)
+    }
+
+    /// The lines in reading order, and which of them make the name: the tallest usable line and the
+    /// neighbor joined to it.
+    private static func nameBlock(in lines: [RecognizedTextLine]) -> (ordered: [RecognizedTextLine], lines: ClosedRange<Int>, tallest: Int)? {
         let ordered = readingOrder(lines)
-        let usable = Set(ordered.indices.filter {
-            isNameLike(ordered[$0].text) && (ordered[$0].confidence ?? 1) >= minimumNameConfidence && !isPanelLine(ordered[$0].text)
-        })
+        let usable = Set(ordered.indices.filter { isUsableName(ordered[$0]) })
         guard let tallest = usable.max(by: { a, b in
             let (ha, hb) = (ordered[a].box.height, ordered[b].box.height)
             return ha != hb ? ha < hb : a > b
         }) else { return nil }
         let line = ordered[tallest].box
-        var parts = [ordered[tallest].text]
         // A neighbour counts when it is at least 60% as tall and sits right beside the line.
         func partner(_ index: Int) -> Bool {
             guard usable.contains(index) else { return false }
             let other = ordered[index].box
             return other.height >= line.height * 0.6 && abs(other.midY - line.midY) <= max(line.height, other.height) * 1.8
         }
-        if tallest > 0, partner(tallest - 1) {
-            parts.insert(ordered[tallest - 1].text, at: 0)
-        } else if tallest + 1 < ordered.count, partner(tallest + 1) {
-            parts.append(ordered[tallest + 1].text)
-        }
-        let name = tidyName(parts.joined(separator: " "))
-        return name.isEmpty ? nil : (name, line.height)
+        if tallest > 0, partner(tallest - 1) { return (ordered, (tallest - 1)...tallest, tallest) }
+        if tallest + 1 < ordered.count, partner(tallest + 1) { return (ordered, tallest...(tallest + 1), tallest) }
+        return (ordered, tallest...tallest, tallest)
     }
+
+    private static func isUsableName(_ line: RecognizedTextLine) -> Bool {
+        isNameLike(line.text) && (line.confidence ?? 1) >= minimumNameConfidence && !isPanelLine(line.text)
+    }
+
+    /// The short line printed right under the name, where a flavor or variety often is ("Minis",
+    /// then "VANILLA"): the next line in reading order outside a panel, with one to `varietyWords`
+    /// significant words, starting within `varietyGap` name heights of the name's bottom. Nil when
+    /// there is none.
+    static func varietyLine(in lines: [RecognizedTextLine]) -> RecognizedTextLine? {
+        guard let block = nameBlock(in: lines),
+              let next = block.ordered[(block.lines.upperBound + 1)...].first(where: { !isPanelLine($0.text) }) else { return nil }
+        let name = block.ordered[block.tallest].box
+        let bottom = block.ordered[block.lines].map { $0.box.y + $0.box.height }.max() ?? 0
+        let words = significantTokens(next.text).count
+        guard isUsableName(next), (1...varietyWords).contains(words), next.box.y >= bottom - name.height / 2,
+              next.box.y - bottom <= name.height * varietyGap else { return nil }
+        return next
+    }
+
+    /// A variety line has at most this many significant words.
+    static let varietyWords = 3
+    /// A variety line starts within this many name heights below the name.
+    static let varietyGap = 2.0
 
     /// Lines at least half as tall as the photo's tallest line outside a panel: what the label shows
     /// most.
@@ -109,10 +134,13 @@ public enum LabelText {
         return usable.filter { $0.box.height >= tallest * 0.5 }
     }
 
-    /// The significant words of the photo's prominent name, where a product's name, variety and
-    /// flavour are printed. Empty when the photo has no name-like line.
+    /// The significant words of the photo's prominent name and of the variety line under it, where
+    /// a product's name, variety and flavour are printed. Empty when the photo has no name-like
+    /// line.
     public static func nameTokens(of observation: PhotoObservation) -> Set<String> {
-        Set(prominentName(in: observation.lines).map(significantTokens) ?? [])
+        let name = prominentName(in: observation.lines).map(significantTokens) ?? []
+        let variety = varietyLine(in: observation.lines).map { significantTokens($0.text) } ?? []
+        return Set(name + variety)
     }
 
     /// Amounts that tell two versions of a product apart: percentages printed prominently ("2%"
