@@ -19,10 +19,14 @@ public struct IntakeProposer: Sendable {
         let own = all.filter { !shared.contains($0.photo) && $0.kind == .package }
         var result = LabelProposals()
 
-        var best: (name: String, height: Double)?
+        // The tallest name on a photo without a panel; a panel photo's other lines only when no
+        // photo without a panel has a name. A panel line is never a name.
+        var best: (name: String, height: Double, onPanel: Bool)?
         for observation in own {
             guard let line = LabelText.prominentLine(in: observation.lines) else { continue }
-            if best == nil || line.height > best!.height { best = line }
+            let onPanel = LabelText.showsPanel(observation.lines)
+            if let current = best, current.onPanel == onPanel ? current.height >= line.height : !current.onPanel { continue }
+            best = (line.name, line.height, onPanel)
         }
         result.name = best?.name
 

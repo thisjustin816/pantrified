@@ -324,7 +324,9 @@ public struct PhotoGrouper: Sendable {
         return ordered.map { observation in
             let tokens = LabelText.significantTokens(of: observation)
             let products = observation.products
-            let isDateOnly = tokens.isEmpty && products.isEmpty && !dates.readings(in: observation.lines, takenAt: observation.capturedAt).isEmpty
+            let panel = LabelText.showsPanel(observation.lines)
+            let isDateOnly = tokens.isEmpty && products.isEmpty && !panel
+                && !dates.readings(in: observation.lines, takenAt: observation.capturedAt).isEmpty
             let amounts = LabelText.variantAmounts(of: observation)
             return Photo(
                 observation: observation, tokens: tokens, products: products, isDateOnly: isDateOnly,

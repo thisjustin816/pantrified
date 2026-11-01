@@ -145,6 +145,17 @@ of words printed on most packages (units, nutrition panel words, date labels, mo
 instructions, legal and marketing filler). A word on more than four photos and more than 30% of the
 batch, such as a store brand, is ignored for that batch.
 
+**Panels.** No line of a nutrition, supplement or ingredients panel, or of an allergen statement, gives
+label words, a name or a prominent amount (`LabelText.isPanelLine`). A panel line is one with a panel's
+heading ("Nutrition Facts", "Supplement Facts"), a serving line ("Serv. size", "Amount per serving",
+"Servings per container"), ingredients, allergens ("Contains: milk", "May contain peanuts"), daily
+values, calories with a number, a nutrient with an amount in g, mg or mcg ("Total Fat 2.5g"), or three
+or more commas, which an ingredients list running on from the line above has. A panel word of five
+letters or more also matches a word one letter off, so "Nutritlon Facts" and "Calorles 50" count. A
+percentage alone does not make a line a panel line, so "2% Reduced fat milk" keeps its amount. A photo
+**shows a panel** when one of its lines is a heading, serving, ingredients, allergen or daily value
+line; nutrient claims on a front, such as "0 calories" or "0g sugar", do not make it a panel photo.
+
 **What keeps two products apart.** Two photos are never grouped, directly or through a third photo,
 when:
 
@@ -171,10 +182,14 @@ model to judge pairs (not explainable, not testable on Linux, and model confiden
 
 Each candidate proposes, and says where each proposal came from:
 
-- **Name**: the barcode lookup's name ("From USDA FoodData Central") when there is one; otherwise the
-  tallest line of words on its photos, joined to a brand printed right above it ("Read from the label.
-  Check it."); otherwise nothing, marked "No name found". A name is never invented. Lines Vision was
-  less than 30% sure of are not used.
+- **Name**, in this order: a name the person set; the barcode lookup's name ("From USDA FoodData
+  Central"), kept by barcode on the batch, so it applies as soon as any photo of the candidate shows
+  the barcode; otherwise the tallest line of words on its photos that show no panel, joined to a brand
+  printed right above it ("Read from the label. Check it."); otherwise the tallest line outside the
+  panel on a panel photo; otherwise nothing, marked "No name found". A panel line is never a name, and
+  a name is never invented. Lines Vision was less than 30% sure of are not used. A merge reads the
+  name again from all the merged photos by the same order, so a panel photo's large print cannot win
+  over a front.
 - **Date**: the preferred printed date, or a pending choice when it reads two ways. "The photos show
   different dates" when they disagree.
 - **Place**: the location of the stated type when a label says "Keep frozen" or "Keep refrigerated";

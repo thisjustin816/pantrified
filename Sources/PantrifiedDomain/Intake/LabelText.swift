@@ -17,7 +17,8 @@ extension PrintedDateRecognition: PrintedDateReader {
 
 /// The words on a label that can tell two packages apart, and the line most likely to be the
 /// product's name. Numbers, units, date labels and words printed on most packages are left out,
-/// because two different products share them.
+/// because two different products share them, and so is every line of a nutrition, supplement or
+/// ingredients panel or an allergen statement, which never names the product.
 public enum LabelText {
     /// Lines top to bottom, then left to right. Lines whose middles are within half a line height
     /// of each other count as one row.
@@ -57,9 +58,10 @@ public enum LabelText {
         return tokens
     }
 
+    /// The significant words of every line outside a panel.
     public static func significantTokens(of observation: PhotoObservation) -> Set<String> {
         var tokens: Set<String> = []
-        for line in observation.lines {
+        for line in observation.lines where !isPanelLine(line.text) {
             tokens.formUnion(significantTokens(line.text))
         }
         return tokens
@@ -67,7 +69,7 @@ public enum LabelText {
 
     /// A short name from the most prominent text: the tallest line with significant words, joined to
     /// the line directly above or below it when that line is nearly as tall, as when a brand is
-    /// printed over the product. Nil when no line qualifies.
+    /// printed over the product. A panel line is never part of it. Nil when no line qualifies.
     public static func prominentName(in lines: [RecognizedTextLine]) -> String? {
         prominentLine(in: lines)?.name
     }
@@ -76,7 +78,7 @@ public enum LabelText {
     public static func prominentLine(in lines: [RecognizedTextLine]) -> (name: String, height: Double)? {
         let ordered = readingOrder(lines)
         let usable = Set(ordered.indices.filter {
-            isNameLike(ordered[$0].text) && (ordered[$0].confidence ?? 1) >= minimumNameConfidence
+            isNameLike(ordered[$0].text) && (ordered[$0].confidence ?? 1) >= minimumNameConfidence && !isPanelLine(ordered[$0].text)
         })
         guard let tallest = usable.max(by: { a, b in
             let (ha, hb) = (ordered[a].box.height, ordered[b].box.height)
@@ -99,9 +101,10 @@ public enum LabelText {
         return name.isEmpty ? nil : (name, line.height)
     }
 
-    /// Lines at least half as tall as the photo's tallest line: what the label shows most.
+    /// Lines at least half as tall as the photo's tallest line outside a panel: what the label shows
+    /// most.
     static func prominentLines(_ lines: [RecognizedTextLine]) -> [RecognizedTextLine] {
-        let usable = lines.filter { ($0.confidence ?? 1) >= minimumNameConfidence }
+        let usable = lines.filter { ($0.confidence ?? 1) >= minimumNameConfidence && !isPanelLine($0.text) }
         guard let tallest = usable.map(\.box.height).max(), tallest > 0 else { return [] }
         return usable.filter { $0.box.height >= tallest * 0.5 }
     }
@@ -221,6 +224,104 @@ public enum LabelText {
             }
         }
         return nil
+    }
+
+    // MARK: Panels
+
+    /// Whether the photo shows a nutrition, supplement or ingredients panel or an allergen statement:
+    /// a panel's heading, its serving line or its daily values. A line of nutrients alone, such as
+    /// "0 calories" printed on a front, does not make a photo a panel.
+    public static func showsPanel(_ lines: [RecognizedTextLine]) -> Bool {
+        lines.contains { panelKind($0.text) == .heading }
+    }
+
+    /// Whether the line belongs to a nutrition, supplement or ingredients panel or an allergen
+    /// statement. Such a line is never a name and never tells two products apart.
+    public static func isPanelLine(_ text: String) -> Bool {
+        panelKind(text) != nil
+    }
+
+    private enum PanelLine {
+        /// A line that only a panel prints: its title, serving line, daily values, ingredients or
+        /// allergens.
+        case heading
+        /// A nutrient with its amount, which a front can also print ("0g sugar").
+        case nutrient
+    }
+
+    /// Only a line's first `IntakeLimits.charactersPerLine` characters are read, as for a recognized
+    /// line. Words are compared after folding, and a panel word of `panelWordTolerantLetters` letters or
+    /// more also matches a word one letter off, since recognition misreads small print ("Nutritlon",
+    /// "Calorles").
+    private static func panelKind(_ text: String) -> PanelLine? {
+        let folded = text.prefix(IntakeLimits.charactersPerLine)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil).lowercased()
+        let words = folded.split(whereSeparator: { !$0.isLetter }).map(String.init)
+        guard !words.isEmpty else { return nil }
+        func has(_ keywords: Set<String>) -> Bool {
+            words.contains { word in
+                keywords.contains(word) || keywords.contains { keyword in
+                    keyword.count >= panelWordTolerantLetters && isOneEditApart(word, keyword)
+                }
+            }
+        }
+        let hasDigit = folded.contains(where: \.isNumber)
+        if has(["nutrition", "supplement"]), has(["facts", "fact", "information", "info", "label"]) { return .heading }
+        if has(["serving", "servings", "serv", "svg"]), hasDigit || has(["size", "per", "container"]) { return .heading }
+        if has(["ingredients", "ingredient", "allergen", "allergens", "allergy"]) { return .heading }
+        if has(["daily"]), has(["value", "values"]) { return .heading }
+        if words.contains("dv"), folded.contains("%") { return .heading }
+        if let first = words.first, first == "contains" || (first == "may" && words.dropFirst().first == "contain"),
+           has(allergenWords) { return .heading }
+        if has(["calories", "calorie", "kcal"]), hasDigit { return .nutrient }
+        if has(nutrientWords), hasNutrientAmount(folded) { return .nutrient }
+        // An ingredients list running on from the line above it.
+        if folded.filter({ $0 == "," }).count >= 3 { return .nutrient }
+        return nil
+    }
+
+    /// A number followed by grams, milligrams or micrograms, as a nutrient's amount is printed.
+    private static func hasNutrientAmount(_ text: String) -> Bool {
+        let characters = Array(text)
+        for index in characters.indices where characters[index].isNumber {
+            var cursor = index + 1
+            while cursor < characters.count, characters[cursor] == " " { cursor += 1 }
+            var unit = ""
+            while cursor < characters.count, characters[cursor].isLetter, unit.count < 4 {
+                unit.append(characters[cursor])
+                cursor += 1
+            }
+            if ["g", "mg", "mcg"].contains(unit) { return true }
+        }
+        return false
+    }
+
+    /// Panel words this long or longer also match a word one letter off.
+    static let panelWordTolerantLetters = 5
+
+    private static let nutrientWords: Set<String> = [
+        "fat", "sodium", "cholesterol", "cholest", "carbohydrate", "carbohydrates", "carb", "carbs", "fiber",
+        "fibre", "sugars", "sugar", "protein", "vitamin", "calcium", "iron", "potassium", "sat", "trans",
+    ]
+
+    private static let allergenWords: Set<String> = [
+        "milk", "wheat", "soy", "egg", "eggs", "peanut", "peanuts", "tree", "nut", "nuts", "fish", "shellfish",
+        "sesame", "almond", "almonds", "hazelnut", "hazelnuts", "gluten",
+    ]
+
+    // MARK: Words
+
+    /// Whether two words differ by exactly one letter added, dropped or changed: the common start
+    /// and the common end, which must not overlap, cover all but one letter of the longer word.
+    static func isOneEditApart(_ a: String, _ b: String) -> Bool {
+        let x = Array(a.unicodeScalars), y = Array(b.unicodeScalars)
+        guard abs(x.count - y.count) <= 1, x != y else { return false }
+        let shorter = min(x.count, y.count)
+        var prefix = 0
+        while prefix < shorter, x[prefix] == y[prefix] { prefix += 1 }
+        var suffix = 0
+        while suffix < shorter - prefix, x[x.count - 1 - suffix] == y[y.count - 1 - suffix] { suffix += 1 }
+        return prefix + suffix >= max(x.count, y.count) - 1
     }
 
     /// Words found on many packages that never tell two products apart: units, nutrition panel
