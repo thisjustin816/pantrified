@@ -290,7 +290,7 @@ is now, from when it was added or last moved; the newest package with the candid
 and without one the newest with its name. A place the household no longer has is skipped. Nothing new
 is stored: a correction is remembered because the package added from it is in that place. So a place
 the person chose in one batch is proposed for the same product in the next, and so is a place they
-moved the food to in the pantry later. A place proposed and accepted counts the same as one chosen,
+moved the food to later with Move on the food list. A place proposed and accepted counts the same as one chosen,
 and so do foods added before places were proposed, every one of which went to the Fridge unless its
 label said otherwise. When the packages or barcodes cannot be read, places are proposed without them.
 
