@@ -9,7 +9,7 @@ enum IntakeText {
 
     static let expired = "An unfinished batch was deleted after 3 days without use."
 
-    static let damagedBatch = "A batch couldn't be opened because its record was damaged. Its photos are deleted within a day."
+    static let damagedBatch = "A batch couldn't be opened because its record was damaged. Its photos are kept for a day, then deleted."
 
     static let newerVersion = "These batch photos were saved by a newer version of Pantrified. Update the app to open them. You can still add food by hand."
 

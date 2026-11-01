@@ -245,8 +245,8 @@ required-reason API is used.
 after a restart, nothing is written or deleted and it is read again on the next use. When it, or one
 batch in it, cannot be understood, the file is set aside as `batches.unreadable.json`, the batches that
 can be read are kept, and the batch screen says a batch could not be opened. The copy and the photos only
-it named are deleted a day later. A list written by a newer version of the app is opened read only and
-nothing in it is changed or deleted.
+it named are kept for a day, then deleted the next time deleting runs. A list written by a newer version
+of the app is opened read only and nothing in it is changed or deleted.
 
 A copy of a photo picked from the library keeps none of its file's metadata: `PhotoFormat.withoutLocation`
 draws the image upright, at most 4,032 pixels on its longest side, and writes it as JPEG, so no location,

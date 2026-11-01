@@ -53,6 +53,11 @@ struct BatchIntakeAppTests {
         #expect(IntakeText.photosStayHere.contains("never saved to your photo library"))
     }
 
+    @Test("the damaged batch notice says its photos are kept for a day before they are deleted")
+    func damagedBatchNotice() {
+        #expect(IntakeText.damagedBatch.hasSuffix("Its photos are kept for a day, then deleted."))
+    }
+
     @Test("the review screenshot opens batch intake over Today, and no other screen does")
     func screenshotScreen() {
         func start(_ screen: String) -> StartScreen? {
