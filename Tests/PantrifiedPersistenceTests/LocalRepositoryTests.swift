@@ -96,6 +96,8 @@ struct LocalRepositoryTests {
         let reopened = PersistentProductEvidence(backend: backend)
         #expect(try await reopened.barcode(of: milk, in: space) == ean)
         #expect(try await reopened.barcode(of: cola, in: space) == upc)
+        #expect(try await reopened.barcodes(in: space) == [milk: ean, cola: upc])
+        #expect(try await reopened.barcodes(in: SpaceID()).isEmpty)
         #expect(try await reopened.barcode(of: PackageID(), in: space) == nil)
         #expect(try await reopened.barcode(of: milk, in: SpaceID()) == nil)
 
@@ -123,6 +125,9 @@ struct LocalRepositoryTests {
             try backend.write(batch)
             await #expect(throws: PersistenceError.self, "\(stored)") {
                 try await PersistentProductEvidence(backend: backend).barcode(of: broken, in: space)
+            }
+            await #expect(throws: PersistenceError.self, "\(stored)") {
+                try await PersistentProductEvidence(backend: backend).barcodes(in: space)
             }
         }
     }

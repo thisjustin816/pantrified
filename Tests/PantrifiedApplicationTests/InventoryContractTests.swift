@@ -36,6 +36,7 @@ private struct GatedInventory: InventoryRepository {
     }
 
     func activePackages(in space: SpaceID) async throws -> [Package] { try await inner.activePackages(in: space) }
+    func allPackages(in space: SpaceID) async throws -> [Package] { try await inner.allPackages(in: space) }
     func save(_ package: Package) async throws { try await inner.save(package) }
     func saveAll(_ packages: [Package]) async throws { try await inner.saveAll(packages) }
 }
@@ -97,6 +98,7 @@ private struct ReopeningInventory: InventoryRepository {
 
     func package(_ id: PackageID) async throws -> Package? { try await reopened().package(id) }
     func activePackages(in space: SpaceID) async throws -> [Package] { try await reopened().activePackages(in: space) }
+    func allPackages(in space: SpaceID) async throws -> [Package] { try await reopened().allPackages(in: space) }
     func save(_ package: Package) async throws { try await live.save(package) }
     func saveAll(_ packages: [Package]) async throws { try await live.saveAll(packages) }
 }
@@ -278,5 +280,20 @@ struct InventoryContractTests {
         let stored = try #require(try await inventory.package(original.id))
         #expect(stored.status == .discarded(at: syncEpoch, reason: .spoiled))
         #expect(stored.location == world.freezer.id)
+    }
+
+    @Test("all packages lists used up and discarded packages too, and only the Space's", arguments: InventoryStore.allCases)
+    func allPackages(store: InventoryStore) async throws {
+        let world = World()
+        let milk = milk(world)
+        var peas = Package(spaceID: world.space, name: "Peas", location: world.freezer.id, addedAt: syncEpoch)
+        try peas.record(.usedUp, at: syncEpoch)
+        var rice = Package(spaceID: world.space, name: "Rice", location: world.pantry.id, addedAt: syncEpoch)
+        try rice.record(.discarded(reason: nil), at: syncEpoch)
+        let inventory = try await store.make(world, holding: [milk, peas, rice])
+
+        #expect(Set(try await inventory.allPackages(in: world.space).map(\.id)) == [milk.id, peas.id, rice.id])
+        #expect(try await inventory.activePackages(in: world.space).map(\.id) == [milk.id])
+        #expect(try await inventory.allPackages(in: SpaceID()).isEmpty)
     }
 }

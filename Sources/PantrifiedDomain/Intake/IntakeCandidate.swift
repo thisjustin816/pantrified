@@ -60,13 +60,20 @@ public struct PendingDateChoice: Sendable, Hashable, Codable {
     public let dayFirst: Date
 }
 
-/// Where a candidate's location came from.
+/// Where a candidate's location came from (`PlaceContext.proposal`).
 public enum LocationOrigin: String, Sendable, Hashable, Codable {
-    /// The batch's default, usually the first location.
-    case standard
+    /// The household put a package with the same barcode, or the same name, there before.
+    case remembered
     /// The label says how to keep it, such as "Keep frozen".
     case label
+    /// Sourced storage guidance keeps the unopened food there.
+    case foodKeeper
     case person
+    /// Nothing proposed a place, so the candidate has none until the person chooses one.
+    case unplaced
+    /// The first location, given to every candidate the label proposed no place for. Only a review
+    /// kept in a version 2 batch list holds it.
+    case standard
 }
 
 public enum CandidateStatus: Sendable, Hashable, Codable {

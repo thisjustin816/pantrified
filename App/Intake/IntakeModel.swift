@@ -56,6 +56,8 @@ final class IntakeModel {
 
     @ObservationIgnored private var batchID: IntakeBatchID?
     @ObservationIgnored private var following: Task<Void, Never>?
+    /// What proposing places reads, made once each time the batch is read after Done.
+    @ObservationIgnored private var places: PlaceContext?
 
     init(services: IntakeServices, pantry: PantryModel) {
         self.services = services
@@ -155,13 +157,14 @@ final class IntakeModel {
     /// once, unchangeable until the review exists, so no edit can be lost to the last regroup.
     func read() async {
         guard let batchID else { return }
+        places = nil
         let left = live?.unread ?? photos.count
         stage = left > ReadingPolicy.standard.fewLeft
             ? .reading(live?.progress ?? IntakeProgress(read: 0, total: photos.count))
             : .finishing(left: left)
         await refreshPreview()
         do {
-            let made = try await services.pipeline.finish(batchID, locations: locations, defaultLocation: locations.first?.id)
+            let made = try await services.pipeline.finish(batchID, places: await placeContext())
             guard self.batchID == batchID else { return }
             animated { review = made }
             stage = .reviewing
@@ -205,8 +208,15 @@ final class IntakeModel {
 
     private func refreshPreview() async {
         guard case .finishing = stage else { return }
-        let preview = await services.pipeline.preview(locations: locations, defaultLocation: locations.first?.id)
+        let preview = await services.pipeline.preview(places: await placeContext())
         if case .finishing = stage { review = preview }
+    }
+
+    private func placeContext() async -> PlaceContext {
+        if let places { return places }
+        let made = await services.places(in: locations)
+        places = made
+        return made
     }
 
     /// The screen closed with the batch kept. Reading for the camera stops; after Done it carries on.
@@ -247,7 +257,7 @@ final class IntakeModel {
     }
 
     func assign(_ location: LocationID, to ids: Set<IntakeCandidateID>) async {
-        await change { $0.assignLocation(location, to: ids) }
+        await change { _ = $0.assignLocation(location, to: ids) }
     }
 
     func merge(_ ids: [IntakeCandidateID]) async {

@@ -98,6 +98,11 @@ public actor SpaceReplica: InventoryRepository, ShoppingListRepository {
             .filter { $0.status == .active }
     }
 
+    public func allPackages(in space: SpaceID) async throws -> [Package] {
+        guard space == self.space else { return [] }
+        return PackageRecords.materializeAll(from: state.records).values.compactMap(\.entity)
+    }
+
     public func save(_ package: Package) async throws {
         try saveAll([package])
     }

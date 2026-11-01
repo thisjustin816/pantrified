@@ -37,6 +37,11 @@ actor InMemoryInventory: InventoryRepository {
         return packages.values.filter { $0.spaceID == space && $0.status == .active }
     }
 
+    func allPackages(in space: SpaceID) async throws -> [Package] {
+        if failOnRead { throw FakeFailure() }
+        return packages.values.filter { $0.spaceID == space }
+    }
+
     func save(_ package: Package) async throws {
         if failOnSave { throw FakeFailure() }
         store(package)
@@ -73,11 +78,18 @@ actor InMemoryProductEvidence: ProductEvidenceStore {
     private(set) var barcodes: [SpaceID: [PackageID: GTIN]] = [:]
     private(set) var writes = 0
     var failWrites = false
+    var failReads = false
 
     func setFailWrites(_ value: Bool) { failWrites = value }
+    func setFailReads(_ value: Bool) { failReads = value }
 
     func barcode(of package: PackageID, in space: SpaceID) async throws -> GTIN? {
         barcodes[space]?[package]
+    }
+
+    func barcodes(in space: SpaceID) async throws -> [PackageID: GTIN] {
+        if failReads { throw FakeFailure() }
+        return barcodes[space] ?? [:]
     }
 
     func record(_ new: [PackageID: GTIN], in space: SpaceID) async throws {
@@ -98,6 +110,10 @@ struct InMemoryLocations: StorageLocationRepository {
 struct FakeGuidance: StorageGuidanceRepository {
     var result: StorageGuidance?
     var fails = false
+    /// The unopened storage given for every name.
+    var unopened: Set<StorageType> = []
+
+    func unopenedStorage(of name: String, choice: GuidanceChoice?) -> Set<StorageType> { unopened }
 
     func guidance(for package: Package) async throws -> StorageGuidance? {
         if fails { throw FakeFailure() }

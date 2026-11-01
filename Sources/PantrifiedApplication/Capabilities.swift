@@ -21,6 +21,8 @@ public protocol InventoryRepository: Sendable {
     func package(_ id: PackageID) async throws -> Package?
     /// Packages still in active inventory; used up and discarded packages are excluded.
     func activePackages(in space: SpaceID) async throws -> [Package]
+    /// Every package of the Space, used up and discarded ones too.
+    func allPackages(in space: SpaceID) async throws -> [Package]
     func save(_ package: Package) async throws
     /// Stores every package or none of them.
     func saveAll(_ packages: [Package]) async throws
@@ -39,7 +41,7 @@ public protocol StorageLocationStore: StorageLocationRepository {
 
 /// Matches a package to sourced storage guidance. Returns nil when nothing matches; a model may
 /// assist the matching but never supplies the windows.
-public protocol StorageGuidanceRepository: Sendable {
+public protocol StorageGuidanceRepository: UnopenedStorageGuide {
     func guidance(for package: Package) async throws -> StorageGuidance?
     /// Which record the package's guidance comes from and which records the person could choose.
     /// Nil when the repository has no records to choose from.
@@ -48,12 +50,16 @@ public protocol StorageGuidanceRepository: Sendable {
 
 extension StorageGuidanceRepository {
     public func recordQuestion(for package: Package) async throws -> GuidanceRecordQuestion? { nil }
+
+    public func unopenedStorage(of name: String, choice: GuidanceChoice?) -> Set<StorageType> { [] }
 }
 
 /// Barcodes read from packages, kept on this device as product evidence, per Space. A barcode
 /// names a product, so it is kept beside the package it was read from and never identifies one.
 public protocol ProductEvidenceStore: Sendable {
     func barcode(of package: PackageID, in space: SpaceID) async throws -> GTIN?
+    /// Every barcode kept in the Space, by package.
+    func barcodes(in space: SpaceID) async throws -> [PackageID: GTIN]
     /// Stores every barcode or none of them. Recording the same barcode again stores nothing new.
     func record(_ barcodes: [PackageID: GTIN], in space: SpaceID) async throws
 }

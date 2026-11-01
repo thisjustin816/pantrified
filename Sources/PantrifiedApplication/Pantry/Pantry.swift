@@ -53,6 +53,7 @@ public struct Pantry: Sendable {
     private let inventory: any InventoryRepository
     private let locations: any StorageLocationStore
     private let guidance: any StorageGuidanceRepository
+    private let evidence: any ProductEvidenceStore
     private let useSoon: UseSoon
     private let putAway: PutAway
     private let actions: PackageActions
@@ -71,6 +72,7 @@ public struct Pantry: Sendable {
         self.inventory = inventory
         self.locations = locations
         self.guidance = guidance
+        self.evidence = evidence
         useSoon = UseSoon(inventory: inventory, locations: locations, guidance: guidance, time: time, policy: policy)
         putAway = PutAway(inventory: inventory, locations: locations, evidence: evidence, time: time)
         actions = PackageActions(inventory: inventory, locations: locations, time: time)
@@ -98,6 +100,17 @@ public struct Pantry: Sendable {
             ))
         }
         return PantrySnapshot(locations: known, entries: entries.sorted(by: Self.mostUrgentFirst))
+    }
+
+    /// What proposing a place for a batch's candidates reads: `locations`, where every package the
+    /// household has had was put, with its barcode, and the sourced guidance. Nothing is stored for
+    /// it. Packages that cannot be read are left out, and barcodes that cannot be read leave only
+    /// the names, so a read failure never stops a batch.
+    public func placeContext(locations: [StorageLocation]) async -> PlaceContext {
+        let packages = (try? await inventory.allPackages(in: space)) ?? []
+        let barcodes = (try? await evidence.barcodes(in: space)) ?? [:]
+        let placements = packages.map { PastPlacement($0, barcode: barcodes[$0.id]) }
+        return PlaceContext(locations: locations, placements: placements, guide: guidance)
     }
 
     /// Puts one food away and returns its ID. A name that is empty or only spaces is refused. A

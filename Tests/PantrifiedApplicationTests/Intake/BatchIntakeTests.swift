@@ -20,6 +20,12 @@ struct IntakeWorld {
         StorageLocation(name: "Pantry", storageType: .roomTemperature),
     ]
 
+    /// Proposes no place unless the label states one.
+    var unguided: PlaceContext { PlaceContext(locations: locations) }
+    /// Proposes the fridge for every named food the label proposes no place for, so candidates with
+    /// a name are ready to add.
+    var places: PlaceContext { PlaceContext(locations: locations, guide: KeepsCold()) }
+
     var pantry: Pantry {
         Pantry(
             space: space, inventory: inventory, locations: FixedLocationStore(locations: [space: locations]),
@@ -54,7 +60,7 @@ struct IntakeWorld {
     }
 
     func process(_ batch: IntakeBatchID, _ store: StagingStore, lookup: (any ProductLookupService)? = nil) async throws -> IntakeReview {
-        try await pipeline(store, lookup: lookup).process(batch, locations: locations, defaultLocation: locations[0].id)
+        try await pipeline(store, lookup: lookup).process(batch, places: places)
     }
 }
 
@@ -117,7 +123,7 @@ struct StagingStoreTests {
         }
         let batch = try await world.stage(readings.keys.sorted(), in: store)
         let recognizer = FakeRecognizer(files: world.files, readings: readings)
-        _ = try await world.pipeline(store, recognizer: recognizer).finish(batch, locations: world.locations, defaultLocation: nil)
+        _ = try await world.pipeline(store, recognizer: recognizer).finish(batch, places: world.unguided)
 
         let manifest = String(decoding: try #require(world.files.contents(of: StagingStore.manifestName)), as: UTF8.self)
         #expect(!manifest.contains("Marker17x line 15 "))
@@ -384,7 +390,7 @@ struct StagingStoreTests {
         try await store.updateReview(batch) { try $0.setName("Rice", for: review.summaries[0].id) }
         let regrouped = IntakeReview(
             space: world.space, observations: [second], grouping: PhotoGrouper().group([second]),
-            locations: world.locations, defaultLocation: nil, looksUp: false
+            places: world.unguided, looksUp: false
         )
         let kept = try await store.finishRecognition(batch, review: regrouped)
         #expect(kept.summaries.map(\.name) == ["Rice"])
@@ -529,10 +535,10 @@ struct BatchIntakeTests {
         let batch = try await world.stage(["yogurt-front", "yogurt-back", "rice"], in: store)
         let recognizer = FakeRecognizer(files: world.files, readings: IntakeFixture.readings)
         let pipeline = world.pipeline(store, recognizer: recognizer)
-        let first = try await pipeline.process(batch, locations: world.locations, defaultLocation: nil)
+        let first = try await pipeline.process(batch, places: world.unguided)
         try await store.updateReview(batch) { try $0.setName("Skyr", for: first.summaries[0].id) }
 
-        let again = try await pipeline.process(batch, locations: world.locations, defaultLocation: nil)
+        let again = try await pipeline.process(batch, places: world.unguided)
         #expect(await recognizer.reads == 3)
         #expect(again.summaries[0].name == "Skyr")
         #expect(again.summaries.map(\.id) == first.summaries.map(\.id))
@@ -545,7 +551,7 @@ struct BatchIntakeTests {
         let interrupted = FakeRecognizer(files: world.files, readings: IntakeFixture.readings, cancelAfter: 2)
         let store = world.launch()
         await #expect(throws: CancellationError.self) {
-            _ = try await world.pipeline(store, recognizer: interrupted).process(batch, locations: world.locations, defaultLocation: nil)
+            _ = try await world.pipeline(store, recognizer: interrupted).process(batch, places: world.unguided)
         }
         let readBefore = await store.observations(in: batch).count
         #expect((1...2).contains(readBefore))
@@ -553,7 +559,7 @@ struct BatchIntakeTests {
         let relaunched = world.launch()
         #expect(await relaunched.batch(batch)?.phase == .processing)
         let recognizer = FakeRecognizer(files: world.files, readings: IntakeFixture.readings)
-        let review = try await world.pipeline(relaunched, recognizer: recognizer).process(batch, locations: world.locations, defaultLocation: nil)
+        let review = try await world.pipeline(relaunched, recognizer: recognizer).process(batch, places: world.unguided)
         #expect(await recognizer.reads == 4 - readBefore)
         #expect(review.summaries.count == 3)
     }
@@ -564,7 +570,7 @@ struct BatchIntakeTests {
         let store = world.launch()
         let batch = try await world.stage(Array(repeating: "rice", count: 9), in: store)
         let recognizer = FakeRecognizer(files: world.files, readings: IntakeFixture.readings)
-        _ = try await world.pipeline(store, recognizer: recognizer).process(batch, locations: world.locations, defaultLocation: nil)
+        _ = try await world.pipeline(store, recognizer: recognizer).process(batch, places: world.unguided)
         #expect(await recognizer.mostInFlight <= 2)
         #expect(await recognizer.reads == 9)
     }
@@ -575,7 +581,7 @@ struct BatchIntakeTests {
         let store = world.launch()
         let batch = try await world.stage(["rice", "beans"], in: store)
         let recognizer = FakeRecognizer(files: world.files, readings: IntakeFixture.readings, failures: ["beans": 5])
-        let review = try await world.pipeline(store, recognizer: recognizer).process(batch, locations: world.locations, defaultLocation: nil)
+        let review = try await world.pipeline(store, recognizer: recognizer).process(batch, places: world.unguided)
         #expect(review.summaries.count == 2)
         #expect(review.summaries[1].name == nil)
         #expect(review.summaries[1].notes.contains(.noName))
@@ -591,12 +597,12 @@ struct BatchIntakeTests {
         let pipeline = world.pipeline(store, recognizer: recognizer)
         world.files.failWrites(to: StagingStore.observationName(photo.id))
         await #expect(throws: StagingError.notRecognized) {
-            _ = try await pipeline.finish(batch, locations: world.locations, defaultLocation: world.locations[0].id)
+            _ = try await pipeline.finish(batch, places: world.places)
         }
         #expect(await recognizer.reads == 1)
 
         world.files.allowWrites()
-        let review = try await pipeline.finish(batch, locations: world.locations, defaultLocation: world.locations[0].id)
+        let review = try await pipeline.finish(batch, places: world.places)
         #expect(review.summaries.map(\.name) == ["Basmati rice"])
         #expect(await recognizer.reads == 2)
     }
@@ -613,12 +619,12 @@ struct BatchIntakeTests {
         // As many failed runs as a photo has reads (`IntakePipeline.attemptsPerPhoto`).
         for _ in 1...2 {
             await #expect(throws: StagingError.notRecognized) {
-                _ = try await pipeline.finish(batch, locations: world.locations, defaultLocation: world.locations[0].id)
+                _ = try await pipeline.finish(batch, places: world.places)
             }
         }
 
         world.files.allowWrites()
-        let review = try await pipeline.finish(batch, locations: world.locations, defaultLocation: world.locations[0].id)
+        let review = try await pipeline.finish(batch, places: world.places)
         #expect(review.summaries.map(\.name) == ["Basmati rice"])
         #expect(await recognizer.reads == 3)
         #expect(await store.batch(batch)?.photos.first?.couldNotRead == false)
@@ -637,7 +643,7 @@ struct BatchIntakeTests {
             let store = world.launch()
             let recognizer = CrashingRecognizer(files: world.files)
             let pipeline = world.pipeline(store, recognizer: recognizer, policy: serial)
-            let run = Task { try await pipeline.process(batch, locations: world.locations, defaultLocation: nil) }
+            let run = Task { try await pipeline.process(batch, places: world.unguided) }
             #expect(await waitUntil { await recognizer.crashes == 1 })
             _ = run  // Never finishes: the process died here.
             #expect(await world.launch().batch(batch)?.photos[1].readAttempts == launch)
@@ -646,7 +652,7 @@ struct BatchIntakeTests {
         let store = world.launch()
         let recognizer = CrashingRecognizer(files: world.files)
         let review = try await world.pipeline(store, recognizer: recognizer, policy: serial)
-            .process(batch, locations: world.locations, defaultLocation: nil)
+            .process(batch, places: world.unguided)
         #expect(await recognizer.reads == ["beans"])
         #expect(review.summaries.count == 3)
         #expect(await store.batch(batch)?.photos[1].couldNotRead == true)
@@ -660,7 +666,7 @@ struct BatchIntakeTests {
         let batch = try await world.stage(["rice"], in: store)
         let interrupted = FakeRecognizer(files: world.files, readings: IntakeFixture.readings, cancelAfter: 0)
         await #expect(throws: CancellationError.self) {
-            _ = try await world.pipeline(store, recognizer: interrupted).process(batch, locations: world.locations, defaultLocation: nil)
+            _ = try await world.pipeline(store, recognizer: interrupted).process(batch, places: world.unguided)
         }
         #expect(await store.batch(batch)?.photos[0].readAttempts == 0)
     }
@@ -846,6 +852,83 @@ struct BatchIntakeTests {
         #expect(addition.packages.count == 1)
         #expect(addition.notReady == 1)
         #expect(await store.batch(batch)?.review?.summaries.count == 1)
+    }
+
+    @Test("a candidate with no place stays in review while the rest are added, and is added once placed")
+    func unplacedWaits() async throws {
+        let world = IntakeWorld()
+        let store = world.launch()
+        let batch = try await world.stage(["rice", "beans"], in: store)
+        let places = PlaceContext(locations: world.locations, placements: [
+            PastPlacement(package: PackageID(), name: "Basmati rice", barcode: nil, location: world.locations[2].id, at: syncEpoch),
+        ])
+        let review = try await world.pipeline(store).process(batch, places: places)
+        try #require(review.summaries.count == 2)
+        let (rice, beans) = (review.summaries[0].id, review.summaries[1].id)
+        #expect(review.summaries.map(\.locationOrigin) == [.remembered, .unplaced])
+        #expect(review.readyToAdd(in: world.locations) == [rice])
+
+        let adding = IntakeAdding(pantry: world.pantry, store: store)
+        let addition = try await adding.add(review.summaries.map(\.id), in: batch)
+        #expect(addition.candidates == [rice])
+        #expect(addition.notReady == 1)
+        #expect(await store.batch(batch)?.review?.summaries.map(\.id) == [beans])
+
+        try await store.updateReview(batch) { $0.assignLocation(world.locations[0].id, to: [beans]) }
+        #expect(try await adding.add([beans], in: batch).candidates == [beans])
+        #expect(await store.batch(batch)?.phase == .finished)
+    }
+
+    @Test("where the person put a food in one batch is proposed for it in the next, by barcode and by name")
+    func rememberedAcrossBatches() async throws {
+        let world = IntakeWorld()
+        let store = world.launch()
+        let first = try await world.stage(["yogurt-front", "yogurt-back", "rice"], in: store)
+        let review = try await world.pipeline(store).process(first, places: await world.pantry.placeContext(locations: world.locations))
+        try #require(review.summaries.count == 2)
+        #expect(review.summaries.allSatisfy { $0.location == nil && $0.locationOrigin == .unplaced })
+        let (yogurt, rice) = (review.summaries[0].id, review.summaries[1].id)
+        try await store.updateReview(first) { review in
+            review.assignLocation(world.locations[1].id, to: [yogurt])
+            review.assignLocation(world.locations[2].id, to: [rice])
+        }
+        _ = try await IntakeAdding(pantry: world.pantry, store: store).add([yogurt, rice], in: first)
+
+        let second = try await world.stage(["yogurt-back", "rice"], in: store)
+        #expect(second != first)
+        let next = try await world.pipeline(store).process(second, places: await world.pantry.placeContext(locations: world.locations))
+        try #require(next.summaries.count == 2)
+        #expect(next.summaries.map(\.location) == [world.locations[1].id, world.locations[2].id])
+        #expect(next.summaries.map(\.locationOrigin) == [.remembered, .remembered])
+    }
+
+    @Test("the batch list is written as version 3, and a version 2 review that gave the first location loads as it was")
+    func version2PlacesLoad() async throws {
+        let world = IntakeWorld()
+        let batch: IntakeBatchID
+        do {
+            let store = world.launch()
+            batch = try await world.stage(["rice"], in: store)
+            _ = try await world.process(batch, store)
+        }
+        let data = try #require(world.files.contents(of: StagingStore.manifestName))
+        var list = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(list["version"] as? Int == 3)
+        var batches = try #require(list["batches"] as? [[String: Any]])
+        var review = try #require(batches[0]["review"] as? [String: Any])
+        var candidates = try #require(review["candidates"] as? [[String: Any]])
+        candidates[0]["locationOrigin"] = "standard"
+        review["candidates"] = candidates
+        batches[0]["review"] = review
+        list["batches"] = batches
+        list["version"] = 2
+        try world.files.write(try JSONSerialization.data(withJSONObject: list), to: StagingStore.manifestName)
+
+        let relaunched = world.launch()
+        let summary = try #require(await relaunched.batch(batch)?.review?.summaries.first)
+        #expect(summary.locationOrigin == .standard)
+        #expect(summary.location == world.locations[0].id)
+        #expect(await relaunched.takeLoadProblem() == nil)
     }
 
     // MARK: Kill and resume

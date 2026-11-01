@@ -108,6 +108,19 @@ public struct PersistentProductEvidence: ProductEvidenceStore {
         guard let row = try backend.localRows(of: .packageBarcode, in: space).first(where: { $0.key.entity == entity }) else {
             return nil
         }
+        return try Self.gtin(in: row)
+    }
+
+    public func barcodes(in space: SpaceID) async throws -> [PackageID: GTIN] {
+        var result: [PackageID: GTIN] = [:]
+        for row in try backend.localRows(of: .packageBarcode, in: space) {
+            guard let id = UUID(uuidString: row.key.entity) else { throw PersistenceError.corrupt("an unreadable package barcode") }
+            result[PackageID(id)] = try Self.gtin(in: row)
+        }
+        return result
+    }
+
+    private static func gtin(in row: LocalRow) throws -> GTIN {
         guard case .map(let fields) = try StoredValueCoding.value(from: row.payload),
               case .string(let digits)? = fields["gtin"],
               let gtin = GTIN(digits), gtin.digits == digits

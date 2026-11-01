@@ -139,7 +139,7 @@ struct ScreenshotScenario {
                 photo: photo.id, sequence: photo.sequence, capturedAt: time, lines: lines, codes: sample.codes
             ), in: batch.id)
         }
-        _ = try await intake.pipeline.process(batch.id, locations: locations, defaultLocation: locations.first?.id)
+        _ = try await intake.pipeline.process(batch.id, places: await intake.places(in: locations))
         try await intake.store.recordLookups([(Self.beans, .found(rawName: "Black beans", source: "USDA FoodData Central"))], in: batch.id)
     }
 
