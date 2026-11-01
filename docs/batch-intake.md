@@ -308,8 +308,9 @@ reasoned, not measured on a device.
    keeps no photos or video.", so it no longer reads as a claim about the whole app. Text only; the
    scanner's behavior is unchanged.
 6. **Review by place, with dragging.** Decided: the review screen groups candidates into sections by
-   place and the person presses and drags a candidate or a selection to another section
-   (`product-decisions.md`, Capture). The place of each candidate is proposed automatically, in this
+   place, the places become large targets while a card is dragged, and the person presses and drags a
+   candidate or a selection to another place, with a snap and haptics, a tap equivalent, multi-selection
+   and undo (`product-decisions.md`, Capture; it was in the original planning handoff). The place of each candidate is proposed automatically, in this
    order: where the person put the same product or name before, what the label states, a place the
    FoodKeeper snapshot gives for an unopened food when the name matches one record, and otherwise
    no place, which puts the candidate in a section of its own instead of silently in the first
