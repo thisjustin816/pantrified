@@ -7,6 +7,9 @@ public struct PantryEntry: Sendable, Identifiable {
     /// Nil when the package's location is not among the Space's locations.
     public let locationName: String?
     public let assessment: AttentionAssessment
+    /// The sourced storage guidance matched to the package, when there is one, with every window
+    /// the source gives. Guidance, not a safety rule.
+    public let guidance: StorageGuidance?
 
     public var id: PackageID { package.id }
 
@@ -14,10 +17,13 @@ public struct PantryEntry: Sendable, Identifiable {
         assessment.state == .useSoon || assessment.state == .pastGuidance
     }
 
-    public init(package: Package, locationName: String?, assessment: AttentionAssessment) {
+    public init(
+        package: Package, locationName: String?, assessment: AttentionAssessment, guidance: StorageGuidance? = nil
+    ) {
         self.package = package
         self.locationName = locationName
         self.assessment = assessment
+        self.guidance = guidance
     }
 }
 

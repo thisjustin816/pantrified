@@ -4,6 +4,9 @@ import PantrifiedDomain
 public struct AttentionItem: Sendable {
     public let package: Package
     public let assessment: AttentionAssessment
+    /// The sourced storage guidance matched to the package, when there is one. The assessment only
+    /// holds the window that applies now; this holds every window the source gives.
+    public let guidance: StorageGuidance?
 
     public var needsAttention: Bool {
         assessment.state == .useSoon || assessment.state == .pastGuidance
@@ -68,13 +71,14 @@ public struct UseSoon: Sendable {
 
         var items: [AttentionItem] = []
         for package in packages {
+            let matched = try await guidance.guidance(for: package)
             let assessment = policy.assess(
                 package,
                 storageType: storageTypes[package.location],
-                guidance: try await guidance.guidance(for: package),
+                guidance: matched,
                 now: now
             )
-            items.append(AttentionItem(package: package, assessment: assessment))
+            items.append(AttentionItem(package: package, assessment: assessment, guidance: matched))
         }
         return items
     }
