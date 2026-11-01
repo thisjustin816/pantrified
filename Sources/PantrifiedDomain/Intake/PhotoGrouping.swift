@@ -71,6 +71,10 @@ public struct GroupingPolicy: Sendable, Hashable {
     public var detailPhotoAfter = 45
     /// The same, taken straight before a front. Less usual; together they make a suggestion.
     public var detailPhotoBefore = 15
+    /// A photo with a barcode, date or panel counts as a back only when its name, if any, is less
+    /// tall than this share of its tallest line. A photo whose name is its biggest text, such as a
+    /// can photographed with its barcode in view, is a product's front, not another one's back.
+    public var backNameShare = 0.75
 
     /// A pair at or above this is grouped as one package.
     public var mergeAt = 60
@@ -361,11 +365,14 @@ public struct PhotoGrouper: Sendable {
         let showsDetails = !products.isEmpty || panel
             || !dates.readings(in: observation.lines, takenAt: observation.capturedAt).isEmpty
         let isDateOnly = tokens.isEmpty && products.isEmpty && !panel && showsDetails
+        let tallest = observation.lines.map(\.box.height).max() ?? 0
+        let nameHeight = LabelText.prominentLine(in: observation.lines)?.height
         let amounts = LabelText.variantAmounts(of: observation)
         let prominent = LabelText.nameTokens(of: observation)
         return PreparedPhoto(
             observation: observation, tokens: tokens, products: products, isDateOnly: isDateOnly,
-            showsDetails: showsDetails, prominent: prominent, percents: amounts.percents, sizes: amounts.sizes,
+            showsDetails: showsDetails, isBack: showsDetails && !isDateOnly && nameHeight.map { $0 < policy.backNameShare * tallest } ?? true,
+            prominent: prominent, percents: amounts.percents, sizes: amounts.sizes,
             near: nearWords(labelLines, prominent: prominent)
         )
     }
@@ -405,7 +412,7 @@ public struct PhotoGrouper: Sendable {
     /// the next front, after a front photographed alone, belongs with that next front.
     private func withShotOrder(_ pairs: [Pair], _ photos: [PreparedPhoto]) -> [Pair] {
         func isFront(_ index: Int) -> Bool { !photos[index].showsDetails && !photos[index].prominent.isEmpty }
-        func isDetail(_ index: Int) -> Bool { photos[index].showsDetails && !photos[index].isDateOnly }
+        func isDetail(_ index: Int) -> Bool { photos[index].isBack }
         func across(_ x: Int, _ y: Int) -> Bool { (isFront(x) && isDetail(y)) || (isDetail(x) && isFront(y)) }
 
         // Each photo's two strongest links by content to photos of the other kind.
@@ -559,6 +566,8 @@ public struct PreparedPhoto: Sendable {
     let isDateOnly: Bool
     /// Shows a barcode, a printed date or a panel: what the back or side of a package shows.
     let showsDetails: Bool
+    /// Shows details, is not a photo of only a date, and has no name as big as its biggest text.
+    let isBack: Bool
     /// The words of the photo's prominent name.
     let prominent: Set<String>
     let percents: Set<String>

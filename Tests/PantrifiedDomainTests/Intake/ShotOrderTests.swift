@@ -7,7 +7,7 @@ import PantrifiedDomain
 private func plainBack(_ sequence: Int, seconds: Double? = nil, barcode: GTIN? = nil, panel: Bool = true, date: Bool = false) -> PhotoObservation {
     var lines: [RecognizedTextLine] = []
     if panel { lines += [Fixture.line("Nutrition Facts", row: 0.5), Fixture.line("Calories 50", row: 0.55)] }
-    if date { lines += [Fixture.line("BB 11.2027", row: 0.1), Fixture.line("Made in Italy", row: 0.2)] }
+    if date { lines += [Fixture.line("BB 11.2027", row: 0.1), Fixture.line("Made in Italy", row: 0.2, size: 0.01)] }
     return Fixture.photo(sequence, seconds: seconds, lines: lines, codes: barcode.map { [.product($0)] } ?? [])
 }
 
@@ -37,6 +37,17 @@ struct ShotOrderTests {
         #expect(result.suggestions.count == 1)
     }
 
+    @Test("a can photographed with its barcode in view, its name the biggest text, does not join the front before it")
+    func barcodeOnAFront() {
+        let photos = [
+            Fixture.photo(0, lines: Fixture.front("Basmati rice")),
+            Fixture.photo(1, lines: Fixture.front("Black beans", brand: "Goya", small: ["NET WT 15.5 OZ"]), codes: [.product(Fixture.beans)]),
+        ]
+        let result = grouper.group(photos)
+        #expect(result.sequences(photos) == [[0], [1]])
+        #expect(result.suggestions.isEmpty)
+    }
+
     @Test("a photo of only a date keeps its own rule, and a photo with no name is not taken for a front")
     func notFronts() {
         let front = Fixture.photo(0, lines: Fixture.front("Sour cream", brand: "Daisy"))
@@ -62,7 +73,7 @@ struct ShotOrderTests {
     func backBelongsToNextFront() {
         let photos = [
             Fixture.photo(0, lines: Fixture.front("Rolled oats", brand: "Quaker")),
-            Fixture.photo(1, lines: [Fixture.line("Goya Foods black beans", row: 0.05)] + Fixture.back([]), codes: [.product(Fixture.beans)]),
+            Fixture.photo(1, lines: [Fixture.line("Goya Foods black beans", row: 0.02, size: 0.01)] + Fixture.back([]), codes: [.product(Fixture.beans)]),
             Fixture.photo(2, lines: Fixture.front("Black beans", brand: "Goya Foods")),
         ]
         #expect(grouper.group(photos).sequences(photos) == [[0], [1, 2]])
@@ -83,7 +94,7 @@ struct ShotOrderTests {
         let photos = [
             Fixture.photo(0, lines: Fixture.front("Creamy peanut butter", brand: "Jif")),
             plainBack(1, barcode: Fixture.beans),
-            Fixture.photo(2, seconds: 30, lines: [Fixture.line("Jif creamy peanut butter", row: 0.05)] + Fixture.back([]), codes: [.product(Fixture.soup)]),
+            Fixture.photo(2, seconds: 30, lines: [Fixture.line("Jif creamy peanut butter", row: 0.02, size: 0.01)] + Fixture.back([]), codes: [.product(Fixture.soup)]),
         ]
         let groups = grouper.group(photos).sequences(photos)
         #expect(!groups.contains { $0.contains(0) && $0.contains(1) })
@@ -93,7 +104,7 @@ struct ShotOrderTests {
     func separationsStillHold() {
         let differentName = [
             Fixture.photo(0, lines: Fixture.front("Baking soda", brand: "Arm Hammer")),
-            Fixture.photo(1, lines: [Fixture.line("Arm Hammer baking powder", row: 0.05)] + Fixture.back([]), codes: [.product(Fixture.beans)]),
+            Fixture.photo(1, lines: [Fixture.line("Arm Hammer baking powder", row: 0.02, size: 0.01)] + Fixture.back([]), codes: [.product(Fixture.beans)]),
         ]
         #expect(grouper.group(differentName).groups.count == 2)
 
@@ -117,7 +128,7 @@ struct ShotOrderTests {
         let barcodes = [Fixture.yogurt, Fixture.beans, Fixture.soup]
         var photos = names.enumerated().map { Fixture.photo($0, lines: Fixture.front($1.0, brand: $1.1)) }
         photos += names.enumerated().map { index, name in
-            Fixture.photo(3 + index, lines: [Fixture.line("\(name.1) \(name.0)", row: 0.05)] + Fixture.back([]), codes: [.product(barcodes[index])])
+            Fixture.photo(3 + index, lines: [Fixture.line("\(name.1) \(name.0)", row: 0.02, size: 0.01)] + Fixture.back([]), codes: [.product(barcodes[index])])
         }
         let result = grouper.group(photos)
         // The last front and the first back are taken one after the other, but the back's words
