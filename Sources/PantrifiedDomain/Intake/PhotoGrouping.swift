@@ -66,6 +66,11 @@ public struct GroupingPolicy: Sendable, Hashable {
     public var takenRightAfter = 15
     public var datePhotoAfter = 45
     public var datePhotoBefore = 15
+    /// Points, beyond `takenRightAfter`, when a photo showing a barcode, a date or a panel is taken
+    /// straight after a front: the usual second shot of one package. Together they reach `mergeAt`.
+    public var detailPhotoAfter = 45
+    /// The same, taken straight before a front. Less usual; together they make a suggestion.
+    public var detailPhotoBefore = 15
 
     /// A pair at or above this is grouped as one package.
     public var mergeAt = 60
@@ -197,6 +202,8 @@ public struct PhotoGrouper: Sendable {
         let score: Int
         /// Points from words one letter off, which never count toward `mergeAt`.
         let nearPoints: Int
+        /// Points from what the photos show: label words, words one letter off and looks.
+        let content: Int
         var separated: Bool { signals.contains(where: \.separates) }
         var mergeScore: Int { score - nearPoints }
     }
@@ -225,6 +232,7 @@ public struct PhotoGrouper: Sendable {
                 if let pair = score(photos, i, j, ignoring: common, lookups: &cost.nearWordLookups) { pairs.append(pair) }
             }
         }
+        pairs = withShotOrder(pairs, photos)
         pairs.sort { x, y in
             if x.mergeScore != y.mergeScore { return x.mergeScore > y.mergeScore }
             if x.score != y.score { return x.score > y.score }
@@ -390,6 +398,48 @@ public struct PhotoGrouper: Sendable {
         2 * policy.nearWordsPerName * (1 + 2 * policy.nearWordMaximumLetters)
     }
 
+    /// Adds `detailPhotoAfter` or `detailPhotoBefore` to a front and a photo of a package's details
+    /// taken one right after the other. Not when either photo's words or looks point more strongly
+    /// to another photo of the other kind: a back that shares its brand with the next front, after
+    /// a front photographed alone, belongs with that next front.
+    private func withShotOrder(_ pairs: [Pair], _ photos: [PreparedPhoto]) -> [Pair] {
+        func isFront(_ index: Int) -> Bool { !photos[index].showsDetails && !photos[index].prominent.isEmpty }
+        func isDetail(_ index: Int) -> Bool { photos[index].showsDetails && !photos[index].isDateOnly }
+        func across(_ x: Int, _ y: Int) -> Bool { (isFront(x) && isDetail(y)) || (isDetail(x) && isFront(y)) }
+
+        // Each photo's two strongest links by content to photos of the other kind.
+        var strongest: [Int: [(partner: Int, content: Int)]] = [:]
+        for pair in pairs where pair.content > 0 && across(pair.a, pair.b) {
+            for (photo, partner) in [(pair.a, pair.b), (pair.b, pair.a)] {
+                var links = strongest[photo, default: []] + [(partner, pair.content)]
+                links.sort { $0.content != $1.content ? $0.content > $1.content : $0.partner < $1.partner }
+                strongest[photo] = Array(links.prefix(2))
+            }
+        }
+        func strongerElsewhere(_ photo: Int, than content: Int, besides partner: Int) -> Bool {
+            strongest[photo]?.contains { $0.partner != partner && $0.content > content } ?? false
+        }
+
+        return pairs.map { pair in
+            // `a` was taken first: photos are in sequence order and `a` < `b`.
+            guard pair.signals.contains(.takenRightAfter) else { return pair }
+            let points: Int
+            if isFront(pair.a), isDetail(pair.b) {
+                points = policy.detailPhotoAfter
+            } else if isDetail(pair.a), isFront(pair.b) {
+                points = policy.detailPhotoBefore
+            } else {
+                return pair
+            }
+            guard !strongerElsewhere(pair.a, than: pair.content, besides: pair.b),
+                  !strongerElsewhere(pair.b, than: pair.content, besides: pair.a) else { return pair }
+            return Pair(
+                a: pair.a, b: pair.b, signals: pair.signals, score: pair.score + points, nearPoints: pair.nearPoints,
+                content: pair.content
+            )
+        }
+    }
+
     private func commonWords(_ photos: [PreparedPhoto]) -> Set<String> {
         var counts: [String: Int] = [:]
         for photo in photos {
@@ -405,7 +455,8 @@ public struct PhotoGrouper: Sendable {
         let photos = batch([a, b], sequence: \.sequence, photo: \.photo).map(prepare)
         guard photos.count == 2 else { return nil }
         var lookups = 0
-        guard let pair = score(photos, 0, 1, ignoring: [], lookups: &lookups) else { return nil }
+        guard let scored = score(photos, 0, 1, ignoring: [], lookups: &lookups),
+              let pair = withShotOrder([scored], photos).first else { return nil }
         return (pair.signals, pair.score)
     }
 
@@ -456,6 +507,8 @@ public struct PhotoGrouper: Sendable {
             nearPoints = policy.nearlySameWord
         }
 
+        let content = score - (signals.contains(.sameBarcode) ? policy.sameBarcode : 0)
+            - (signals.contains(.identicalPhoto) ? policy.identicalPhoto : 0)
         let gap = abs(b.observation.capturedAt.timeIntervalSince(a.observation.capturedAt))
         if b.observation.sequence - a.observation.sequence == 1, gap <= policy.adjacentSeconds {
             add(.takenRightAfter, policy.takenRightAfter)
@@ -483,7 +536,7 @@ public struct PhotoGrouper: Sendable {
             let sizesDiffer = !a.sizes.isEmpty && !b.sizes.isEmpty && a.sizes.isDisjoint(with: b.sizes)
             if percentsDiffer || sizesDiffer { signals.append(.differentAmounts) }
         }
-        return signals.isEmpty ? nil : Pair(a: i, b: j, signals: signals, score: score, nearPoints: nearPoints)
+        return signals.isEmpty ? nil : Pair(a: i, b: j, signals: signals, score: score, nearPoints: nearPoints, content: content)
     }
 }
 

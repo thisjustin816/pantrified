@@ -59,11 +59,11 @@ struct PhotoGroupingTests {
         #expect(result.groups.first?.links.first?.signals.contains(.sharedLabelWords) == true)
     }
 
-    @Test("a front that shares only one word with the next photo is a suggestion, not a merge")
+    @Test("a barcode photo that shares only one word with the front taken next is a suggestion, not a merge")
     func doubtfulFront() {
         let photos = [
-            Fixture.photo(0, lines: Fixture.front("Greek yogurt", brand: "Chobani")),
-            Fixture.photo(1, lines: Fixture.back(["Distributed by Chobani"]), codes: [.product(Fixture.yogurt)]),
+            Fixture.photo(0, lines: Fixture.back(["Distributed by Chobani"]), codes: [.product(Fixture.yogurt)]),
+            Fixture.photo(1, lines: Fixture.front("Greek yogurt", brand: "Chobani")),
         ]
         let result = grouper.group(photos)
         #expect(result.sequences(photos) == [[0], [1]])

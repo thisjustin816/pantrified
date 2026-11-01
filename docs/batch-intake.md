@@ -140,10 +140,35 @@ the same photos in any order give the same groups. All weights and thresholds ar
 | Taken one straight after the other, within 20 seconds | 15 | People photograph one package at a time. Never enough alone. |
 | A photo of only a date, taken straight after | 45 | The usual order is front, then date. With the 15 above, it groups. |
 | A photo of only a date, taken straight before | 15 | Less usual; with the 15 above it is only a suggestion. |
+| A back (barcode, date or panel) taken straight after a front | 45 | The usual second shot of one package. With the 15 above, it groups, with no words in common. |
+| A back taken straight before a front | 15 | Less usual; with the 15 above it is only a suggestion. |
 
 A pair at **60** or more, not counting the points for words one letter off, is grouped; a pair from
 **30** up to 60, counting them, is shown on both cards as "Might be the same as …" with Merge and Not
 the same. Pairs join strongest first.
+
+**Fronts and backs by the order they were taken.** A photo is a **back** when it shows a product
+barcode, a printed date or a panel (and is not a photo of only a date, which has its own rule), and a
+**front** when it shows none of these and has a name. The back of a package often shares no word with
+its front: on the device, a Loacker wafer's front read "Toacker Minis" and its back held only the
+barcode, the date, the maker's address and a nutrition panel. So a back taken straight after a front,
+within 20 seconds, joins it on the order alone (15 + 45), and a back taken straight before a front is
+a suggestion (15 + 15). The order is not used when the back's words or looks point more strongly to
+another front, or the front's to another back: a back that shares its brand with the next front, taken
+after a front photographed alone, joins the next front. Different barcodes, differing names and
+amounts, and the batch's common words keep two products apart as before; the order points never
+outweigh them. The points are shown as "taken one after another".
+
+What this cannot tell: a front photographed alone, followed by a different product's back that shares
+nothing with any photo, is put with that front. Splitting the photo out is one tap.
+
+**All fronts first, then all backs.** Then no back is taken next to its own front, so the order says
+nothing, and each back joins its front only on what they show: a shared barcode never applies (fronts
+have none), so a back sharing three or more label words with its front, covering half the shorter
+label, is a suggestion (50), and joins it with a similar image as well (50 + 25); one or two shared
+words are below a suggestion unless the photos also look alike. The last front and the first back are
+taken one after the other: when the back shares words with an earlier front they stay apart, and when
+it shares nothing with any front they are put together, which is wrong and is one tap to split.
 
 Label words are lower case, without accents, at least three letters, with no digits, and not in a list
 of words printed on most packages (units, nutrition panel words, date labels, months, storage
