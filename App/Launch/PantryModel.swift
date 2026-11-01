@@ -29,11 +29,19 @@ final class PantryModel {
     private var undoExpiry: Task<Void, Never>?
     /// Nil when product lookup is off, such as in a build without a FoodData Central key.
     private let lookup: (any ProductLookupService)?
+    /// Batch intake, or nil when its staging folder could not be opened.
+    let intake: IntakeServices?
 
-    init(pantry: Pantry, undoWindow: Duration = .seconds(8), lookup: (any ProductLookupService)? = nil) {
+    init(
+        pantry: Pantry,
+        undoWindow: Duration = .seconds(8),
+        lookup: (any ProductLookupService)? = nil,
+        intake: IntakeServices? = nil
+    ) {
         self.pantry = pantry
         self.undoWindow = undoWindow
         self.lookup = lookup
+        self.intake = intake
     }
 
     var looksUpProducts: Bool { lookup != nil }

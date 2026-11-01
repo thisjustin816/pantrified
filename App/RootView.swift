@@ -24,6 +24,7 @@ private struct MainTabs: View {
     let model: PantryModel
 
     @State private var selection = StartScreen.current.tab
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         TabView(selection: $selection) {
@@ -46,6 +47,11 @@ private struct MainTabs: View {
                 }
             }
             #endif
+        }
+        // Batch photos are deleted on schedule only while the app runs, so check whenever it returns.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active, let intake = model.intake else { return }
+            Task(priority: .utility) { _ = try? await intake.store.sweep() }
         }
     }
 }

@@ -8,6 +8,7 @@ struct TodayView: View {
 
     @Environment(\.scenePhase) private var scenePhase
     @State private var adding: Bool
+    @State private var batching = StartScreen.current.batchIntake
     @State private var scanning = StartScreen.current.scanning
 
     init(model: PantryModel, startsAdding: Bool = false) {
@@ -27,6 +28,10 @@ struct TodayView: View {
             .navigationTitle("Today")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
+                    Button("Add a batch", systemImage: "photo.stack") { batching = true }
+                        .accessibilityHint("Take photos of everything you brought home, then review and add it")
+                }
+                ToolbarItem(placement: .primaryAction) {
                     Button("Scan", systemImage: "barcode.viewfinder") { scanning = true }
                 }
                 ToolbarItem(placement: .primaryAction) {
@@ -36,6 +41,7 @@ struct TodayView: View {
             .navigationDestination(for: PackageID.self) { PackageDetailView(model: model, id: $0) }
             .sheet(isPresented: $adding) { AddFoodView(model: model) }
             .sheet(isPresented: $scanning) { ScanSheet(model: model) }
+            .fullScreenCover(isPresented: $batching) { BatchIntakeSheet(model: model) }
             .pantryChrome(model)
         }
         // The day may have changed while the app was in the background.

@@ -37,7 +37,7 @@ targets:
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
-        INFOPLIST_KEY_NSCameraUsageDescription: Pantrified uses the camera to scan barcodes on food packages. Only the barcode number is read; no photos are taken or saved.
+        INFOPLIST_KEY_NSCameraUsageDescription: "Pantrified uses the camera to scan barcodes and to take photos of the food you add, so it can read their labels on this iPhone. Photos and what is read from them stay on this iPhone and are never saved to your photo library. Pantrified deletes them, when it is open, a day after you finish a batch or 3 days after you last used an unfinished one."
         # Holds only the keys Xcode cannot generate; the rest are merged in from INFOPLIST_KEY_ settings.
         INFOPLIST_FILE: App/Info.plist
         TARGETED_DEVICE_FAMILY: "1"

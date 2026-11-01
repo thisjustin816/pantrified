@@ -37,6 +37,8 @@ public struct NewFood: Sendable, Hashable {
 
 public enum PantryError: Error, Sendable, Equatable {
     case nameRequired
+    /// A draft for another Space.
+    case otherSpace
 }
 
 /// What the Today and Food screens do with one Space: show what is there, add food by hand, and
@@ -48,6 +50,7 @@ public struct Pantry: Sendable {
     ]
 
     public let space: SpaceID
+    private let inventory: any InventoryRepository
     private let locations: any StorageLocationStore
     private let useSoon: UseSoon
     private let putAway: PutAway
@@ -64,6 +67,7 @@ public struct Pantry: Sendable {
         policy: AttentionPolicy = AttentionPolicy()
     ) {
         self.space = space
+        self.inventory = inventory
         self.locations = locations
         useSoon = UseSoon(inventory: inventory, locations: locations, guidance: guidance, time: time, policy: policy)
         putAway = PutAway(inventory: inventory, locations: locations, evidence: evidence, time: time)
@@ -108,6 +112,23 @@ public struct Pantry: Sendable {
         if let date = food.printedDate { draft.printedDate.confirm(date) }
         _ = try await putAway.putAway([draft])
         return draft.id
+    }
+
+    /// Puts reviewed drafts away together, all or none, as a batch review does. A draft whose
+    /// package already exists is left alone, so adding the same drafts again is safe.
+    public func putAway(_ drafts: [PackageDraft]) async throws -> PutAwayResult {
+        guard drafts.allSatisfy({ $0.spaceID == space }) else { throw PantryError.otherSpace }
+        return try await putAway.putAway(drafts)
+    }
+
+    /// Whether each package exists and is still in active inventory. Packages that do not exist are
+    /// left out.
+    public func activity(of ids: [PackageID]) async throws -> [PackageID: Bool] {
+        var result: [PackageID: Bool] = [:]
+        for id in ids {
+            if let package = try await inventory.package(id) { result[id] = package.status == .active }
+        }
+        return result
     }
 
     public func perform(_ action: PackageAction, on id: PackageID) async throws -> ActionOutcome {
