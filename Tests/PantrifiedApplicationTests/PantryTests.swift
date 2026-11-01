@@ -134,6 +134,52 @@ struct PantryTests {
         #expect(entry.package.addedAt == syncEpoch)
     }
 
+    @Test("an edit shows in the snapshot, a corrected date changes what needs attention, and undo reverses it", arguments: InventoryStore.allCases)
+    func editShowsInSnapshot(store: InventoryStore) async throws {
+        let setup = try await Setup(store)
+        let places = try await setup.prepared()
+        let id = try await setup.pantry.add(NewFood(name: "Mayo", location: places.fridge.id, printedDate: date(.bestBy, 30)))
+        #expect(try await setup.pantry.snapshot().entries.first?.needsAttention == false)
+
+        let outcome = try await setup.pantry.edit(
+            PackageEdit(name: .set("Mayonnaise"), printedDate: .set(date(.bestBy, 16))), on: id
+        )
+
+        let edited = try #require(try await setup.pantry.snapshot().entries.first)
+        #expect(edited.package.name == "Mayonnaise")
+        #expect(edited.package.printedDate == date(.bestBy, 16))
+        #expect(edited.needsAttention)
+        guard case .applied(let tokens) = outcome else { Issue.record("not applied"); return }
+
+        try await setup.pantry.undo(tokens)
+
+        let undone = try #require(try await setup.pantry.snapshot().entries.first)
+        #expect(undone.package.name == "Mayo")
+        #expect(undone.needsAttention == false)
+    }
+
+    @Test("an entry carries every window of the guidance matched to it, and none when nothing matched", arguments: InventoryStore.allCases)
+    func entryCarriesGuidance(store: InventoryStore) async throws {
+        let guidance = StorageGuidance(
+            provenance: GuidanceProvenance(source: "USDA FoodKeeper", version: "test"),
+            windows: [
+                GuidanceWindow(storageType: .refrigerated, anchor: .opened, days: 60),
+                GuidanceWindow(storageType: .roomTemperature, anchor: .added, days: 90),
+            ]
+        )
+        let matched = try await Setup(store, guidance: guidance)
+        let places = try await matched.prepared()
+        try await matched.pantry.add(NewFood(name: "Mayonnaise", location: places.fridge.id))
+
+        let unmatched = try await Setup(store)
+        let other = try await unmatched.prepared()
+        try await unmatched.pantry.add(NewFood(name: "Mystery", location: other.fridge.id))
+
+        // Both windows, not only the one that applies to the fridge now.
+        #expect(try await matched.pantry.snapshot().entries.first?.guidance == guidance)
+        #expect(try await unmatched.pantry.snapshot().entries.first?.guidance == nil)
+    }
+
     @Test("a scanned barcode is kept beside the food as evidence; food without one keeps none", arguments: InventoryStore.allCases)
     func barcodeIsKept(store: InventoryStore) async throws {
         let setup = try await Setup(store)

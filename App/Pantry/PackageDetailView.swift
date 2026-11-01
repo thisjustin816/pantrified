@@ -8,6 +8,7 @@ struct PackageDetailView: View {
     let id: PackageID
 
     @Environment(\.dismiss) private var dismiss
+    @State private var editing = false
 
     private var entry: PantryEntry? { model.snapshot?.entries.first { $0.id == id } }
 
@@ -25,6 +26,16 @@ struct PackageDetailView: View {
         }
         .navigationTitle(entry?.package.name ?? "Food")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if let entry {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Edit") { editing = true }
+                }
+            }
+        }
+        .sheet(isPresented: $editing) {
+            if let entry { EditFoodView(model: model, entry: entry) }
+        }
         .pantryChrome(model)
     }
 
@@ -53,6 +64,17 @@ struct PackageDetailView: View {
             Section("Details") {
                 ForEach(PackageDetailText.rows(for: entry)) { row in
                     LabeledContent(row.label, value: row.value)
+                }
+            }
+            if let guidance = PackageDetailText.guidance(for: entry, storageType: storageType(of: entry)) {
+                Section {
+                    ForEach(guidance.rows) { row in
+                        LabeledContent(row.label, value: row.value)
+                    }
+                } header: {
+                    Text("How long it keeps")
+                } footer: {
+                    Text("From \(guidance.source). Guidance, not an expiration date.")
                 }
             }
             Section {
@@ -86,6 +108,11 @@ struct PackageDetailView: View {
             await model.perform(action, on: entry)
             if model.snapshot?.entries.contains(where: { $0.id == id }) != true { dismiss() }
         }
+    }
+
+    /// The storage type of the place the food is kept, from the Space's locations.
+    private func storageType(of entry: PantryEntry) -> StorageType? {
+        model.snapshot?.locations.first { $0.id == entry.package.location }?.storageType
     }
 
     private func badgeColor(_ entry: PantryEntry) -> Color {

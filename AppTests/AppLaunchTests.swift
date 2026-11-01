@@ -237,4 +237,59 @@ struct AppLaunchTests {
 
         #expect(model.undoPrompt?.window == .seconds(5))
     }
+
+    @Test("an edit changes the food, offers one undo for all of it, and undo puts it all back")
+    func editAndUndo() async throws {
+        let (files, cleanup) = try makeFiles()
+        defer { cleanup() }
+        let model = try ready(await launch(files))
+        let fridge = try #require(model.snapshot?.locations.first)
+        #expect(await model.add(NewFood(name: "Mayo", location: fridge.id, quantity: .full)))
+        let entry = try #require(model.snapshot?.entries.first)
+
+        #expect(await model.edit(PackageEdit(name: .set(" Mayonnaise "), quantity: .set(.low)), on: entry))
+
+        let edited = try #require(model.snapshot?.entries.first)
+        #expect(edited.package.name == "Mayonnaise")
+        #expect(edited.package.quantity == .low)
+        #expect(model.undoPrompt?.message == "Updated Mayonnaise")
+
+        await model.undo()
+
+        let undone = try #require(model.snapshot?.entries.first)
+        #expect(undone.package.name == "Mayo")
+        #expect(undone.package.quantity == .full)
+        #expect(model.undoPrompt == nil)
+    }
+
+    @Test("an empty name is refused with a message and nothing changes")
+    func editRefusesEmptyName() async throws {
+        let (files, cleanup) = try makeFiles()
+        defer { cleanup() }
+        let model = try ready(await launch(files))
+        let fridge = try #require(model.snapshot?.locations.first)
+        #expect(await model.add(NewFood(name: "Mayo", location: fridge.id)))
+        let entry = try #require(model.snapshot?.entries.first)
+
+        #expect(await model.edit(PackageEdit(name: .set("  ")), on: entry) == false)
+
+        #expect(model.problem == "Enter a name for the food.")
+        #expect(model.snapshot?.entries.first?.package.name == "Mayo")
+        #expect(model.undoPrompt == nil)
+    }
+
+    @Test("an edit that changes nothing offers no undo")
+    func editUnchangedOffersNoUndo() async throws {
+        let (files, cleanup) = try makeFiles()
+        defer { cleanup() }
+        let model = try ready(await launch(files))
+        let fridge = try #require(model.snapshot?.locations.first)
+        #expect(await model.add(NewFood(name: "Mayo", location: fridge.id)))
+        let entry = try #require(model.snapshot?.entries.first)
+
+        #expect(await model.edit(PackageEdit(name: .set("Mayo")), on: entry))
+
+        #expect(model.undoPrompt == nil)
+        #expect(model.problem == nil)
+    }
 }
