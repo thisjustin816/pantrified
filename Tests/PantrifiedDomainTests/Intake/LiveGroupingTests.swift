@@ -109,7 +109,9 @@ struct LiveGroupingTests {
         let photos = Self.full.count
         let (result, once) = grouper.measuredGroup(Self.full)
         #expect(result.groups.count == 60)
-        #expect(once == GroupingCost(photos: photos, pairsScored: photos * (photos - 1) / 2))
+        #expect(once.photos == photos)
+        #expect(once.pairsScored == photos * (photos - 1) / 2)
+        #expect(once.nearWordLookups <= once.pairsScored * grouper.nearLookupsPerPair)
 
         let clock = ContinuousClock()
         var live = LiveGrouping(grouper: grouper)
@@ -117,10 +119,12 @@ struct LiveGroupingTests {
             for observation in Self.full { live.add(observation) }
         }
         let pairs = (1...photos).reduce(0) { $0 + $1 * ($1 - 1) / 2 }
-        #expect(live.cost == GroupingCost(photos: (1...photos).reduce(0, +), pairsScored: pairs))
+        #expect(live.cost.photos == (1...photos).reduce(0, +))
+        #expect(live.cost.pairsScored == pairs)
+        #expect(live.cost.nearWordLookups <= pairs * grouper.nearLookupsPerPair)
         #expect(live.result == result)
         // A record for the docs, not a limit: the time depends on the machine.
-        print("Grouping 120 photos after every arrival: \(live.cost.pairsScored) pairs in \(elapsed)")
+        print("Grouping 120 photos after every arrival: \(live.cost.pairsScored) pairs, \(live.cost.nearWordLookups) word lookups, in \(elapsed)")
     }
 
     // MARK: Settling

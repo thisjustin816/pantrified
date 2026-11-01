@@ -16,12 +16,14 @@ public struct SettlingPolicy: Sendable, Hashable {
 /// Each arrival groups every observation read so far again with the same `PhotoGrouper`. Grouping
 /// is a pure function of the set of observations, so once every photo has arrived the result is the
 /// one-shot grouping of the whole batch, whatever the arrival order. Results before that are
-/// tentative: they are shown only as a count, never as candidates the person can change. Two
+/// tentative: they are shown only as a count, never as candidates the person can change. What
+/// grouping reads from each photo is worked out once, when the photo arrives. Two
 /// photos with different barcodes, or whose labels differ in a distinguishing word or amount, are
 /// never in one group at any step, because those refusals do not depend on the rest of the batch.
 public struct LiveGrouping: Sendable {
     public let grouper: PhotoGrouper
     public private(set) var observations: [IntakePhotoID: PhotoObservation] = [:]
+    private var prepared: [IntakePhotoID: PreparedPhoto] = [:]
     public private(set) var result = GroupingResult.empty
     /// The work of every grouping so far.
     public private(set) var cost = GroupingCost()
@@ -40,6 +42,7 @@ public struct LiveGrouping: Sendable {
     public mutating func add(_ observation: PhotoObservation) -> Bool {
         guard observations[observation.photo] == nil else { return false }
         observations[observation.photo] = observation
+        prepared[observation.photo] = grouper.prepare(observation)
         regroup()
         return true
     }
@@ -53,6 +56,8 @@ public struct LiveGrouping: Sendable {
         let kept = wanted.merging(observations.filter { wanted[$0.key] != nil }) { _, existing in existing }
         guard kept != observations else { return false }
         observations = kept
+        prepared = prepared.filter { kept[$0.key] != nil }
+        for (photo, observation) in kept where prepared[photo] == nil { prepared[photo] = grouper.prepare(observation) }
         regroup()
         return true
     }
@@ -73,7 +78,7 @@ public struct LiveGrouping: Sendable {
     }
 
     private mutating func regroup() {
-        let measured = grouper.measuredGroup(Array(observations.values))
+        let measured = grouper.measuredGroup(prepared: Array(prepared.values))
         result = measured.result
         cost = cost + measured.cost
     }

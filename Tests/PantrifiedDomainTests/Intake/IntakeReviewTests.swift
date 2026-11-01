@@ -156,20 +156,22 @@ struct IntakeReviewTests {
 
     @Test("merging keeps the person's decisions, reads the labels again, and undoes in one step")
     func mergeAndUndo() throws {
+        // The back taken before the front: only a suggestion.
         let photos = [
-            Fixture.photo(0, lines: Fixture.front("Greek yogurt", brand: "Chobani")),
-            Fixture.photo(1, lines: Fixture.back(["Distributed by Chobani"]), codes: [.product(Fixture.yogurt)]),
+            Fixture.photo(0, lines: Fixture.back(["Distributed by Chobani"]), codes: [.product(Fixture.yogurt)]),
+            Fixture.photo(1, lines: Fixture.front("Greek yogurt", brand: "Chobani")),
         ]
         var review = review(photos)
-        let (front, back) = (review.summaries[0].id, review.summaries[1].id)
-        #expect(review.summaries[0].notes.contains(.mightBeSameAs([back])))
-        review.assignLocation(freezer.id, to: [back])
-        try review.setDate(PrintedDate.onDay(.bestBy, year: 2027, month: 1, day: 2), for: back)
+        try #require(review.summaries.count == 2)
+        let (back, front) = (review.summaries[0].id, review.summaries[1].id)
+        #expect(review.summaries[0].notes.contains(.mightBeSameAs([front])))
+        review.assignLocation(freezer.id, to: [front])
+        try review.setDate(PrintedDate.onDay(.bestBy, year: 2027, month: 1, day: 2), for: front)
         let before = review.candidates
 
-        let merged = try review.merge([back, front])
-        #expect(merged == front)
-        let summary = try #require(review.summary(of: front))
+        let merged = try review.merge([front, back])
+        #expect(merged == back)
+        let summary = try #require(review.summary(of: back))
         #expect(review.summaries.count == 1)
         #expect(summary.photos.count == 2)
         #expect(summary.barcode == Fixture.yogurt)
@@ -233,13 +235,15 @@ struct IntakeReviewTests {
 
     @Test("deleting removes a candidate and its suggestions, and undo brings it back")
     func deleteAndUndo() throws {
+        // The back taken before the front: only a suggestion.
         let photos = [
-            Fixture.photo(0, lines: Fixture.front("Greek yogurt", brand: "Chobani")),
-            Fixture.photo(1, lines: Fixture.back(["Distributed by Chobani"]), codes: [.product(Fixture.yogurt)]),
+            Fixture.photo(0, lines: Fixture.back(["Distributed by Chobani"]), codes: [.product(Fixture.yogurt)]),
+            Fixture.photo(1, lines: Fixture.front("Greek yogurt", brand: "Chobani")),
         ]
         var review = review(photos)
-        let back = review.summaries[1].id
-        review.delete([back])
+        try #require(review.summaries.count == 2)
+        let front = review.summaries[1].id
+        review.delete([front])
         #expect(review.summaries.count == 1)
         #expect(review.summaries[0].notes.allSatisfy { if case .mightBeSameAs = $0 { false } else { true } })
         let undone = review.undo()
@@ -250,10 +254,12 @@ struct IntakeReviewTests {
     @Test("keeping two candidates apart removes the suggestion both ways")
     func keepApart() throws {
         let photos = [
-            Fixture.photo(0, lines: Fixture.front("Greek yogurt", brand: "Chobani")),
-            Fixture.photo(1, lines: Fixture.back(["Distributed by Chobani"]), codes: [.product(Fixture.yogurt)]),
+            Fixture.photo(0, lines: Fixture.back(["Distributed by Chobani"]), codes: [.product(Fixture.yogurt)]),
+            Fixture.photo(1, lines: Fixture.front("Greek yogurt", brand: "Chobani")),
         ]
         var review = review(photos)
+        try #require(review.summaries.count == 2)
+        #expect(review.summaries[0].notes.contains(.mightBeSameAs([review.summaries[1].id])))
         try review.keepApart(review.summaries[0].id, review.summaries[1].id)
         #expect(review.summaries.allSatisfy { $0.notes.allSatisfy { if case .mightBeSameAs = $0 { false } else { true } } })
     }

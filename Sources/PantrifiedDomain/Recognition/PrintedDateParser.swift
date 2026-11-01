@@ -54,7 +54,7 @@ public struct PrintedDateParser: Sendable {
         let labels = Self.labelMatches(in: normalized)
 
         var taken: [NSRange] = []
-        var found: [(range: NSRange, value: PrintedDateValue)] = []
+        var found: [(range: NSRange, value: PrintedDateValue, needsLabel: Bool)] = []
         for pattern in Self.datePatterns {
             for match in pattern.regex.matches(in: normalized, range: NSRange(normalized.startIndex..., in: normalized)) {
                 guard !taken.contains(where: { NSIntersectionRange($0, match.range).length > 0 }) else { continue }
@@ -65,16 +65,18 @@ public struct PrintedDateParser: Sendable {
                 // part of it, such as "04/2026" out of "31/04/2026".
                 taken.append(match.range)
                 if let value = value(for: pattern.kind, parts: parts, hint: hint) {
-                    found.append((match.range, value))
+                    found.append((match.range, value, pattern.kind == .monthSpaceYear))
                 }
             }
         }
 
-        return found.sorted { $0.range.location < $1.range.location }.map { item in
+        return found.sorted { $0.range.location < $1.range.location }.compactMap { item in
             let start = item.range.location
             let label = labels
                 .filter { $0.end <= start && Self.isSeparator(normalized, from: $0.end, to: start) }
                 .max { $0.end < $1.end }?.label ?? .unlabeled
+            // Two numbers apart, such as "11 2027", are a date only right after a date label.
+            if item.needsLabel, label == .unlabeled { return nil }
             let text = Range(item.range, in: normalized).map { String(normalized[$0]) } ?? ""
             return PrintedDateReading(label: label, value: item.value, text: text)
         }
@@ -92,7 +94,7 @@ public struct PrintedDateParser: Sendable {
     // MARK: Dates
 
     private enum Kind {
-        case yearFirst, numeric, dayMonthName, monthNameDay, monthNameYear, monthYear
+        case yearFirst, numeric, dayMonthName, monthNameDay, monthNameYear, monthYear, monthSpaceYear
     }
 
     private struct DatePattern {
@@ -114,7 +116,8 @@ public struct PrintedDateParser: Sendable {
         (.dayMonthName, #"(?<![0-9])(\d{1,2})\s*"# + monthPattern + #"(?![A-Z])\.?\s*,?\s*(\d{4}|\d{2})(?![0-9])"#),
         (.monthNameDay, #"(?<![A-Z])"# + monthPattern + #"(?![A-Z])\.?\s*(\d{1,2})(?![0-9])(?:ST|ND|RD|TH)?\s*,?\s*(\d{4}|\d{2})(?![0-9])"#),
         (.monthNameYear, #"(?<![A-Z])"# + monthPattern + #"(?![A-Z])\.?\s*,?\s*(\d{4})(?![0-9])"#),
-        (.monthYear, #"(?<![0-9/.\-])(\d{1,2})/(\d{4})(?![0-9])"#),
+        (.monthYear, #"(?<![0-9/.\-])(\d{1,2})[/.\-](\d{4})(?![0-9]|[/.\-][0-9])"#),
+        (.monthSpaceYear, #"(?<![0-9/.\-])(\d{1,2}) +(\d{4})(?![0-9]|[/.\-][0-9])"#),
     ].compactMap { kind, pattern in
         (try? NSRegularExpression(pattern: pattern)).map { DatePattern(kind: kind, regex: $0) }
     }
@@ -136,7 +139,7 @@ public struct PrintedDateParser: Sendable {
         case .monthNameYear:
             guard let month = Self.month(parts[0]), let year = Int(parts[1]) else { return nil }
             return endOfMonth(year, month).map { .resolved($0, .month) }
-        case .monthYear:
+        case .monthYear, .monthSpaceYear:
             guard let month = Int(parts[0]), let year = Int(parts[1]) else { return nil }
             return endOfMonth(year, month).map { .resolved($0, .month) }
         }
@@ -191,7 +194,7 @@ public struct PrintedDateParser: Sendable {
 
     private static let labelRegex: NSRegularExpression? = {
         let phrases = [
-            #"BEST\s+IF\s+USED\s+(?:BY|BEFORE)"#, #"BEST\s+IF\s+(?:BY|BEFORE)"#, #"BEST\s+(?:BY|BEFORE)"#, #"BB"#,
+            #"BEST\s+IF\s+USED\s+(?:BY|BEFORE)"#, #"BEST\s+IF\s+(?:BY|BEFORE)"#, #"BEST\s+(?:BY|BEFORE)"#, #"BBD"#, #"BB"#,
             #"USE\s+(?:BY|BEFORE)"#, #"SELL\s+BY"#, #"FREEZE\s+BY"#,
             #"EXPIRATION(?:\s+DATE)?"#, #"EXPIRES?(?:\s+ON)?"#, #"EXP"#,
             #"PACKED(?:\s+ON)?"#, #"PKD"#, #"MFG"#, #"MANUFACTURED(?:\s+ON)?"#, #"PKG\s+DATE"#,
@@ -223,11 +226,11 @@ public struct PrintedDateParser: Sendable {
     // MARK: OCR digits
 
     private static let numericToken = try? NSRegularExpression(
-        pattern: #"(?<![A-Z0-9])[0-9OIL]{1,4}[/.\-][0-9OIL]{1,4}[/.\-][0-9OIL]{2,4}(?![A-Z0-9])"#
+        pattern: #"(?<![A-Z0-9])(?:[0-9OIL]{1,4}[/.\-][0-9OIL]{1,4}[/.\-][0-9OIL]{2,4}|[0-9OIL]{1,2}[/.\-][0-9OIL]{4})(?![A-Z0-9])"#
     )
 
-    /// Recognition often reads a 0 as O and a 1 as I or L. Inside a token shaped like a numeric date
-    /// that has at least one real digit, those letters are read as the digits.
+    /// Recognition often reads a 0 as O and a 1 as I or L. Inside a token shaped like a numeric date,
+    /// or a month and year, that has at least one real digit, those letters are read as the digits.
     private static func correctedDigits(_ text: String) -> String {
         guard let regex = numericToken else { return text }
         var result = text
