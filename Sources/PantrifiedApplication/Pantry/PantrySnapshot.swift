@@ -10,6 +10,9 @@ public struct PantryEntry: Sendable, Identifiable {
     /// The sourced storage guidance matched to the package, when there is one, with every window
     /// the source gives. Guidance, not a safety rule.
     public let guidance: StorageGuidance?
+    /// Which record of the sourced guidance the package uses and what the person could choose
+    /// instead, when the guidance has records to choose from.
+    public let recordQuestion: GuidanceRecordQuestion?
 
     public var id: PackageID { package.id }
 
@@ -18,12 +21,14 @@ public struct PantryEntry: Sendable, Identifiable {
     }
 
     public init(
-        package: Package, locationName: String?, assessment: AttentionAssessment, guidance: StorageGuidance? = nil
+        package: Package, locationName: String?, assessment: AttentionAssessment, guidance: StorageGuidance? = nil,
+        recordQuestion: GuidanceRecordQuestion? = nil
     ) {
         self.package = package
         self.locationName = locationName
         self.assessment = assessment
         self.guidance = guidance
+        self.recordQuestion = recordQuestion
     }
 }
 

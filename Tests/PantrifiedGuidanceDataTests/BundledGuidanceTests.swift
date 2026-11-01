@@ -82,6 +82,49 @@ struct BundledStorageGuidanceTests {
         #expect(guidance.windows == shell.windows)
     }
 
+    @Test("a person's choice of record gives an ambiguous food that record's windows")
+    func chosen() async throws {
+        let dataset = try BundledGuidance.dataset()
+        let lactoseFree = try #require(dataset.records.first { $0.id == 543 })
+        var milk = package("Milk")
+        let reference = GuidanceRecordReference(lactoseFree, source: dataset.provenance.source)
+        try milk.record(.corrected(.guidanceRecord(.record(reference))), at: milk.addedAt)
+
+        let guidance = try #require(try await repository().guidance(for: milk))
+
+        #expect(guidance.windows == lactoseFree.windows)
+    }
+
+    @Test("an ambiguous food is asked about, with every record of its name first; a matched one is not")
+    func questions() async throws {
+        let milk = try #require(try await repository().recordQuestion(for: package("Milk")))
+        #expect(milk.prompt == .ask)
+        #expect(milk.candidates.prefix(5).map(\.id) == [27, 383, 543, 644, 659])
+        #expect(milk.candidates.prefix(5).allSatisfy { $0.name == "Milk" })
+
+        let mayonnaise = try #require(try await repository().recordQuestion(for: package("Mayonnaise")))
+        #expect(mayonnaise.prompt == .review)
+        #expect(mayonnaise.candidates.first?.id == 350)
+    }
+
+    @Test("for every name in the snapshot, the candidates start with that name's records and come only from the snapshot")
+    func candidatesForEveryName() throws {
+        let dataset = try BundledGuidance.dataset()
+        let matcher = GuidanceMatcher(dataset: dataset)
+        let byID = Dictionary(uniqueKeysWithValues: dataset.records.map { ($0.id, $0) })
+        let idsByName = Dictionary(grouping: dataset.records) { IngredientName($0.name) }.mapValues { $0.map(\.id).sorted() }
+
+        for name in Set(dataset.records.map(\.name)) {
+            let sameName = idsByName[IngredientName(name)] ?? []
+            let found = matcher.candidates(for: name)
+
+            #expect(found.prefix(sameName.count).map(\.id) == sameName, "\(name)")
+            #expect(found.count <= sameName.count + GuidanceMatcher.candidateLimit, "\(name)")
+            #expect(found.allSatisfy { byID[$0.id] == $0 }, "\(name)")
+            #expect(Set(found.map(\.id)).count == found.count, "\(name)")
+        }
+    }
+
     @Test("an unknown food gets no guidance")
     func unknown() async throws {
         #expect(try await repository().guidance(for: package("Unobtainium paste")) == nil)

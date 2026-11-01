@@ -52,6 +52,7 @@ public struct Pantry: Sendable {
     public let space: SpaceID
     private let inventory: any InventoryRepository
     private let locations: any StorageLocationStore
+    private let guidance: any StorageGuidanceRepository
     private let useSoon: UseSoon
     private let putAway: PutAway
     private let actions: PackageActions
@@ -69,6 +70,7 @@ public struct Pantry: Sendable {
         self.space = space
         self.inventory = inventory
         self.locations = locations
+        self.guidance = guidance
         useSoon = UseSoon(inventory: inventory, locations: locations, guidance: guidance, time: time, policy: policy)
         putAway = PutAway(inventory: inventory, locations: locations, evidence: evidence, time: time)
         actions = PackageActions(inventory: inventory, locations: locations, time: time)
@@ -88,11 +90,12 @@ public struct Pantry: Sendable {
     public func snapshot() async throws -> PantrySnapshot {
         let known = try await locations.locations(in: space)
         let names = Dictionary(uniqueKeysWithValues: known.map { ($0.id, $0.name) })
-        let entries = try await useSoon.assessments(in: space).map {
-            PantryEntry(
-                package: $0.package, locationName: names[$0.package.location], assessment: $0.assessment,
-                guidance: $0.guidance
-            )
+        var entries: [PantryEntry] = []
+        for item in try await useSoon.assessments(in: space) {
+            entries.append(PantryEntry(
+                package: item.package, locationName: names[item.package.location], assessment: item.assessment,
+                guidance: item.guidance, recordQuestion: try await guidance.recordQuestion(for: item.package)
+            ))
         }
         return PantrySnapshot(locations: known, entries: entries.sorted(by: Self.mostUrgentFirst))
     }
@@ -139,8 +142,9 @@ public struct Pantry: Sendable {
         try await actions.undo(token)
     }
 
-    /// Changes what a person says a food is: its name, how much is left, the date on its package.
-    /// A name that is empty or only spaces is refused. Each changed field can be undone, all at once.
+    /// Changes what a person says a food is: its name, how much is left, the date on its package,
+    /// which record of the storage guidance it is. A name that is empty or only spaces is refused.
+    /// Each changed field can be undone, all at once.
     public func edit(_ edit: PackageEdit, on id: PackageID) async throws -> EditOutcome {
         try await editor.apply(edit, to: id)
     }
