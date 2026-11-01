@@ -59,6 +59,63 @@ enum PackageDetailText {
         return Guidance(source: guidance.provenance.source, rows: rows)
     }
 
+    /// The row that says which USDA FoodKeeper food the guidance comes from, or asks.
+    struct FoodKeeperRow: Equatable {
+        /// True when the row asks "Which FoodKeeper food is this?", false when it names the one in use.
+        let asks: Bool
+        /// The FoodKeeper food in use, such as "Milk, lactose-free", or "None" when the person said none
+        /// of them is this food. Nil when the row asks.
+        let current: String?
+        /// A sentence shown under the row, when there is something to explain.
+        let note: String?
+    }
+
+    /// Nil when there is nothing to choose from and no choice to clear. A food whose name matches one
+    /// record still shows that record, so the person can change it.
+    static func foodKeeperRow(for entry: PantryEntry) -> FoodKeeperRow? {
+        guard let question = entry.recordQuestion else { return nil }
+        switch question.status {
+        case .matched(let record), .chosen(let record):
+            let note = record.windows.isEmpty ? "FoodKeeper gives no storage time for this food." : nil
+            return FoodKeeperRow(asks: false, current: recordName(record), note: note)
+        case .declined:
+            return FoodKeeperRow(
+                asks: false, current: "None",
+                note: "You chose none of the FoodKeeper foods, so this food has no storage guidance."
+            )
+        case .chosenRecordMissing:
+            return FoodKeeperRow(
+                asks: true, current: nil,
+                note: "The FoodKeeper food chosen before is not in this version of the guidance. Choose again or clear the choice."
+            )
+        case .unanswered:
+            guard question.prompt == .ask else { return nil }
+            return FoodKeeperRow(
+                asks: true, current: nil,
+                note: "Choose the closest FoodKeeper food to see how long this keeps. Its times are guidance, not an expiration date."
+            )
+        }
+    }
+
+    /// "Milk, lactose-free": a FoodKeeper food's name with what tells it apart from others of that name.
+    static func recordName(_ record: GuidanceRecord) -> String {
+        recordName(record.name, qualifier: record.qualifier)
+    }
+
+    /// What the undo banner says after a FoodKeeper food is chosen or the choice is cleared.
+    static func choiceMessage(_ choice: GuidanceChoice?, name: String) -> String {
+        switch choice {
+        case .record(let reference): "\(name) now uses FoodKeeper's \(recordName(reference.name, qualifier: reference.qualifier))"
+        case .noneOfThese: "No FoodKeeper food for \(name)"
+        case nil: "Cleared the FoodKeeper food for \(name)"
+        }
+    }
+
+    private static func recordName(_ name: String, qualifier: String?) -> String {
+        guard let qualifier, !qualifier.isEmpty else { return name }
+        return "\(name), \(qualifier)"
+    }
+
     private static func startLabel(_ anchor: WindowAnchor) -> String {
         switch anchor {
         case .opened: "After opening"

@@ -38,22 +38,61 @@ Each rule errs toward the shorter window and never supplies one the source lacks
 
 `GuidanceMatcher` is deterministic and uses no model.
 
-- A food matches when its normalized name equals one record's normalized name, or when the person has
-  confirmed a link to a record.
+- A food matches the record the person chose for it. Without a choice, it matches when its normalized
+  name equals one record's normalized name. The matcher also accepts links the person confirmed from a
+  name to a record, but nothing stores those; a choice belongs to one package (below).
 - A name that several records share is ambiguous: 103 names are shared by 298 records, among them
   "ham" (20), "lamb" and "pork" (12 each), "cheese", "cream" and "milk". An ambiguous food gets no
   guidance until the person chooses a record.
 - The source's keywords never decide a match. They are loose search terms, often fragments of a longer
   description, and a match on one would give the wrong food's window. They and a partial overlap of
-  words only suggest candidates, names first and then by identifier, at most ten.
+  words only suggest candidates for the person to choose from.
 - A matched record with no window gives no guidance, and the attention engine then uses printed dates
   and package instructions alone.
+
+## Choosing a record
+
+A food's detail screen says which FoodKeeper food its guidance comes from, and lets the person choose.
+
+- **When it asks.** A food whose name several records share, or whose name matches none but shares
+  words with some, gets a "Which FoodKeeper food is this?" row. A food whose name matches one record
+  shows that record with a Change button, since the name can be right and the record still wrong. A
+  food that shares no word with any record shows nothing.
+- **Candidates.** `GuidanceMatcher.candidates(for:)` is deterministic. Every record whose normalized
+  name is the food's own comes first, by identifier, and is never cut, since any of them could be the
+  right one; ham's 20 is the most. Then come records whose name shares words with the food's, most
+  shared words first, then fewest words the two do not share, then by identifier; then records that
+  share words only through their keywords. These suggestions stop at 8. Suggestions ignore case,
+  accents, letter width, invisible characters and joining words such as "and", "or" and "with". Only
+  the first 256 Unicode scalars and then the first 12 distinct words of a name are read, so a very long
+  or hostile name costs no more than a short one. Every candidate is a record of the snapshot.
+- **The picker** lists each candidate by name and qualifier, such as "Milk, lactose-free", with its
+  category, marks the one in use, and adds "None of these". Once the person has chosen, it also offers
+  "Clear my choice", which matches the food by its name again. Its footer, like the guidance section's,
+  says the times are from FoodKeeper and are guidance, not an expiration date.
+- **What is stored.** A choice is the person's correction of the package field `guidanceRecord`, an
+  ordinary `corrected` event (`sync-design.md`). It names the source, the record's identifier, its name
+  and its qualifier, or says none of these, or, to clear, holds nothing. It is written, undone and
+  synchronized like a name correction: one history entry with one undo, kept across launches in the
+  package's records. Recognition never proposes a record, and a proposed value would not count: only
+  the person's correction decides.
+- **Renaming.** The choice stays when the food is renamed, because it names the record for this
+  package whatever the package is called.
+- **A record a later snapshot lacks.** A choice applies only when the snapshot holds a record with the
+  same source, identifier, name and qualifier. Otherwise the food gets no guidance, without falling
+  back to its name, which could give the record the person turned down. The detail screen asks again
+  and says the earlier choice is not in this version of the guidance. A later snapshot that only
+  corrects a record's spelling therefore asks again too.
+- **Older versions.** A version from before this choice skips the correction, as it skips any
+  correction of a field it does not know, and matches the food by its name. For an ambiguous name it
+  shows no guidance, as it did before the choice. For a name that matches one record, where the person
+  chose another record or None of these, it shows that one record's guidance.
 
 ## Limits
 
 - The data is 2018's. A newer USDA file replaces it through the converter and a release.
-- Confirmed links are accepted by the matcher, but nothing stores them yet, so an ambiguous food stays
-  without guidance in the app.
+- A choice belongs to one package. A new package with an ambiguous name asks again; nothing carries
+  a choice to later packages of the same name.
 - The source does not say, window by window, whether a time is about safety or quality; some of its
   tips speak of quality and others of safety. A window is guidance, not an expiration date.
 
@@ -66,3 +105,11 @@ Each rule errs toward the shorter window and never supplies one the source lacks
 3. **An ambiguous name gets no guidance until the person confirms a record**, instead of using the
    shortest of the candidates, which would flag a carton of eggs after two days because of the raw egg
    whites record.
+
+Defaults chosen with the record choice, each changeable:
+
+4. **A choice beats an exact name match.** A food whose name matches one record can be changed to
+   another record or to None of these, and the choice wins until it is cleared.
+5. **A chosen record that a newer snapshot lacks gives no guidance** until the person chooses again,
+   instead of falling back to the name.
+6. **A choice is per package.** Remembering it for later packages of the same name is open.

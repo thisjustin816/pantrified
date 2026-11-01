@@ -9,20 +9,25 @@ public enum FieldEdit<Value: Sendable & Hashable>: Sendable, Hashable {
 }
 
 /// What a person changed about a food by hand: its name, how much is left, the date on its
-/// package. Where the food is kept changes through Move, and opening it through Opened.
+/// package, which record of the storage guidance it is. Where the food is kept changes through
+/// Move, and opening it through Opened.
 public struct PackageEdit: Sendable, Hashable {
     public var name: FieldEdit<String>
     public var quantity: FieldEdit<Quantity>
     public var printedDate: FieldEdit<PrintedDate?>
+    /// `set(nil)` clears the choice, so the food is matched to guidance by its name again.
+    public var guidanceRecord: FieldEdit<GuidanceChoice?>
 
     public init(
         name: FieldEdit<String> = .keep,
         quantity: FieldEdit<Quantity> = .keep,
-        printedDate: FieldEdit<PrintedDate?> = .keep
+        printedDate: FieldEdit<PrintedDate?> = .keep,
+        guidanceRecord: FieldEdit<GuidanceChoice?> = .keep
     ) {
         self.name = name
         self.quantity = quantity
         self.printedDate = printedDate
+        self.guidanceRecord = guidanceRecord
     }
 }
 
@@ -33,10 +38,10 @@ public enum EditOutcome: Sendable, Hashable {
     case unchanged
 }
 
-/// Applies a person's edit to one active package. A name and a date are recorded as the person's
-/// own corrections, so recognition and lookups never replace them later; a quantity is recorded as
-/// a quantity change. Every changed field is one history entry, written and saved together, and the
-/// entries undo together.
+/// Applies a person's edit to one active package. A name, a date and a choice of guidance record are
+/// recorded as the person's own corrections, so recognition and lookups never replace them later; a
+/// quantity is recorded as a quantity change. Every changed field is one history entry, written and
+/// saved together, and the entries undo together.
 public struct PackageEditor: Sendable {
     private let inventory: any InventoryRepository
     private let time: any TimeSource
@@ -61,6 +66,9 @@ public struct PackageEditor: Sendable {
         }
         if case .set(let date) = edit.printedDate, date != package.printedDate {
             changes.append(.corrected(.printedDate(date)))
+        }
+        if case .set(let choice) = edit.guidanceRecord, choice != package.guidanceChoice {
+            changes.append(.corrected(.guidanceRecord(choice)))
         }
         guard !changes.isEmpty else { return .unchanged }
 

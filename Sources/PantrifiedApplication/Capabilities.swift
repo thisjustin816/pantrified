@@ -41,6 +41,13 @@ public protocol StorageLocationStore: StorageLocationRepository {
 /// assist the matching but never supplies the windows.
 public protocol StorageGuidanceRepository: Sendable {
     func guidance(for package: Package) async throws -> StorageGuidance?
+    /// Which record the package's guidance comes from and which records the person could choose.
+    /// Nil when the repository has no records to choose from.
+    func recordQuestion(for package: Package) async throws -> GuidanceRecordQuestion?
+}
+
+extension StorageGuidanceRepository {
+    public func recordQuestion(for package: Package) async throws -> GuidanceRecordQuestion? { nil }
 }
 
 /// Barcodes read from packages, kept on this device as product evidence, per Space. A barcode

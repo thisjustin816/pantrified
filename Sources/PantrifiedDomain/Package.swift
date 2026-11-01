@@ -61,6 +61,9 @@ public enum PackageField: Sendable, Hashable, Codable, CaseIterable {
     case productID
     case printedDate
     case instruction
+    /// Which record of the sourced storage guidance the food is. Only the person's own choice
+    /// decides it; see `Package.guidanceChoice`.
+    case guidanceRecord
 }
 
 public enum PackageFieldValue: Sendable, Hashable, Codable {
@@ -68,6 +71,8 @@ public enum PackageFieldValue: Sendable, Hashable, Codable {
     case productID(ProductID?)
     case printedDate(PrintedDate?)
     case instruction(PackageInstruction?)
+    /// Nil clears the choice, so the food is matched to guidance by its name again.
+    case guidanceRecord(GuidanceChoice?)
 
     public var field: PackageField {
         switch self {
@@ -75,6 +80,7 @@ public enum PackageFieldValue: Sendable, Hashable, Codable {
         case .productID: .productID
         case .printedDate: .printedDate
         case .instruction: .instruction
+        case .guidanceRecord: .guidanceRecord
         }
     }
 }
@@ -84,6 +90,8 @@ public struct PackageDetails: Sendable, Hashable {
     public var productID: ProductID?
     public var printedDate: PrintedDate?
     public var instruction: PackageInstruction?
+    /// Never part of a package's creation facts: it is set only by a later event.
+    public var guidanceRecord: GuidanceChoice?
 
     mutating func set(_ value: PackageFieldValue) {
         switch value {
@@ -91,6 +99,7 @@ public struct PackageDetails: Sendable, Hashable {
         case .productID(let productID): self.productID = productID
         case .printedDate(let printedDate): self.printedDate = printedDate
         case .instruction(let instruction): self.instruction = instruction
+        case .guidanceRecord(let choice): guidanceRecord = choice
         }
     }
 }
@@ -237,6 +246,14 @@ public struct Package: Sendable, Identifiable {
     public var instruction: PackageInstruction? { details.instruction }
     /// Fields the user has decided, which recognition does not change.
     public var confirmedFields: Set<PackageField> { described.confirmed }
+
+    /// The record of sourced storage guidance the person said this food is, or that none of the
+    /// records offered is. Only the person's own choice counts: a proposed value never decides which
+    /// guidance applies. The choice belongs to the package, so renaming the food keeps it.
+    public var guidanceChoice: GuidanceChoice? {
+        let described = described
+        return described.confirmed.contains(.guidanceRecord) ? described.details.guidanceRecord : nil
+    }
 
     public var location: LocationID {
         effectiveChanges.reduce(origin.location) { current, entry in

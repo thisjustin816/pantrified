@@ -108,6 +108,7 @@ enum DomainCoding {
     static let discardReason = TagTable<DiscardReason>([(.spoiled, "spoiled"), (.unwanted, "unwanted"), (.other, "other")])
     static let packageField = TagTable<PackageField>([
         (.name, "name"), (.productID, "productID"), (.printedDate, "printedDate"), (.instruction, "instruction"),
+        (.guidanceRecord, "guidanceRecord"),
     ])
 
     static func encode(_ quantity: Quantity) -> FieldValue {
@@ -167,6 +168,7 @@ enum DomainCoding {
         case .productID(let id): .optional(id, \.field)
         case .printedDate(let printed): .optional(printed, encode)
         case .instruction(let instruction): .optional(instruction, encode)
+        case .guidanceRecord(let choice): .optional(choice, encode)
         }
         return (packageField.encode(value.field), encoded)
     }
@@ -178,6 +180,42 @@ enum DomainCoding {
         case .productID: .productID(try value.optional(ProductID.init(field:)))
         case .printedDate: .printedDate(try value.optional(printedDate))
         case .instruction: .instruction(try value.optional(instruction))
+        case .guidanceRecord: .guidanceRecord(try value.optional(guidanceChoice))
+        }
+    }
+
+    /// A chosen record keeps its source, identifier, name and qualifier, so a reader can tell when
+    /// its snapshot no longer holds that record.
+    static func encode(_ choice: GuidanceChoice) -> FieldValue {
+        switch choice {
+        case .record(let reference):
+            .map([
+                "kind": .string("record"),
+                "source": .string(reference.source),
+                "id": .int(Int64(reference.id)),
+                "name": .string(reference.name),
+                "qualifier": .optional(reference.qualifier, FieldValue.string),
+            ])
+        case .noneOfThese:
+            .map(["kind": .string("noneOfThese")])
+        }
+    }
+
+    static func guidanceChoice(_ field: FieldValue) throws -> GuidanceChoice {
+        let map = try field.map()
+        switch try map["kind"].required().string() {
+        case "record":
+            guard let id = Int(exactly: try map["id"].required().int()) else { throw RecordDecodingError() }
+            return .record(GuidanceRecordReference(
+                source: try map["source"].required().string(),
+                id: id,
+                name: try map["name"].required().string(),
+                qualifier: try map["qualifier"].required().optional { try $0.string() }
+            ))
+        case "noneOfThese":
+            return .noneOfThese
+        default:
+            throw RecordDecodingError()
         }
     }
 }
