@@ -8,7 +8,7 @@ are left at Done and the list shows at once; whether it keeps pace on a phone is
 shortcuts for information that needs no image reading; the dedicated barcode scanner (`capture.md`)
 stays as it is beside this.
 
-Code: `Sources/PantrifiedDomain/Intake/` (observations, label text, grouping, the review),
+Code: `Sources/PantrifiedDomain/Intake/` (observations, label text, grouping, place proposals, the review),
 `Sources/PantrifiedApplication/Intake/` (staging store, pipeline, adding),
 `Sources/PantrifiedPersistence/StagingDirectory.swift` (the folder), `App/Intake/` (camera, Vision
 recognizer, screens) and `App/Recognition/TextRecognizer.swift` (the shared text request).
@@ -26,19 +26,21 @@ Today or Food → Add a batch
   → 1 to 3 photos left: the list so far at once, with "Reading 2 more photos",
       not changeable until they are read (how long that takes is not measured)
     more left: "Reading photo 9 of 30" (closing keeps everything; reading goes on)
-  → review: one card per package, each proposed field saying where it came from
-  → Add all (or select some and Add)
+  → review: one card per package, in sections by place ("Needs a place" first when any
+    candidate has none, then Fridge, Freezer and Pantry), each proposed field saying where
+    it came from; press and drag a card, or a selection, to another place
+  → Add all (or select some and Add); candidates with no place wait
   → "Added 9 foods", with Undo while the batch is open
 ```
 
 A typical batch of ten packages, each photographed front and back, takes 24 taps from opening the
 screen to a usable list: Add a batch, 20 shutter taps, Done, Add all, and Done to close. The first
-time, the camera permission prompt adds one. Nothing on a card must be filled in before Add all:
-quantity and date may stay unknown and every place starts at a proposal. A candidate without a name
-is the one exception, because a package needs a name; it stays in the review, marked "No name found.
-Add one.", and the rest are added. Every correction is one tap from the card: a date that reads two
-ways shows both as buttons, a place is a menu, a possible duplicate has Merge and Not the same, and the
-name opens the editor.
+time, the camera permission prompt adds one, and each candidate the app found no place for adds a
+tap or a drag. Quantity and date may stay unknown. A package needs a name and a place, so a candidate
+without a name stays in the review, marked "No name found. Add one.", and one without a place stays
+under "Needs a place"; the rest are added. Every correction is one tap from the card: a date that
+reads two ways shows both as buttons, a place is a menu, a possible duplicate has Merge and Not the
+same, and the name opens the editor.
 
 ## What is read from a photo
 
@@ -254,16 +256,22 @@ Each candidate proposes, and says where each proposal came from:
   over a front.
 - **Date**: the preferred printed date, or a pending choice when it reads two ways. "The photos show
   different dates" when they disagree.
-- **Place**: the location of the stated type when a label says "Keep frozen" or "Keep refrigerated";
-  otherwise the first location (Fridge). "Refrigerate after opening" is not read as a place.
+- **Place** (`PlaceContext`), in this order: where the household last put a package with the same
+  barcode, or else with the same name compared as an ingredient name ("You put it here last time");
+  the location of the stated type when a label says "Keep frozen" or "Keep refrigerated" ("From the
+  label"; "Refrigerate after opening" is not read as a place); the FoodKeeper record the label's name
+  matches exactly, or the record the person chose for a past package of the same product, when it
+  gives one storage for the unopened food ("From FoodKeeper"); otherwise no place ("Choose where").
+  Details under "Places" below.
 - **Barcode** and **how many**: one package, unless the person says more. A barcode seen in photos taken
   apart asks "More than one?".
 
 What the person sets wins: a name, date or place they set is never replaced by a lookup or a re-read,
 and a name or date left as proposed is saved as a proposal, not as a confirmed field, as Add food does
-with a lookup's name. Merge, split a photo out, delete, keep apart, set count, bulk location, and every
-edit are undoable (`IntakeReview`, last 40 changes). Merging keeps decisions from all the merged cards and
-refuses two different barcodes. Lookup answers are not changes and survive an undo.
+with a lookup's name. Merge, split a photo out, delete, keep apart, set count, every move to a place,
+and every edit are undoable (`IntakeReview`, last 40 changes). Merging keeps decisions from all the
+merged cards and refuses two different barcodes; without a place the person chose, it keeps the first
+proposed place. Lookup answers are not changes and survive an undo.
 
 **Adding** puts the ready candidates away through `Pantry.putAway`, all or none, each with its barcode
 and printed date. The list is usable at once; nothing waits for reading or lookups. **Undo** after Add
@@ -273,6 +281,47 @@ reason) and returns the candidates to the review with new package identities.
 **Receipts later.** `PhotoObservation.kind` exists for a receipt kind. A receipt would be read by its own
 step, skipped by grouping, and make several candidates that share the one photo, as a photo of several
 barcodes already does.
+
+### Places
+
+**Where the person put it before** is read from the packages the Space already holds, active, used up
+or discarded, with the barcodes kept beside them (`Pantry.placeContext`). Each package counts where it
+is now, from when it was added or last moved; the newest package with the candidate's barcode wins,
+and without one the newest with its name. A place the household no longer has is skipped. Nothing new
+is stored: a correction is remembered because the package added from it is in that place. So a place
+the person chose in one batch is proposed for the same product in the next, and so is a place they
+moved the food to in the pantry later. A place proposed and accepted counts the same as one chosen,
+and so do foods added before places were proposed, every one of which went to the Fridge unless its
+label said otherwise. When the packages or barcodes cannot be read, places are proposed without them.
+
+**FoodKeeper** gives a place only for a name that matches one record exactly (`GuidanceMatcher`), or
+for a record the person chose on a past package of the same barcode or name. Of the storages the
+record gives a window for from when the food was added, the freezer is left out when another is
+given, because freezing is how most foods are kept longer; one storage left gives the place, and two
+(such as pantry and fridge for apples) give none. Most packaged foods match no record by their label's
+name, so this tier fires mostly for plain names such as "Cottage cheese" or "Baking soda".
+
+**When places are proposed.** Once, when the review is made, from the barcode, the label's name and
+the stated storage. A lookup's name or a name the person sets later does not change the place.
+
+**Moving.** A move puts candidates in one of the household's places as one undoable change; a
+candidate already there keeps its place and where it came from, and a move that changes nothing
+records nothing to undo. It is the same change from every way in: dragging a card, or the selection
+when the dragged card is selected (`PlaceDrag.carried`); a card's place menu; Move to for a selection;
+Put All In for every candidate in "Needs a place"; the editor's place picker; and a card's VoiceOver
+actions, "Move to Fridge" and so on. A dragged card carries only candidate identities, in a type the
+app declares in its Info.plist (`com.thisjustin816.pantrified.candidates`), so no other app accepts it;
+a drop moves only the candidates it names that are still under review (`IntakeReview.underReview`),
+and "Needs a place" takes no drops. While a card is dragged, empty places grow into large targets and
+the place it would land in is lit and marked; the drop settles with a short spring, a light tap and a
+VoiceOver announcement, and the section counts change in place. With Reduce Motion on, the same moves
+happen without the motion. The motion and the tap are the app's own (`Motion`), shared with the food
+list.
+
+**Add all and places.** Add all adds only candidates with a name and one of the household's places
+(`IntakeReview.readyToAdd(in:)`). Those with no place stay in "Needs a place", which says how many wait
+and has Put All In. Adding them somewhere with a mark instead would put food in a place nobody chose
+and leave the person to find it later; the waiting rule is one function, so it is easy to change.
 
 ## Keeping photos, and never losing a batch
 
@@ -290,7 +339,9 @@ keeping observations in the list made it 1.5 MB and wrote about 180 MB. A test h
 or unreadable observation file leaves its photo unread, so it is read again. A batch list in the
 earlier format (version 1), which held observations inside it, still loads: each observation is written
 to its own file as the list loads, and one whose file cannot be written stays in the list until a later
-load writes it.
+load writes it. A version 2 list, written before places were proposed, loads as it was:
+its candidates keep the first location they were given. The list is written as version 3, which an
+older app opens read only.
 
 `StagingStore` writes every change before returning, so a crash or kill loses at most the change in
 progress, and a change whose save fails is undone in memory too:
@@ -356,16 +407,18 @@ syncs.
 
 | Level | What runs |
 |---|---|
-| Linux `swift test` | Bounds and hostile text; code classification and Digital Links; label words, names, amounts and stated storage; grouping: same product twice, similar products with different barcodes, front without barcode then barcode, a photo of several products, no text, duplicates, date photos, near-identical products (baking soda and powder, whole and skim milk, 2% and 1%, sizes, flavours), chaining, a common brand, order independence, a 140-photo batch; panel lines with misread words; words one letter off and their bound on hostile text; a back taken right after or before a front, and all fronts before all backs; synthetic readings modeled on the first device test (Loacker front and back, a sparkling water front and nutrition side, two Loacker flavors and other look-alikes) in 100 arrival orders; the review's proposals, provenance, merge, split, delete, bulk location, counts, undo and coding; the staging lifecycle and its deletion rules; reading while photos are taken, one at a time, and two at a time after Done; pausing for heat and Low Power Mode; never reading a photo twice; unreadable and crashing photos; incremental grouping equal to one-shot grouping over many arrival orders, and its cost for 120 photos; the list held until the last reads end, with edits kept; lookups started early, once per barcode, at most 2 at once, within the pass budget, deferred and retried; cancelling reads and lookups on discard and on closing the camera; Add all, Undo and partial adds; and kill and resume while capturing, during a read while capturing, during a lookup, reading, reviewing, adding, and undoing, including the undo of Add all, which runs in a finished batch |
+| Linux `swift test` | Place proposals in order (barcode, name, label, FoodKeeper, none), the newest and moved packages, places the household no longer has, a remembered FoodKeeper choice, the unopened storage rule, the sections, moves and their undo, what a drop carries, Add all leaving candidates with no place, places read from used up packages and their barcodes, and a place chosen in one batch proposed in the next; bounds and hostile text; code classification and Digital Links; label words, names, amounts and stated storage; grouping: same product twice, similar products with different barcodes, front without barcode then barcode, a photo of several products, no text, duplicates, date photos, near-identical products (baking soda and powder, whole and skim milk, 2% and 1%, sizes, flavours), chaining, a common brand, order independence, a 140-photo batch; panel lines with misread words; words one letter off and their bound on hostile text; a back taken right after or before a front, and all fronts before all backs; synthetic readings modeled on the first device test (Loacker front and back, a sparkling water front and nutrition side, two Loacker flavors and other look-alikes) in 100 arrival orders; the review's proposals, provenance, merge, split, delete, bulk location, counts, undo and coding; the staging lifecycle and its deletion rules; reading while photos are taken, one at a time, and two at a time after Done; pausing for heat and Low Power Mode; never reading a photo twice; unreadable and crashing photos; incremental grouping equal to one-shot grouping over many arrival orders, and its cost for 120 photos; the list held until the last reads end, with edits kept; lookups started early, once per barcode, at most 2 at once, within the pass budget, deferred and retried; cancelling reads and lookups on discard and on closing the camera; Add all, Undo and partial adds; and kill and resume while capturing, during a read while capturing, during a lookup, reading, reviewing, adding, and undoing, including the undo of Add all, which runs in a finished batch |
 | macOS `make test-package` | The same against Apple's Foundation |
-| Hosted app tests | The usage description; the review sample on the real local store, with Add all and Undo; staged files' protection class and backup exclusion; Vision reading drawn text from a still. Vision's barcode and QR detection found nothing in the CI simulator, which logged a model load failure, so those tests only check that nothing wrong is read and mark the rest as a known simulator issue |
-| Screenshots | The review screen on synthetic readings with placeholder photos, light and dark, default and largest text |
+| Hosted app tests | The usage description; the review sample on the real local store, with places remembered from the sample food and from the bundled FoodKeeper snapshot, its sections, and Add all and Undo; staged files' protection class and backup exclusion; Vision reading drawn text from a still. Vision's barcode and QR detection found nothing in the CI simulator, which logged a model load failure, so those tests only check that nothing wrong is read and mark the rest as a known simulator issue |
+| Screenshots | The review screen by place, on synthetic readings with placeholder photos, with candidates in "Needs a place", Fridge, Freezer and Pantry, light and dark, default and largest text |
 | Device | One batch photographed by the owner, which found the problems below; nothing measured |
 
 **Not verified:** Vision's barcode and QR detection at all (it found nothing in the simulator), recognition on real packaging, lighting and curved labels; whether the thresholds group
 real photos well; how often Vision's misreads are one letter off, and whether it reads a flavor line
 and panel headings as the fixtures assume; feature print distances on real photos (the 0.25 and 0.5 values assume revision 2's
-unit vectors and are a guess); the camera itself, rapid shots, focus and memory on a device; the Photos
+unit vectors and are a guess); dragging and dropping cards, the lift, the lit place, the spring, the
+tap and the timing, which no test or screenshot shows; VoiceOver's move actions and announcements,
+Reduce Motion, and the sections at the largest text sizes on a phone; the camera itself, rapid shots, focus and memory on a device; the Photos
 picker with real libraries; how long reading takes on a phone, whether one read at a time keeps up
 with real shooting, whether reading while the camera runs slows the shutter or preview, how warm the
 phone gets, and memory with two reads at once. All of the timing and thermal numbers above are
@@ -395,16 +448,17 @@ reasoned, not measured on a device.
 7. **The scanner's own text.** Decided: the scan screen's prompt says "The scanner reads barcodes and
    keeps no photos or video.", so it no longer reads as a claim about the whole app. Text only; the
    scanner's behavior is unchanged.
-8. **Review by place, with dragging.** Decided: the review screen groups candidates into sections by
-   place, the places become large targets while a card is dragged, and the person presses and drags a
-   candidate or a selection to another place, with a snap and haptics, a tap equivalent, multi-selection
-   and undo (`product-decisions.md`, Capture; it was in the original planning handoff). The place of each candidate is proposed automatically, in this
-   order: where the person put the same product or name before, what the label states, a place the
-   FoodKeeper snapshot gives for an unopened food when the name matches one record, and otherwise
-   no place, which puts the candidate in a section of its own instead of silently in the first
-   location. Open for the design: whether Add all waits for candidates with no place. Not built. Today
-   the review is one list, a place is a menu on each card, there is a bulk move, and a candidate with
-   no label statement starts in the first location (Fridge).
+8. **Review by place, with dragging.** Built (`product-decisions.md`, Capture): the review is in
+   sections by place, the person presses and drags a candidate or a selection to another place, with
+   a tap equivalent, a VoiceOver action and undo for every move, and each place is proposed in the
+   order decided, ending in no place rather than the first location ("Places" above). Decided in the
+   building, for the owner to confirm: Add all waits for candidates with no place, which stay under
+   "Needs a place" with Put All In; that section comes first, then the household's locations in their
+   order, empty ones too; FoodKeeper's freezer is left out beside another storage, and two others give
+   no place; corrections are remembered through the packages they make, with no stored field of their
+   own; and a lookup's name or an edited name does not change a proposed place. Verified by Linux and
+   hosted tests and by screenshots; the drag, its feel, haptics, timing, VoiceOver, Reduce Motion and
+   the layout at the largest text sizes have not been tried on a phone.
 
 ## Problems found on a device
 
@@ -436,5 +490,6 @@ yet.
   and with a space after a date label, as the last day of the month (`date-recognition.md`). A proposed
   date needs no confirmation: Add all saves a date left as proposed on the package as a recognized,
   unconfirmed value (`IntakeReview.drafts`, `PutAway`), so the date would have shown had it been read.
-- **Every candidate without a stated storage starts in Fridge. Open.** It waits for the review by place
-  above.
+- **Every candidate without a stated storage started in Fridge. Fixed.** A place is proposed from
+  where the household put the same product or name before, then the label, then FoodKeeper, and a
+  candidate with none of these waits under "Needs a place" (Owner decisions 8). Not tried on a device.
