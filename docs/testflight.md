@@ -20,6 +20,10 @@ same pipeline as the owner's Press Any project, adapted for Pantrified.
 
 Runs share one queue (`concurrency: testflight`), so two never sign at once.
 
+Both variants include **Copy What the App Read** on a finished batch review. It depends on where the app
+was installed: it shows in an app installed from TestFlight, in either variant, and stays hidden in the
+same build installed from the App Store (`batch-intake.md`).
+
 The job installs XcodeGen with Homebrew, generates the project, then runs `Scripts/upload-testflight.sh`.
 The script checks the certificate against the private key and the profile against the app, team and
 certificate, imports the identity into a temporary keychain, archives with manual signing, checks the

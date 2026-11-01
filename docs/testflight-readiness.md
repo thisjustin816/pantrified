@@ -62,8 +62,18 @@ Read App Store Connect's current requirements when preparing these; they change.
 
 ## Data flows
 
-There are no analytics and no account. The only thing that can leave the device is a barcode, scanned or
-read from a batch photo, sent for product lookup in a build that carries a FoodData Central key.
+There are no analytics and no account. The only thing the app sends is a barcode, scanned or read from a
+batch photo, for product lookup in a build that carries a FoodData Central key. In a TestFlight install the
+person can also share a record of what was read from a batch through the share sheet (row below).
+
+**The read export and the privacy answers.** No change to `PrivacyInfo.xcprivacy` or to App Store
+Connect's App Privacy answers. Apple counts data as collected when it is sent off the device in a way that
+lets the developer or a partner access it for longer than needed to serve the request in real time. The
+app sends nothing: the person writes the file and picks its destination in the system share sheet each
+time, and the feature is absent from App Store installs, which are what App Privacy describes. The file
+uses no required-reason API (`verify-required-reason-apis.py` passes). If the feature ever ships in an App
+Store install, or the app starts sending the file itself, revisit both: it would then be diagnostic data
+and user content the developer keeps.
 
 The accepted product decisions add these flows. Each row's privacy answers and the manifest's collected
 data types change when the flow is built.
@@ -80,3 +90,4 @@ data types change when the flow is built.
 | Camera: Scan | Nothing. Only decoded code text reaches the app, and only the product number from a barcode or a GS1 Digital Link QR code is kept, on the device. Other QR text is dropped, and a link is never opened | Nobody | Built |
 | Camera and picked photos: Add a batch | Nothing. Photos and what was read from them are kept in the app's storage on the device only, and deleted while the app is open: a day after the batch is finished, or 3 days after an unfinished batch was last used. Only a barcode read from them may go to the product lookup above | Nobody | Built (`batch-intake.md`) |
 | Evidence crops | Nothing; only an approved crop may sync | Nobody, or iCloud for a crop | Not built |
+| Copy what the app read (TestFlight installs only) | Nothing on its own. When the person taps Share, a JSON file of one batch's recognized lines, product numbers, grouping evidence, proposals, lookup answers and the person's review changes, with app version, iOS version and device model; no photos, feature print vectors, identities, times of day, location or place names. Lines and names can be left out first | Wherever the person sends it through the share sheet, usually the developer, who keeps it privately for at most 30 days (`batch-intake.md`) | Built; offered only when the receipt file is named `sandboxReceipt` |

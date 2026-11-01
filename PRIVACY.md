@@ -1,6 +1,6 @@
 # Pantrified Privacy Policy
 
-Last updated: October 31, 2026
+Last updated: November 1, 2026
 
 Pantrified is an iPhone app for managing household food, developed by Justin
 Beeson. This policy covers the current early beta, including TestFlight builds.
@@ -9,7 +9,9 @@ feature described in the project's plans.
 
 ## Information the app collects
 
-The current app does not send personal information to the developer. It does not
+The current app does not send personal information to the developer. In
+TestFlight builds you can choose to share a record of what the app read from a
+batch, described below; the app never sends it by itself. It does not
 require a Pantrified account and contains no advertising, analytics, tracking,
 or third-party crash-reporting SDKs.
 
@@ -56,6 +58,31 @@ location.
 
 You can turn camera access off in iOS Settings and still add food by hand or
 from photos you pick.
+
+## Sharing what the app read (TestFlight builds only)
+
+In a build installed from TestFlight, a finished batch review offers **Copy
+What the App Read**. It is not in the version installed from the App Store. It
+makes a file that helps the developer fix how batches are read: the text,
+barcodes and QR code findings read from the batch's photos, how the photos were
+grouped and why, the names, dates and places proposed, the product lookup's
+answers, the changes you made in the review, the app's version and build, the
+iOS version and the iPhone model. It holds no photos and no location. Places
+appear only as fridge, freezer or pantry, and photos only by number.
+
+Before anything is shared, the app shows every line and name the file would
+hold, and you can leave out any photo, line or name. Lines that look like an
+email address, phone number, street address, card or account number, or a
+name after a title start out left out, but this check misses a lot, so read
+every line. Nothing is sent unless you tap Share and choose where the file
+goes in the iOS share sheet, each time. The app writes the file only for that
+share, deletes it when the share sheet closes and deletes any leftover copy the
+next time it starts. There is no automatic upload.
+
+If you send the file to the developer, it is kept privately, outside the
+public repository, for at most 30 days, until the problem it shows is turned
+into a test that uses made-up text, and is then deleted. Do not post the file
+anywhere public, such as a GitHub issue: the repository is public.
 
 A barcode you scan, or that the app reads from a photo, is kept with that food
 in the app's storage on your device.
