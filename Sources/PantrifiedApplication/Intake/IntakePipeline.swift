@@ -103,8 +103,9 @@ public actor IntakePipeline {
     /// Reads and lookups that ended and are still keeping their results or starting the next ones.
     private var ending = 0
     private var lookingUp: [GTIN: Task<Void, Never>] = [:]
-    /// Photos whose read stopped in this run, on a storage error or cancelled by the system rather
-    /// than by this pipeline. Not tried again until the batch opens again.
+    /// Photos whose read stopped, on a storage error or cancelled by the system rather than by this
+    /// pipeline. Not tried again until the batch opens again or a new run of `finish` starts, as
+    /// Done and Try Again do, so a lasting storage error ends the run.
     private var stalled: Set<IntakePhotoID> = []
     /// A read in `stalled` was cancelled.
     private var interrupted = false
@@ -229,6 +230,8 @@ public actor IntakePipeline {
 
     private func runFinish(_ id: IntakeBatchID, locations: [StorageLocation], defaultLocation: LocationID?) async throws -> IntakeReview {
         let started = generation
+        stalled = []
+        interrupted = false
         try await store.startProcessing(id)
         if let existing = await store.batch(id)?.review { return existing }
         cameraOpen = false
@@ -246,7 +249,7 @@ public actor IntakePipeline {
             } else if policy.pause(cameraOpen: false, conditions: conditions) != nil {
                 await waitForChange()
             } else {
-                // Every photo left stopped in this run; opening the batch again tries them again.
+                // Every photo left stopped in this run; the next run tries them again.
                 throw interrupted ? CancellationError() : StagingError.notRecognized
             }
         }
