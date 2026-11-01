@@ -67,6 +67,12 @@ Ignorable additions. A newer writer leaves `minimumReaderVersion` alone, and an 
 - A `corrected` or `recognized` event naming a field this version does not know. The event changes only that field, so it is skipped and the package stays readable.
 - An unknown field tag in a package header's `confirmed` list.
 
+The person's choice of storage-guidance record (`guidanceRecord`, `storage-guidance.md`) was added as
+such a correction, without raising `minimumReaderVersion`. A version before it skips the choice and
+matches the food by its name. It shows nothing else differently, but for a name that matches one record
+it shows that record's guidance even where the person chose another record or None of these.
+Raising it instead would withhold the whole package from such a version.
+
 Additions an older reader would misread. A newer writer raises `minimumReaderVersion`:
 
 - A new event type that changes status, location, quantity, the opened, frozen or thawed state, or a field this version shows, such as a new kind of removal.
@@ -91,7 +97,7 @@ Entities then apply these rules on top:
 | Grow-only event set | Package history | Replicas converge on the union of event records, folded in `created` order, then record ID order. |
 | Last-writer register | Shopping item `name`, `category`, `quantity`, `checkedAt` | Later stamp wins, per field. Concurrent edits to different fields both survive. |
 | Tombstone register | Shopping item `removed` | Removal sets it, restore clears it, later stamp wins. At equal stamps removal wins. The record is never deleted. |
-| Provenance-ranked field | Package `name`, `productID`, `printedDate`, `instruction` | Derived from the event fold: a `corrected` event beats any `recognized` event, before or after it. Among corrections, the later one wins. |
+| Provenance-ranked field | Package `name`, `productID`, `printedDate`, `instruction`, `guidanceRecord` | Derived from the event fold: a `corrected` event beats any `recognized` event, before or after it. Among corrections, the later one wins. |
 
 ### Packages are event logs
 
