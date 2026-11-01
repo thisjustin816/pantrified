@@ -410,14 +410,14 @@ from that text.
 - a street address: a house number followed within five words by a street word ("Street", "Ave", "Rd",
   "Dr", "Apt" and the like), "PO Box", or a two-letter state and ZIP code;
 - nine or more digits in a row, spaces or dashes allowed, which could be a card or account number;
-- a person's name after a title ("Mr", "Mrs", "Ms", "Mx", "Miss", "Dr") or after a field label such as
+- a person's name after a title ("Mr", "Mrs", "Ms", "Mx", "Miss", "Dr", in any letter case) or after a field label such as
   "Name:", "Patient:", "Customer:", "Ship to:".
 
 It goes by the shape of the text and is not reliable. It misses a name on its own ("Jane Doe"), an
 address with no house number or street word, a number written in words or with fewer than nine digits,
 an email address written with "at", and anything handwritten or in another language, and it knows
 nothing about what a product says about the person, such as a prescription. It also flags text that is
-not personal: a barcode's printed digits, a maker's address, "Dr Pepper". The preview says this, and the
+not personal: a barcode's printed digits, a maker's address, "Dr Pepper", "MISS VICKIE'S". The preview says this, and the
 person reads every line. Tests pin both the catches and the misses.
 
 **TestFlight only.** The menu item shows only when `Bundle.main.appStoreReceiptURL`'s last path component

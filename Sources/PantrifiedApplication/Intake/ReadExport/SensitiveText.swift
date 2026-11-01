@@ -61,7 +61,8 @@ public enum SensitiveText {
         ],
         .longNumber: [Pattern(regex: #"\d([\s-]?\d){8,}"#, caseInsensitive: false)],
         .personName: [
-            Pattern(regex: #"\b(Mr|Mrs|Ms|Mx|Miss|Dr)\.?\s+[A-Z][a-z]"#, caseInsensitive: false),
+            // In any case, so a label printed in capitals is caught too.
+            Pattern(regex: #"\b(Mr|Mrs|Ms|Mx|Miss|Dr)\.?\s+[A-Z][A-Z]"#, caseInsensitive: true),
             Pattern(regex: #"\b(\#(fieldLabels))\s*:\s*\S"#, caseInsensitive: true),
         ],
     ]

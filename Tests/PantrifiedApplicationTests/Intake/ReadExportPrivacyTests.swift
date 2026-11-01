@@ -11,7 +11,7 @@ struct ReadExportPrivacyTests {
         ("123 Main Street", .streetAddress), ("42 W Elm Ave Apt 3", .streetAddress), ("PO Box 1234", .streetAddress),
         ("Norwich, NY 13815", .streetAddress),
         ("4111 1111 1111 1111", .longNumber), ("Acct 123456789", .longNumber), ("0 36000 29145 2", .longNumber),
-        ("Mrs Jones", .personName), ("Dr. Patel", .personName), ("Patient: J Smith", .personName), ("Ship to: Alex", .personName),
+        ("Mrs Jones", .personName), ("Dr. Patel", .personName), ("MRS JANE DOE", .personName), ("Patient: J Smith", .personName), ("Ship to: Alex", .personName),
     ])
     func flags(text: String, kind: SensitiveText.Kind) {
         #expect(SensitiveText.flag(text) == kind)
@@ -36,9 +36,10 @@ struct ReadExportPrivacyTests {
         #expect(SensitiveText.flag(text) == nil)
     }
 
-    @Test("the check also flags some text that is not personal, such as a soda's name")
+    @Test("the check also flags some text that is not personal, such as brand names after a title")
     func overFlags() {
         #expect(SensitiveText.flag("Dr Pepper") == .personName)
+        #expect(SensitiveText.flag("MISS VICKIE'S") == .personName)
     }
 
     @Test("the export is offered only with a TestFlight receipt", arguments: [

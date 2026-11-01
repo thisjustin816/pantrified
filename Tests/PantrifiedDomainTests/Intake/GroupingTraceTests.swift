@@ -58,6 +58,20 @@ struct GroupingTraceTests {
         #expect(evidence.score == evidence.signals.map(\.points).reduce(0, +) + 20)
     }
 
+    @Test("a pair linked only by a word one letter off keeps every signal, in the order grouping weighed them")
+    func onlyOneLetterOff() throws {
+        let photos = [
+            Fixture.photo(0, lines: Fixture.front("Minis", brand: "Toacker")),
+            Fixture.photo(1, seconds: 900, lines: [Fixture.line("LOACKER", row: 0.05, size: 0.02)] + Fixture.back([])),
+        ]
+        let evidence = try #require(pair(grouper.trace(photos), photos, 0, 1))
+        let weighed = try #require(grouper.evidence(between: photos[0], and: photos[1]))
+        #expect(evidence.signals.map(\.signal) == weighed.signals)
+        #expect(evidence.signals.first == SignalPoints(signal: .someLabelWords, points: 0))
+        #expect(evidence.oneLetterOffPoints == 20)
+        #expect(evidence.score == weighed.score)
+    }
+
     @Test("a signal against the pair adds no points")
     func separatingSignal() throws {
         let photos = [
