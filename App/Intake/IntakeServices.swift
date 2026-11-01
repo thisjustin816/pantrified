@@ -39,20 +39,20 @@ struct IntakeServices: Sendable {
         looksUp = lookup != nil
     }
 
-    /// At launch: deletes what is due, finishes an add or undo a crash cut off, and carries on
-    /// reading a batch that was being read after Done. A batch still in the camera is read when it
-    /// opens. Failures wait for the next launch or for the person opening the batch; nothing here
-    /// blocks the app. The pipeline is shared with the batch screen, so a batch is never read by two
-    /// runs at once.
+    /// At launch: deletes what is due, finishes every add or undo a crash cut off, in finished
+    /// batches too, and carries on reading a batch that was being read after Done. A batch still in
+    /// the camera is read when it opens. Failures wait for the next launch or for the person opening
+    /// the batch; nothing here blocks the app. The pipeline is shared with the batch screen, so a
+    /// batch is never read by two runs at once.
     func resume(locations: [StorageLocation]) async {
         _ = try? await store.sweep()
+        await adding.resumeAll()
         guard let batch = await store.unfinished(in: space) else { return }
         switch batch.phase {
         case .processing:
             _ = try? await pipeline.process(batch.id, locations: locations, defaultLocation: locations.first?.id)
             await pipeline.lookUpNames(batch.id)
         case .reviewing:
-            try? await adding.resume(batch.id)
             await pipeline.lookUpNames(batch.id)
         case .capturing, .finished:
             break

@@ -223,16 +223,21 @@ progress, and a change whose save fails is undone in memory too:
 | Killed while reading after Done | Photos already read are kept; the next launch, or opening the batch, reads the rest |
 | A photo crashes the reader | Each read is counted before it starts, so the crash counts. After two reads that did not finish, the photo is kept as "could not read" and the rest go on; the reading screens also offer Discard |
 | Killed during review | Every edit is kept; the batch opens again in the review |
-| Killed during Add or its Undo | Recorded before it starts and finished on the next launch, without adding twice |
+| Killed during Add or its Undo | Recorded before it starts and finished on the next launch, without adding twice. This covers the undo of Add all, which runs while the batch is still finished. One that fails at launch is tried again at the launch after |
 | Add fails | Nothing is saved and nothing is left to finish; the candidates stay |
 
 **Deleting.** One clock for an unfinished batch: it is deleted entirely, photo files, what was read
 from them and the review, 3 days (`StagingStore.unfinishedBatchLifetime`) after it was last used. Use is
 opening the batch screen, taking, picking or removing a photo, changing the review, and adding or undoing
-an add; reading on its own is not use. An unfinished batch holding an add that a kill cut off is kept
-until a launch finishes that add, however long that takes, so the food is not lost to expiry. A finished batch, one with everything added or deleted, keeps its
+an add; reading on its own is not use. A finished batch, one with everything added or deleted, keeps its
 photos for the one-day recovery window (`StagingStore.defaultRecoveryWindow`) so Add can be undone, then is
-deleted with them. **Discard** deletes the photos and the batch at once. Deleting runs while the app is
+deleted with them. Deleting on schedule skips a batch, finished or not, that holds an add or an undo a
+kill cut off, until that work is finished at a launch (or, for an unfinished batch, when the batch screen
+opens), however long that takes, so the pantry ends up as the person left it. The store checks this
+each time deleting runs, so it holds whichever of launch resume and the deleting when the app becomes
+active runs first. Then the batch expires as usual: an undo returns its candidates to review, so the
+batch is unfinished and its 3 days start then; an add that finishes the review starts its one-day window
+then. **Discard** deletes the photos and the batch at once. Deleting runs while the app is
 open: at launch, whenever the app becomes active, and when the batch screen opens; an app that stays closed
 deletes them the next time it opens. The next batch screen after an unfinished batch expired starts a new
 batch and says once "An unfinished batch was deleted after 3 days without use." Photo files no batch
@@ -272,7 +277,7 @@ syncs.
 
 | Level | What runs |
 |---|---|
-| Linux `swift test` | Bounds and hostile text; code classification and Digital Links; label words, names, amounts and stated storage; grouping: same product twice, similar products with different barcodes, front without barcode then barcode, a photo of several products, no text, duplicates, date photos, near-identical products (baking soda and powder, whole and skim milk, 2% and 1%, sizes, flavours), chaining, a common brand, order independence, a 140-photo batch; the review's proposals, provenance, merge, split, delete, bulk location, counts, undo and coding; the staging lifecycle and its deletion rules; reading while photos are taken, one at a time, and two at a time after Done; pausing for heat and Low Power Mode; never reading a photo twice; unreadable and crashing photos; incremental grouping equal to one-shot grouping over many arrival orders, and its cost for 120 photos; the list held until the last reads end, with edits kept; lookups started early, once per barcode, at most 2 at once, within the pass budget, deferred and retried; cancelling reads and lookups on discard and on closing the camera; Add all, Undo and partial adds; and kill and resume while capturing, during a read while capturing, during a lookup, reading, reviewing, adding and undoing |
+| Linux `swift test` | Bounds and hostile text; code classification and Digital Links; label words, names, amounts and stated storage; grouping: same product twice, similar products with different barcodes, front without barcode then barcode, a photo of several products, no text, duplicates, date photos, near-identical products (baking soda and powder, whole and skim milk, 2% and 1%, sizes, flavours), chaining, a common brand, order independence, a 140-photo batch; the review's proposals, provenance, merge, split, delete, bulk location, counts, undo and coding; the staging lifecycle and its deletion rules; reading while photos are taken, one at a time, and two at a time after Done; pausing for heat and Low Power Mode; never reading a photo twice; unreadable and crashing photos; incremental grouping equal to one-shot grouping over many arrival orders, and its cost for 120 photos; the list held until the last reads end, with edits kept; lookups started early, once per barcode, at most 2 at once, within the pass budget, deferred and retried; cancelling reads and lookups on discard and on closing the camera; Add all, Undo and partial adds; and kill and resume while capturing, during a read while capturing, during a lookup, reading, reviewing, adding, and undoing, including the undo of Add all, which runs in a finished batch |
 | macOS `make test-package` | The same against Apple's Foundation |
 | Hosted app tests | The usage description; the review sample on the real local store, with Add all and Undo; staged files' protection class and backup exclusion; Vision reading drawn text from a still. Vision's barcode and QR detection found nothing in the CI simulator, which logged a model load failure, so those tests only check that nothing wrong is read and mark the rest as a known simulator issue |
 | Screenshots | The review screen on synthetic readings with placeholder photos, light and dark, default and largest text |

@@ -913,6 +913,94 @@ struct BatchIntakeTests {
         #expect(await relaunched.batch(batch)?.review?.summaries.count == 2)
     }
 
+    /// Adds every candidate of a two-photo batch, then does what `undo` does up to a kill: the undo
+    /// is on record and no package is discarded yet. The batch is still finished.
+    private func undoCutOffAfterAddAll(_ world: IntakeWorld) async throws -> IntakeBatchID {
+        let store = world.launch()
+        let batch = try await world.stage(["rice", "beans"], in: store)
+        let review = try await world.process(batch, store)
+        let addition = try await IntakeAdding(pantry: world.pantry, store: store).add(review.readyToAdd, in: batch)
+        try await store.updateReview(batch) { $0.beginUndo(addition.candidates) }
+        #expect(await store.batch(batch)?.phase == .finished)
+        #expect(try await world.pantry.snapshot().entries.count == 2)
+        return batch
+    }
+
+    @Test("launch finishes an undo of Add all that a kill cut off, although the batch is finished")
+    func killDuringUndoOfAddAll() async throws {
+        let world = IntakeWorld()
+        let batch = try await undoCutOffAfterAddAll(world)
+
+        let relaunched = world.launch()
+        await IntakeAdding(pantry: world.pantry, store: relaunched).resumeAll()
+        #expect(try await world.pantry.snapshot().entries.isEmpty)
+        let back = try #require(await relaunched.batch(batch))
+        #expect(back.phase == .reviewing)
+        #expect(back.review?.summaries.count == 2)
+        #expect(back.review?.hasAddOrUndoInProgress == false)
+    }
+
+    @Test("a finished batch with an undo cut off is kept past every expiry, finished at launch, and then expires as usual")
+    func pendingUndoOutlivesExpiry() async throws {
+        let world = IntakeWorld()
+        let batch = try await undoCutOffAfterAddAll(world)
+
+        world.time.advance(hours: 24 * 4)
+        let relaunched = world.launch()
+        // The sweep when the app becomes active can run before launch resume does.
+        #expect(try await relaunched.sweep() == 0)
+        #expect(await relaunched.batch(batch) != nil)
+        await IntakeAdding(pantry: world.pantry, store: relaunched).resumeAll()
+        #expect(try await world.pantry.snapshot().entries.isEmpty)
+
+        world.time.advance(hours: 71)
+        #expect(try await relaunched.sweep() == 0)
+        world.time.advance(hours: 1)
+        #expect(try await relaunched.sweep() == 2)
+        #expect(await relaunched.batch(batch) == nil)
+    }
+
+    @Test("once a cut-off undo is finished and the batch is added again, it expires a recovery window after it finished")
+    func resolvedUndoThenFinishedExpires() async throws {
+        let world = IntakeWorld()
+        let batch = try await undoCutOffAfterAddAll(world)
+        let relaunched = world.launch()
+        let adding = IntakeAdding(pantry: world.pantry, store: relaunched)
+        await adding.resumeAll()
+        let back = try #require(await relaunched.batch(batch)?.review)
+        _ = try await adding.add(back.readyToAdd, in: batch)
+        #expect(await relaunched.batch(batch)?.phase == .finished)
+
+        world.time.advance(hours: 23)
+        #expect(try await relaunched.sweep() == 0)
+        world.time.advance(hours: 1)
+        #expect(try await relaunched.sweep() == 2)
+        #expect(try await world.pantry.snapshot().entries.count == 2)
+    }
+
+    @Test("launch resume never adds a second time: not a finished add, and not a cut-off add resumed twice")
+    func resumeAllAddsOnce() async throws {
+        let world = IntakeWorld()
+        let store = world.launch()
+        let added = try await world.stage(["rice"], in: store)
+        let first = try await world.process(added, store)
+        _ = try await IntakeAdding(pantry: world.pantry, store: store).add(first.readyToAdd, in: added)
+        #expect(await store.batch(added)?.phase == .finished)
+        let cutOff = try await world.stage(["beans"], in: store)
+        let second = try await world.process(cutOff, store)
+        // What `add` does for the beans, stopped after the package is saved.
+        try await store.updateReview(cutOff) { $0.beginAdd(Set(second.readyToAdd)) }
+        _ = try await world.pantry.putAway(second.drafts(for: second.readyToAdd))
+
+        let relaunched = world.launch()
+        let adding = IntakeAdding(pantry: world.pantry, store: relaunched)
+        await adding.resumeAll()
+        await adding.resumeAll()
+        #expect(try await world.pantry.snapshot().entries.count == 2)
+        #expect(await relaunched.withAddOrUndoInProgress(in: world.space).isEmpty)
+        #expect(await relaunched.batch(cutOff)?.phase == .finished)
+    }
+
     @Test("a failed save adds nothing and leaves every candidate in review")
     func failedSave() async throws {
         let world = IntakeWorld()

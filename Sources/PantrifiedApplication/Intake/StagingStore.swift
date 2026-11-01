@@ -383,6 +383,12 @@ public actor StagingStore {
         return batches.last { $0.space == space && $0.phase != .finished }
     }
 
+    /// The Space's batches, finished or not, with an add or undo on record and not finished.
+    public func withAddOrUndoInProgress(in space: SpaceID) -> [IntakeBatch] {
+        ensureLoaded()
+        return batches.filter { $0.space == space && $0.review?.hasAddOrUndoInProgress == true }
+    }
+
     /// The unfinished batch to carry on with, or a new one.
     public func open(in space: SpaceID) throws(StagingError) -> IntakeBatch {
         try writable()
@@ -593,9 +599,10 @@ public actor StagingStore {
 
     /// Deletes what is due, and returns how many photo files were deleted:
     ///
-    /// - an unfinished batch, entirely, `unfinishedBatchLifetime` after its last activity, unless an
-    ///   add from it is on record and not finished yet;
+    /// - an unfinished batch, entirely, `unfinishedBatchLifetime` after its last activity;
     /// - a finished batch, with its photos, a recovery window after it finished;
+    /// - no batch, finished or not, while an add or undo from it is on record and not finished, since
+    ///   that work changes what is in the pantry. Once it is finished the batch expires as above;
     /// - photo files no batch names, left by a crash between writing a file and recording it, once
     ///   no damaged batch list is set aside;
     /// - a damaged batch list set aside a recovery window ago.
@@ -613,12 +620,11 @@ public actor StagingStore {
             changed = true
         }
         let expired = batches.filter { batch in
+            if batch.review?.hasAddOrUndoInProgress == true { return false }
             if batch.phase == .finished {
                 guard let finished = batch.finishedAt else { return false }
                 return now.timeIntervalSince(finished) >= recoveryWindow
             }
-            // An add on record is food the person put away; the batch waits for it to be finished.
-            guard batch.review?.pendingAdd.isEmpty != false else { return false }
             return now.timeIntervalSince(batch.lastActivityAt) >= Self.unfinishedBatchLifetime
         }
         if !expired.isEmpty {

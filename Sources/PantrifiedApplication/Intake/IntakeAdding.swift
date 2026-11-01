@@ -92,6 +92,15 @@ public struct IntakeAdding: Sendable {
         }
     }
 
+    /// Finishes every add or undo a crash or kill cut off in this Space's batches, whatever their
+    /// phase: undoing the add that finished a batch runs while the batch is still finished. A batch
+    /// whose work fails waits for the next call, and the others are still finished.
+    public func resumeAll() async {
+        for batch in await store.withAddOrUndoInProgress(in: pantry.space) {
+            try? await resume(batch.id)
+        }
+    }
+
     private func discard(_ packages: [PackageID]) async throws {
         let active = try await pantry.activity(of: packages)
         for id in packages where active[id] == true {
