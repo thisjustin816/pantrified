@@ -20,7 +20,7 @@ struct EditFoodDraftTests {
         Package(spaceID: SpaceID(), name: name, location: LocationID(), quantity: quantity, printedDate: printed, addedAt: now)
     }
 
-    private func printed(_ label: PrintedDateLabel = .useBy, _ month: Int, _ day: Int) throws -> PrintedDate {
+    private func printed(_ month: Int, _ day: Int, label: PrintedDateLabel = .useBy) throws -> PrintedDate {
         try #require(PrintedDate.onDay(label, year: 2027, month: month, day: day))
     }
 
@@ -89,7 +89,7 @@ struct EditFoodDraftTests {
 
         var relabeled = EditFoodDraft(package: package(printed: try printed(3, 9)), now: now, calendar: cal)
         relabeled.label = .bestBy
-        #expect(relabeled.edit(calendar: cal) == PackageEdit(printedDate: .set(try printed(.bestBy, 3, 9))))
+        #expect(relabeled.edit(calendar: cal) == PackageEdit(printedDate: .set(try printed(3, 9, label: .bestBy))))
 
         var cleared = EditFoodDraft(package: package(printed: try printed(3, 9)), now: now, calendar: cal)
         cleared.hasDate = false
@@ -112,7 +112,7 @@ struct EditFoodDraftTests {
 
     @Test("a food's own date label is offered even when it is not a usual one")
     func ownLabelOffered() throws {
-        let draft = EditFoodDraft(package: package(printed: try printed(.unlabeled, 3, 9)), now: now, calendar: calendar("UTC"))
+        let draft = EditFoodDraft(package: package(printed: try printed(3, 9, label: .unlabeled)), now: now, calendar: calendar("UTC"))
 
         #expect(draft.labelChoices.contains(.unlabeled))
         #expect(EditFoodDraft(package: package(), now: now, calendar: calendar("UTC")).labelChoices == [.useBy, .bestBy, .sellBy, .freezeBy, .packed])
