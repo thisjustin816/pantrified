@@ -34,7 +34,9 @@ public struct StagedPhoto: Sendable, Hashable, Codable, Identifiable {
     public let contentDigest: String?
     public internal(set) var observation: PhotoObservation?
     /// Reads started and not cancelled. Counted before each read, so a read that crashes the app or
-    /// is stopped by the system counts as well as one that fails.
+    /// is stopped by the system counts as well as one that fails. A read that finished but whose
+    /// result could not be kept on a storage error hands its count to the next read of the photo
+    /// while the app keeps running.
     public internal(set) var readAttempts = 0
     /// Read too many times without a result. It is kept with nothing read from it.
     public internal(set) var couldNotRead = false
@@ -229,6 +231,12 @@ public actor StagingStore {
     private var saved = Manifest(batches: [])
     /// What went wrong reading the batch list in this launch, for the screen to say once.
     public private(set) var loadProblem: StagingLoadProblem?
+    /// Photos with a read `beginRead` counted that has not yet been kept or cancelled.
+    private var readsCounted: Set<IntakePhotoID> = []
+    /// Photos whose counted read finished but whose result could not be kept on a storage error. Their
+    /// next read takes over that count, so storage trouble cannot use up a good photo's reads. Kept in
+    /// memory only: after a relaunch such a read counts like one that crashed.
+    private var readNotKept: Set<IntakePhotoID> = []
 
     public init(files: any StagingFiles, time: any TimeSource, recoveryWindow: TimeInterval = StagingStore.defaultRecoveryWindow) {
         self.files = files
@@ -383,6 +391,12 @@ public actor StagingStore {
         return batches.last { $0.space == space && $0.phase != .finished }
     }
 
+    /// The Space's batches, finished or not, with an add or undo on record and not finished.
+    public func withAddOrUndoInProgress(in space: SpaceID) -> [IntakeBatch] {
+        ensureLoaded()
+        return batches.filter { $0.space == space && $0.review?.hasAddOrUndoInProgress == true }
+    }
+
     /// The unfinished batch to carry on with, or a new one.
     public func open(in space: SpaceID) throws(StagingError) -> IntakeBatch {
         try writable()
@@ -479,12 +493,14 @@ public actor StagingStore {
         guard batches[index].photos[position].observation == nil else { return false }
         do {
             try files.write(try JSONEncoder().encode(observation), to: Self.observationName(observation.photo))
+            batches[index].photos[position].observation = observation
+            batches[index].photos[position].couldNotRead = couldNotRead
+            try save()
         } catch {
+            if readsCounted.remove(observation.photo) != nil, !couldNotRead { readNotKept.insert(observation.photo) }
             throw .storage
         }
-        batches[index].photos[position].observation = observation
-        batches[index].photos[position].couldNotRead = couldNotRead
-        try save()
+        readsCounted.remove(observation.photo)
         return true
     }
 
@@ -494,8 +510,11 @@ public actor StagingStore {
         try writable()
         guard let index = index(id) else { throw .unknownBatch }
         guard let position = batches[index].photos.firstIndex(where: { $0.id == photo }) else { throw .unknownPhoto }
-        batches[index].photos[position].readAttempts += 1
-        try save()
+        if readNotKept.remove(photo) == nil {
+            batches[index].photos[position].readAttempts += 1
+            try save()
+        }
+        readsCounted.insert(photo)
         return batches[index].photos[position].readAttempts
     }
 
@@ -508,6 +527,7 @@ public actor StagingStore {
         guard batches[index].photos[position].readAttempts > 0 else { return }
         batches[index].photos[position].readAttempts -= 1
         try save()
+        readsCounted.remove(photo)
     }
 
     public func observations(in id: IntakeBatchID) -> [PhotoObservation] {
@@ -593,9 +613,10 @@ public actor StagingStore {
 
     /// Deletes what is due, and returns how many photo files were deleted:
     ///
-    /// - an unfinished batch, entirely, `unfinishedBatchLifetime` after its last activity, unless an
-    ///   add from it is on record and not finished yet;
+    /// - an unfinished batch, entirely, `unfinishedBatchLifetime` after its last activity;
     /// - a finished batch, with its photos, a recovery window after it finished;
+    /// - no batch, finished or not, while an add or undo from it is on record and not finished, since
+    ///   that work changes what is in the pantry. Once it is finished the batch expires as above;
     /// - photo files no batch names, left by a crash between writing a file and recording it, once
     ///   no damaged batch list is set aside;
     /// - a damaged batch list set aside a recovery window ago.
@@ -613,12 +634,11 @@ public actor StagingStore {
             changed = true
         }
         let expired = batches.filter { batch in
+            if batch.review?.hasAddOrUndoInProgress == true { return false }
             if batch.phase == .finished {
                 guard let finished = batch.finishedAt else { return false }
                 return now.timeIntervalSince(finished) >= recoveryWindow
             }
-            // An add on record is food the person put away; the batch waits for it to be finished.
-            guard batch.review?.pendingAdd.isEmpty != false else { return false }
             return now.timeIntervalSince(batch.lastActivityAt) >= Self.unfinishedBatchLifetime
         }
         if !expired.isEmpty {

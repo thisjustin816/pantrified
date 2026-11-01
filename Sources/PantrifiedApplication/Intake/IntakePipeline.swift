@@ -84,8 +84,8 @@ public actor IntakePipeline {
     private let lookupPolicy: LookupPolicy
     private let settling: SettlingPolicy
     private let time: any TimeSource
-    /// A photo whose reads fail or stop this many times is kept with nothing read from it, so one bad
-    /// file cannot stop a batch.
+    /// A photo whose reads fail, crash or are stopped by the system this many times is kept with
+    /// nothing read from it, so one bad file cannot stop a batch.
     static let attemptsPerPhoto = 2
 
     /// The batch being worked on, and a number that changes whenever work on it is stopped, so a read

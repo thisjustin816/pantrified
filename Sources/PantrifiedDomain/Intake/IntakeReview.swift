@@ -148,6 +148,10 @@ public struct IntakeReview: Sendable, Hashable, Codable {
     /// Nothing is left to review: every candidate was added or deleted.
     public var isFinished: Bool { reviewing.isEmpty }
 
+    /// An add or an undo is on record and not finished. A review can be finished while an undo of
+    /// its last add is on record, because its candidates stay added until the undo is done.
+    public var hasAddOrUndoInProgress: Bool { !pendingAdd.isEmpty || !pendingUndo.isEmpty }
+
     public func candidate(_ id: IntakeCandidateID) -> IntakeCandidate? {
         candidates.first { $0.id == id }
     }
