@@ -464,12 +464,15 @@ public struct IntakeReview: Sendable, Hashable, Codable {
     }
 
     /// Puts added candidates back under review with new package identities, because the packages
-    /// they made stay in the inventory's history as discarded.
+    /// they made stay in the inventory's history as discarded. An add still on record for them is
+    /// over too: its packages are the ones the undo discarded, and finishing it on the next launch
+    /// would put the food away again.
     public mutating func markReviewing(_ ids: Set<IntakeCandidateID>) {
         for index in candidates.indices where ids.contains(candidates[index].id) {
             candidates[index].status = .reviewing
             candidates[index].packageIDs = candidates[index].packageIDs.map { _ in PackageID() }
         }
+        pendingAdd.subtract(ids)
         pendingUndo.subtract(ids)
         history = []
     }

@@ -71,17 +71,24 @@ public struct IntakeAdding: Sendable {
     /// Finishes an add or undo that a crash or kill cut off. Adding the same drafts again finds the
     /// packages already made, so nothing is added twice.
     public func resume(_ batch: IntakeBatchID) async throws {
-        guard let review = await store.batch(batch)?.review else { return }
+        guard var review = await store.batch(batch)?.review else { return }
         if !review.pendingUndo.isEmpty {
-            let packages = review.candidates.filter { review.pendingUndo.contains($0.id) }.flatMap(\.packagesToAdd)
+            let undone = review.pendingUndo
+            let packages = review.candidates.filter { undone.contains($0.id) }.flatMap(\.packagesToAdd)
             try await discard(packages)
-            try await store.updateReview(batch) { $0.markReviewing(review.pendingUndo) }
+            // Read back after the undo: it ends any add on record for the same candidates, and the
+            // add below must not finish those.
+            review = try await store.updateReview(batch) { review in
+                review.markReviewing(undone)
+                return review
+            }
         }
         if !review.pendingAdd.isEmpty {
-            let ids = review.candidates.filter { review.pendingAdd.contains($0.id) && $0.status == .reviewing }.map(\.id)
+            let adding = review.pendingAdd
+            let ids = review.candidates.filter { adding.contains($0.id) && $0.status == .reviewing }.map(\.id)
             let drafts = review.drafts(for: ids)
             if !drafts.isEmpty { _ = try await pantry.putAway(drafts) }
-            try await store.updateReview(batch) { $0.markAdded(review.pendingAdd) }
+            try await store.updateReview(batch) { $0.markAdded(adding) }
         }
     }
 

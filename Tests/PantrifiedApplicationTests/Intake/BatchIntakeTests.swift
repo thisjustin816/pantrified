@@ -665,6 +665,46 @@ struct BatchIntakeTests {
         #expect(await world.launch().batch(batch)?.review?.isFinished == true)
     }
 
+    @Test("undoing an add whose candidates could not be marked takes it back for good, and the candidate can be added again")
+    func undoAfterMarkFails() async throws {
+        let world = IntakeWorld()
+        let store = world.launch()
+        let batch = try await world.stage(["rice"], in: store)
+        let review = try await world.process(batch, store)
+        let adding = IntakeAdding(pantry: world.pantry, store: store)
+        world.files.failWrites(after: 1)
+        let addition = try await adding.add(review.readyToAdd, in: batch)
+        world.files.allowWrites()
+        #expect(try await world.pantry.snapshot().entries.count == 1)
+
+        try await adding.undo(addition)
+        #expect(try await world.pantry.snapshot().entries.isEmpty)
+        #expect(await store.batch(batch)?.review?.readyToAdd.count == 1)
+        try await IntakeAdding(pantry: world.pantry, store: world.launch()).resume(batch)
+        #expect(try await world.pantry.snapshot().entries.isEmpty)
+    }
+
+    @Test("an undo cut off part way, of an add whose candidates could not be marked, is finished on relaunch and adds nothing")
+    func killDuringUndoAfterMarkFails() async throws {
+        let world = IntakeWorld()
+        let store = world.launch()
+        let batch = try await world.stage(["rice"], in: store)
+        let review = try await world.process(batch, store)
+        world.files.failWrites(after: 1)
+        let addition = try await IntakeAdding(pantry: world.pantry, store: store).add(review.readyToAdd, in: batch)
+        world.files.allowWrites()
+        // What `undo` does, stopped before the packages are discarded.
+        try await store.updateReview(batch) { $0.beginUndo(addition.candidates) }
+
+        let relaunched = world.launch()
+        try await IntakeAdding(pantry: world.pantry, store: relaunched).resume(batch)
+        #expect(try await world.pantry.snapshot().entries.isEmpty)
+        let back = try #require(await relaunched.batch(batch)?.review)
+        #expect(back.summaries.map(\.id) == Array(addition.candidates))
+        #expect(back.pendingAdd.isEmpty)
+        #expect(back.pendingUndo.isEmpty)
+    }
+
     @Test("a second add begun while an earlier one is unfinished keeps both on record")
     func pendingAddsMerge() async throws {
         let world = IntakeWorld()
