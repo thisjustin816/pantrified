@@ -276,27 +276,19 @@ struct IntakeReviewView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .disabled(ready == 0 || intake.isAdding || intake.isFinishing)
-                // At accessibility sizes the bar would cover most of the list; the list says it.
-                if !typeSize.isAccessibilitySize {
-                    let unplaced = intake.unplacedIDs.count
-                    let nameless = intake.namelessCount
-                    if unplaced > 0 {
-                        waitingLine(IntakeText.needPlace(unplaced))
-                    } else if nameless > 0 {
-                        waitingLine(IntakeText.waiting(nameless))
-                    }
+                // At accessibility sizes the bar would cover most of the list; the cards say it.
+                // Candidates with no place are counted at the top of their own section.
+                let nameless = intake.namelessCount
+                if nameless > 0 && !typeSize.isAccessibilitySize {
+                    Text(IntakeText.waiting(nameless))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
                 }
             }
         }
         .padding()
         .background(.bar)
-    }
-
-    private func waitingLine(_ text: String) -> some View {
-        Text(text)
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-            .multilineTextAlignment(.center)
     }
 
     private var selectionActions: some View {

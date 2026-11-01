@@ -70,7 +70,6 @@ final class IntakeModel {
     var sections: [PlaceSection] { review?.sections(in: locations) ?? [] }
     /// What Add all adds: candidates with a name and one of the household's places.
     var readyIDs: [IntakeCandidateID] { review?.readyToAdd(in: locations) ?? [] }
-    var unplacedIDs: [IntakeCandidateID] { review?.unplaced(in: locations) ?? [] }
     var namelessCount: Int { summaries.filter { $0.notes.contains(.noName) }.count }
     var canUndoChange: Bool { review?.canUndo ?? false }
     var photoLimit: Int { IntakeLimits.photosPerBatch }
