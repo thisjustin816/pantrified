@@ -2,11 +2,11 @@ import AVFoundation
 import PantrifiedApplication
 import PantrifiedDomain
 
-/// The back camera, reading product barcodes. Only decoded barcode text reaches the app: the
-/// metadata output decodes inside AVFoundation, no video data output is attached, and the preview
-/// layer draws frames without handing them to app code. No frame is kept or saved.
+/// The back camera, reading product barcodes and QR codes. Only decoded code text reaches the app:
+/// the metadata output decodes inside AVFoundation, no video data output is attached, and the
+/// preview layer draws frames without handing them to app code. No frame is kept or saved.
 ///
-/// Session work runs on a private serial queue, because starting a session blocks. Barcodes are
+/// Session work runs on a private serial queue, because starting a session blocks. Codes are
 /// delivered on the main queue.
 final class BarcodeCamera: NSObject, AVCaptureMetadataOutputObjectsDelegate, @unchecked Sendable {
     enum Access {
@@ -72,9 +72,11 @@ final class BarcodeCamera: NSObject, AVCaptureMetadataOutputObjectsDelegate, @un
     ) {
         let reads = metadataObjects.compactMap { object -> BarcodeRead? in
             guard let code = object as? AVMetadataMachineReadableCodeObject,
-                  let payload = code.stringValue,
                   let symbology = Self.symbology(code.type)
             else { return nil }
+            // A QR code whose bytes are not text has no string. It still names no product, so it
+            // is passed on as empty text and the scan says so.
+            guard let payload = code.stringValue ?? (symbology == .qr ? "" : nil) else { return nil }
             return BarcodeRead(payload: payload, symbology: symbology)
         }
         guard !reads.isEmpty else { return }
@@ -85,11 +87,12 @@ final class BarcodeCamera: NSObject, AVCaptureMetadataOutputObjectsDelegate, @un
     // MARK: Setup
 
     /// UPC-A arrives as EAN-13 with a leading zero; AVFoundation has no type of its own for it.
-    private static func symbology(_ type: AVMetadataObject.ObjectType) -> BarcodeSymbology? {
+    private static func symbology(_ type: AVMetadataObject.ObjectType) -> CodeSymbology? {
         switch type {
         case .ean13: .ean13
         case .ean8: .ean8
         case .upce: .upcE
+        case .qr: .qr
         default: nil
         }
     }
@@ -114,7 +117,7 @@ final class BarcodeCamera: NSObject, AVCaptureMetadataOutputObjectsDelegate, @un
         session.addInput(input)
         session.addOutput(output)
         // The types an output offers are known only once it is in a session with an input.
-        let wanted: [AVMetadataObject.ObjectType] = [.ean13, .ean8, .upce]
+        let wanted: [AVMetadataObject.ObjectType] = [.ean13, .ean8, .upce, .qr]
         output.metadataObjectTypes = wanted.filter(output.availableMetadataObjectTypes.contains)
         output.setMetadataObjectsDelegate(self, queue: .main)
         tune(camera)

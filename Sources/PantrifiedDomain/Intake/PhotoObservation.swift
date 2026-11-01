@@ -98,7 +98,7 @@ public struct RecognizedTextLine: Sendable, Hashable, Codable {
     }
 }
 
-/// The symbologies the photo recognizer reports.
+/// The symbologies the photo recognizer and the live scanner report.
 public enum CodeSymbology: String, Sendable, Hashable, Codable {
     case ean13, ean8, upcA, upcE, qr
 }
