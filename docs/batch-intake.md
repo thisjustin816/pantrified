@@ -300,3 +300,33 @@ reasoned, not measured on a device.
 5. **The scanner's own text.** Decided: the scan screen's prompt says "The scanner reads barcodes and
    keeps no photos or video.", so it no longer reads as a claim about the whole app. Text only; the
    scanner's behavior is unchanged.
+6. **Review by place, with dragging.** Decided: the review screen groups candidates into sections by
+   place and the person presses and drags a candidate or a selection to another section
+   (`product-decisions.md`, Capture). The place of each candidate is proposed automatically, in this
+   order: where the person put the same product or name before, what the label states, a place the
+   FoodKeeper snapshot gives for an unopened food when the name matches one record, and otherwise
+   no place, which puts the candidate in a section of its own instead of silently in the first
+   location. Open for the design: whether Add all waits for candidates with no place. Not built. Today
+   the review is one list, a place is a menu on each card, there is a bulk move, and a candidate with
+   no label statement starts in the first location (Fridge).
+
+## Problems found on a device
+
+The first device test of a batch found these. None is fixed yet.
+
+- **Front and back of one package stayed apart.** A front photo with no barcode (a logo the text
+  reader misread, "Loacker" as "Toacker") and a back photo with the barcode and nutrition panel stayed
+  apart with no "might be the same" suggestion, which means their score was below `suggestAt`. Two shots of one sparkling water, one
+  read as "Sparking", also stayed apart. Word matching is exact, so one wrong letter removes the match,
+  and nothing treats a barcode, date or nutrition panel photo taken straight after a front photo as
+  the same package.
+- **A merged candidate took a nutrition label's text as its name.** The name is the tallest name-like
+  line across the candidate's photos, with no notion of which photo is the front, so large text on a
+  panel can win.
+- **A printed month and year, "BEST IF USED BY BB 11.2027", showed no date** on the added food. Whether
+  the format is not read or the proposal was not confirmed has not been checked.
+- **Every candidate without a stated storage starts in Fridge.**
+
+What would settle them: a grouping that uses a front-then-back shot as evidence, word matching that
+tolerates one wrong letter without merging on it alone, names taken from the barcode lookup first and
+never from a panel, and the review by place above.
