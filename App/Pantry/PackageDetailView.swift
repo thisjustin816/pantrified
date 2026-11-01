@@ -9,6 +9,7 @@ struct PackageDetailView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var editing = false
+    @State private var choosingRecord = false
 
     private var entry: PantryEntry? { model.snapshot?.entries.first { $0.id == id } }
 
@@ -35,6 +36,11 @@ struct PackageDetailView: View {
         }
         .sheet(isPresented: $editing) {
             if let entry { EditFoodView(model: model, entry: entry) }
+        }
+        .sheet(isPresented: $choosingRecord) {
+            if let entry, let question = entry.recordQuestion {
+                FoodKeeperPickerView(model: model, entry: entry, question: question)
+            }
         }
         .pantryChrome(model)
     }
@@ -75,6 +81,20 @@ struct PackageDetailView: View {
                     Text("How long it keeps")
                 } footer: {
                     Text("From \(guidance.source). Guidance, not an expiration date.")
+                }
+            }
+            if let row = PackageDetailText.foodKeeperRow(for: entry) {
+                Section {
+                    if let current = row.current {
+                        LabeledContent("FoodKeeper food", value: current)
+                    }
+                    if row.asks {
+                        Button("Which FoodKeeper food is this?", systemImage: "questionmark.circle") { choosingRecord = true }
+                    } else {
+                        Button("Change FoodKeeper food", systemImage: "arrow.left.arrow.right") { choosingRecord = true }
+                    }
+                } footer: {
+                    if let note = row.note { Text(note) }
                 }
             }
             Section {

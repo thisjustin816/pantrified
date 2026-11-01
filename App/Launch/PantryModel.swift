@@ -110,6 +110,22 @@ final class PantryModel {
         }
     }
 
+    /// Saves which FoodKeeper food the person says this is, or with nil clears the choice, and offers
+    /// one undo. Returns whether the food was left as the person asked, so the picker can close.
+    func chooseGuidance(_ choice: GuidanceChoice?, on entry: PantryEntry) async -> Bool {
+        do {
+            if case .applied(let tokens) = try await pantry.edit(PackageEdit(guidanceRecord: .set(choice)), on: entry.id) {
+                offerUndo(PackageDetailText.choiceMessage(choice, name: entry.package.name), tokens)
+            }
+            await load()
+            return true
+        } catch {
+            problem = "That didn't save. Your list has been refreshed."
+            await load()
+            return false
+        }
+    }
+
     func undo() async {
         guard let prompt = undoPrompt else { return }
         clearUndo()
