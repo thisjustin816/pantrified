@@ -25,6 +25,28 @@ enum IntakeText {
         count == 1 ? "1 item needs a name before it can be added." : "\(count) items need a name before they can be added."
     }
 
+    /// The section of candidates with no place yet.
+    static let needsAPlace = "Needs a place"
+
+    static func needPlace(_ count: Int) -> String {
+        count == 1 ? "1 item needs a place before it can be added." : "\(count) items need a place before they can be added."
+    }
+
+    static func items(_ count: Int) -> String {
+        count == 1 ? "1 item" : "\(count) items"
+    }
+
+    /// Said to VoiceOver after a move.
+    static func moved(_ count: Int, name: String?, to place: String) -> String {
+        if count == 1, let name { return "Moved \(name) to \(place)" }
+        return "Moved \(items(count)) to \(place)"
+    }
+
+    /// Where a dragged card would land, shown on the place it is over.
+    static func dropHere(_ place: String) -> String {
+        "Drop to put in \(place)"
+    }
+
     static func reading(_ progress: IntakeProgress) -> String {
         "Reading photo \(min(progress.read + 1, max(progress.total, 1))) of \(max(progress.total, 1))"
     }
@@ -78,7 +100,12 @@ enum IntakeText {
     }
 
     static func locationOrigin(_ origin: LocationOrigin) -> String? {
-        origin == .label ? "The label says how to keep it" : nil
+        switch origin {
+        case .remembered: "You put it here last time"
+        case .label: "From the label"
+        case .foodKeeper: "From FoodKeeper"
+        case .person, .unplaced, .standard: nil
+        }
     }
 
     static func date(_ date: PrintedDate) -> String {

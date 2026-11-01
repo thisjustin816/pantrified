@@ -4,5 +4,20 @@
 <dict>
 	<key>FoodDataCentralAPIKey</key>
 	<string>$(FDC_API_KEY)</string>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.thisjustin816.pantrified.candidates</string>
+			<key>UTTypeDescription</key>
+			<string>Pantrified batch items</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict/>
+		</dict>
+	</array>
 </dict>
 </plist>

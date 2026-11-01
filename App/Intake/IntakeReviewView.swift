@@ -1,9 +1,11 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import PantrifiedApplication
 import PantrifiedDomain
 
-/// The batch's candidates, ready to add with one tap. Every proposed field says where it came from
-/// and is one tap from being corrected; every change can be undone.
+/// The batch's candidates by place, ready to add with one tap. Every proposed field says where it
+/// came from and is one tap from being corrected; a card, or a selection of cards, can be dragged to
+/// another place; every change can be undone.
 struct IntakeReviewView: View {
     let intake: IntakeModel
     let addByHand: () -> Void
@@ -14,12 +16,21 @@ struct IntakeReviewView: View {
     }
 
     @State private var selection = Set<IntakeCandidateID>()
-    @State private var editMode = EditMode.inactive
+    @State private var selecting = false
     @State private var editing: EditTarget?
     @State private var confirmingDiscard = false
+    /// The targets a dragged card is over. Kept as a set because leaving one row and entering the
+    /// next can be reported in either order.
+    @State private var hovered: Set<DropSpot> = []
+    /// A card is being dragged over the list, so empty places grow into large targets. Stays on for
+    /// a moment after the last target is left, so they do not shrink while the finger crosses the
+    /// gap between two rows.
+    @State private var dragging = false
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var selecting: Bool { editMode.isEditing }
+    /// The place a dragged card would land in now.
+    private var targetedPlace: LocationID? { hovered.lazy.compactMap(\.place).first }
 
     var body: some View {
         NavigationStack {
@@ -33,7 +44,6 @@ struct IntakeReviewView: View {
             .navigationTitle("Review")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbar }
-            .environment(\.editMode, $editMode)
             .safeAreaInset(edge: .bottom) { bottomBar }
             .sheet(item: $editing) { target in
                 CandidateEditor(intake: intake, id: target.id)
@@ -53,7 +63,7 @@ struct IntakeReviewView: View {
     }
 
     private var list: some View {
-        List(selection: $selection) {
+        List {
             if case .finishing(let left) = intake.stage {
                 Section {
                     Label(IntakeText.readingLeft(left), systemImage: "hourglass")
@@ -61,23 +71,157 @@ struct IntakeReviewView: View {
                         .accessibilityAddTraits(.updatesFrequently)
                 }
             }
-            Section {
-                ForEach(intake.summaries) { summary in
-                    CandidateCard(summary: summary, intake: intake) { editing = EditTarget(id: summary.id) }
-                        // The list before the last photos are read is not the review yet.
-                        .disabled(intake.isFinishing)
-                        .swipeActions(edge: .trailing) {
-                            Button("Delete", systemImage: "trash", role: .destructive) {
-                                Task { await intake.delete([summary.id]) }
-                            }
-                            Button("Edit", systemImage: "pencil") { editing = EditTarget(id: summary.id) }
-                        }
+            ForEach(intake.sections) { section in
+                Section {
+                    if section.place == nil {
+                        unplacedPrompt(section.candidates.map(\.id))
+                    }
+                    ForEach(section.candidates) { summary in
+                        row(summary, in: section)
+                    }
+                    if let place = section.place, section.candidates.isEmpty {
+                        emptyPlace(place)
+                    }
+                } header: {
+                    header(section)
                 }
+            }
+            Section {
             } footer: {
                 Text(IntakeText.photosStayHere)
             }
         }
+        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: dragging)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: targetedPlace)
+        .onChange(of: hovered.isEmpty) { _, empty in
+            if !empty { dragging = true }
+        }
+        .task(id: hovered.isEmpty) {
+            guard hovered.isEmpty, dragging else { return }
+            try? await Task.sleep(for: .milliseconds(400))
+            if !Task.isCancelled, hovered.isEmpty { dragging = false }
+        }
     }
+
+    // MARK: Sections
+
+    private func name(of place: LocationID?) -> String {
+        place.flatMap { intake.locationName($0) } ?? IntakeText.needsAPlace
+    }
+
+    private func header(_ section: PlaceSection) -> some View {
+        let targeted = section.place != nil && targetedPlace == section.place
+        let count = section.candidates.count
+        return HStack(spacing: 8) {
+            Image(systemName: Self.symbol(for: section.place.flatMap { place in intake.locations.first { $0.id == place } }))
+                .accessibilityHidden(true)
+            Text(name(of: section.place))
+            Text("\(count)")
+                .monospacedDigit()
+                .contentTransition(.numericText(value: Double(count)))
+                .padding(.horizontal, 7)
+                .padding(.vertical, 1)
+                .background(.quaternary, in: Capsule())
+            Spacer(minLength: 8)
+            if targeted {
+                Label(IntakeText.dropHere(name(of: section.place)), systemImage: "arrow.down.circle.fill")
+                    .labelStyle(.iconOnly)
+                    .foregroundStyle(.tint)
+                    .transition(.opacity)
+            }
+        }
+        .font(.headline)
+        .foregroundStyle(targeted ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(name(of: section.place)), \(IntakeText.items(count))")
+        .accessibilityAddTraits(.isHeader)
+        .modifier(PlaceDrop(place: section.place, target: "header", intake: intake, hovered: $hovered))
+    }
+
+    /// The prompt over the candidates that have no place, with one menu to put them all in one place.
+    private func unplacedPrompt(_ ids: [IntakeCandidateID]) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack { unplacedPromptContent(ids) }
+            VStack(alignment: .leading, spacing: 8) { unplacedPromptContent(ids) }
+        }
+        .disabled(intake.isFinishing)
+    }
+
+    @ViewBuilder
+    private func unplacedPromptContent(_ ids: [IntakeCandidateID]) -> some View {
+        Text(IntakeText.needPlace(ids.count))
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+        Spacer(minLength: 8)
+        Menu {
+            ForEach(intake.locations) { place in
+                Button(place.name) { Task { await intake.move(ids, to: place.id) } }
+            }
+        } label: {
+            Label("Put All In", systemImage: "tray.and.arrow.down")
+                .frame(minHeight: 44)
+        }
+        .buttonStyle(.bordered)
+    }
+
+    /// A place with nothing in it. It grows while a card is dragged, so an empty place is as easy to
+    /// drop on as one with cards.
+    private func emptyPlace(_ place: LocationID) -> some View {
+        let targeted = targetedPlace == place
+        return Label(
+            dragging ? IntakeText.dropHere(name(of: place)) : "Nothing here yet",
+            systemImage: dragging ? "arrow.down.circle" : "tray"
+        )
+        .font(.subheadline)
+        .foregroundStyle(targeted ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+        .frame(maxWidth: .infinity, minHeight: dragging ? 88 : 44)
+        .background {
+            if dragging {
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(style: StrokeStyle(lineWidth: targeted ? 2 : 1, dash: [6, 4]))
+                    .foregroundStyle(targeted ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
+            }
+        }
+        .contentShape(Rectangle())
+        .listRowBackground(targeted ? Color.accentColor.opacity(0.14) : nil)
+        .modifier(PlaceDrop(place: place, target: "empty", intake: intake, hovered: $hovered))
+    }
+
+    private func row(_ summary: CandidateSummary, in section: PlaceSection) -> some View {
+        let carried = PlaceDrag.carried(dragging: summary.id, selection: selecting ? selection : [], order: intake.summaries.map(\.id))
+        return CandidateCard(
+            summary: summary, intake: intake, selecting: selecting, selected: selection.contains(summary.id),
+            toggle: { toggle(summary.id) }, edit: { editing = EditTarget(id: summary.id) }
+        )
+        // The list before the last photos are read is not the review yet.
+        .disabled(intake.isFinishing)
+        .swipeActions(edge: .trailing) {
+            Button("Delete", systemImage: "trash", role: .destructive) {
+                Task { await intake.delete([summary.id]) }
+            }
+            Button("Edit", systemImage: "pencil") { editing = EditTarget(id: summary.id) }
+        }
+        .listRowBackground(section.place != nil && targetedPlace == section.place ? Color.accentColor.opacity(0.14) : nil)
+        .modifier(CardDrag(ids: carried, name: summary.name, enabled: !intake.isFinishing))
+        .modifier(PlaceDrop(place: section.place, target: summary.id.rawValue.uuidString, intake: intake, hovered: $hovered))
+    }
+
+    private func toggle(_ id: IntakeCandidateID) {
+        if selection.contains(id) { selection.remove(id) } else { selection.insert(id) }
+    }
+
+    private static func symbol(for location: StorageLocation?) -> String {
+        switch location?.storageType {
+        case .refrigerated?: "refrigerator"
+        case .frozen?: "snowflake"
+        case .roomTemperature?: "cabinet"
+        case nil: "questionmark.circle"
+        }
+    }
+
+    // MARK: Chrome
 
     private var finished: some View {
         ContentUnavailableView {
@@ -107,7 +251,7 @@ struct IntakeReviewView: View {
             ToolbarItem(placement: .primaryAction) {
                 Button(selecting ? "Done" : "Select") {
                     selection = []
-                    editMode = selecting ? .inactive : .active
+                    selecting.toggle()
                 }
             }
         }
@@ -132,18 +276,27 @@ struct IntakeReviewView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .disabled(ready == 0 || intake.isAdding || intake.isFinishing)
-                let waiting = intake.summaries.count - ready
-                // At accessibility sizes the bar would cover most of the list; the cards say it.
-                if waiting > 0 && !typeSize.isAccessibilitySize {
-                    Text(IntakeText.waiting(waiting))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
+                // At accessibility sizes the bar would cover most of the list; the list says it.
+                if !typeSize.isAccessibilitySize {
+                    let unplaced = intake.unplacedIDs.count
+                    let nameless = intake.namelessCount
+                    if unplaced > 0 {
+                        waitingLine(IntakeText.needPlace(unplaced))
+                    } else if nameless > 0 {
+                        waitingLine(IntakeText.waiting(nameless))
+                    }
                 }
             }
         }
         .padding()
         .background(.bar)
+    }
+
+    private func waitingLine(_ text: String) -> some View {
+        Text(text)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
     }
 
     private var selectionActions: some View {
@@ -159,7 +312,7 @@ struct IntakeReviewView: View {
         Menu {
             ForEach(intake.locations) { place in
                 Button(place.name) {
-                    Task { await intake.assign(place.id, to: Set(chosen)) }
+                    Task { await intake.move(chosen, to: place.id) }
                 }
             }
         } label: {
@@ -194,218 +347,97 @@ struct IntakeReviewView: View {
     }
 }
 
-/// The offer to undo the last Add, which stays while the batch is open.
-private struct AddedBanner: View {
-    let prompt: IntakeModel.AddedPrompt
-    let undo: () -> Void
-    let dismiss: () -> Void
+// MARK: Dragging
 
-    var body: some View {
-        HStack {
-            Label(prompt.message, systemImage: "checkmark.circle.fill")
-                .font(.subheadline)
-            Spacer(minLength: 12)
-            Button("Undo", action: undo)
-                .font(.subheadline.bold())
-            Button("Dismiss", systemImage: "xmark", action: dismiss)
-                .labelStyle(.iconOnly)
-        }
-        .padding(12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+/// What a dragged card carries: the identities of the candidates it moves, never a name or a
+/// photo. Its type is declared only by Pantrified, so no other app accepts it.
+struct CandidateDrag: Codable, Transferable {
+    let ids: [UUID]
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .pantrifiedCandidates)
     }
 }
 
-/// One candidate: its photos, its proposed name, date and place with where each came from, and its
-/// doubts, each with the one tap that settles it.
-struct CandidateCard: View {
-    let summary: CandidateSummary
-    let intake: IntakeModel
-    let edit: () -> Void
+extension UTType {
+    /// Declared in the app's Info.plist.
+    static let pantrifiedCandidates = UTType(exportedAs: "com.thisjustin816.pantrified.candidates")
+}
 
-    @ScaledMetric(relativeTo: .body) private var thumbnailSize: CGFloat = 64
-    @Environment(\.dynamicTypeSize) private var typeSize
+/// Lets a card be pressed and dragged, lifted under the finger with its name and how many cards
+/// go with it.
+private struct CardDrag: ViewModifier {
+    let ids: [IntakeCandidateID]
+    let name: String?
+    let enabled: Bool
 
-    /// Photo beside the text, or above it at accessibility sizes so the name keeps the full width.
-    private var layout: AnyLayout {
-        typeSize.isAccessibilitySize
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
-            : AnyLayout(HStackLayout(alignment: .top, spacing: 12))
+    func body(content: Content) -> some View {
+        if enabled {
+            content.draggable(CandidateDrag(ids: ids.map(\.rawValue))) {
+                CardLift(name: name, count: ids.count)
+            }
+        } else {
+            content
+        }
     }
+}
+
+/// The card under the finger while it is dragged.
+private struct CardLift: View {
+    let name: String?
+    let count: Int
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            layout {
-                photo
-                VStack(alignment: .leading, spacing: 6) {
-                    nameRow
-                    dateRow
-                    placeRow
-                    if summary.count > 1 || summary.notes.contains(.maybeSeveralPackages) {
-                        Stepper(
-                            "How many: \(summary.count)",
-                            value: Binding(
-                                get: { summary.count },
-                                set: { count in Task { await intake.setCount(count, for: summary.id) } }
-                            ),
-                            in: 1...IntakeLimits.packagesPerCandidate
-                        )
-                        .font(.subheadline)
-                    }
-                }
-            }
-            ForEach(Array(summary.notes.enumerated()), id: \.offset) { _, note in
-                noteRow(note)
-            }
-        }
-        .padding(.vertical, 4)
-        .accessibilityElement(children: .contain)
-        .accessibilityAction(named: "Edit") { edit() }
-        .accessibilityAction(named: "Delete") { Task { await intake.delete([summary.id]) } }
-    }
-
-    private var photo: some View {
-        ZStack(alignment: .bottomTrailing) {
-            Thumbnail(image: summary.photos.first.flatMap { intake.thumbnails[$0] }, size: min(thumbnailSize, 96))
-            if summary.photos.count > 1 {
-                Text("\(summary.photos.count)")
-                    .font(.caption2.bold())
-                    .padding(.horizontal, 5)
+        HStack(spacing: 10) {
+            Image(systemName: count > 1 ? "square.stack.3d.up.fill" : "shippingbox.fill")
+                .foregroundStyle(.tint)
+            Text(name ?? "An item without a name")
+                .font(.headline)
+                .lineLimit(2)
+            if count > 1 {
+                Text("\(count)")
+                    .font(.subheadline.bold())
+                    .monospacedDigit()
+                    .padding(.horizontal, 8)
                     .padding(.vertical, 2)
-                    .background(.thinMaterial, in: Capsule())
-                    .padding(3)
+                    .background(.tint.opacity(0.2), in: Capsule())
             }
         }
-        .task(id: summary.photos.first) {
-            if let first = summary.photos.first { await intake.loadThumbnail(first) }
-        }
-        .accessibilityHidden(true)
+        .padding(14)
+        .frame(maxWidth: 320, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.22), radius: 14, y: 8)
+        .scaleEffect(1.04)
     }
+}
 
-    private var nameRow: some View {
-        Button(action: edit) {
-            VStack(alignment: .leading, spacing: 2) {
-                if let name = summary.name {
-                    Text(name)
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                        .multilineTextAlignment(.leading)
-                } else {
-                    Label("Add a name", systemImage: "pencil")
-                        .font(.headline)
-                }
-                if let origin = IntakeText.nameOrigin(summary.nameOrigin) {
-                    Text(origin)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.leading)
-                }
-            }
-        }
-        .buttonStyle(.borderless)
-        .accessibilityLabel(summary.name ?? "No name")
-        .accessibilityValue(IntakeText.nameOrigin(summary.nameOrigin) ?? "")
-        .accessibilityHint("Edit this item")
-    }
+/// One drop target under a dragged card: a row, the end or the header of one section.
+private struct DropSpot: Hashable {
+    let place: LocationID?
+    let target: String
+}
 
-    @ViewBuilder
-    private var dateRow: some View {
-        if let choice = summary.pendingDate {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("\(AttentionText.label(choice.label)): which date?")
-                    .font(.subheadline)
-                ViewThatFits(in: .horizontal) {
-                    HStack { dateChoices(choice) }
-                    VStack(alignment: .leading) { dateChoices(choice) }
-                }
-            }
-        } else if let date = summary.date {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(IntakeText.date(date))
-                    .font(.subheadline)
-                if let origin = IntakeText.dateOrigin(summary.dateOrigin) {
-                    Text(origin)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .accessibilityElement(children: .combine)
-        } else {
-            Button("Add a date", systemImage: "calendar.badge.plus", action: edit)
-                .font(.subheadline)
-                .buttonStyle(.borderless)
-        }
-    }
+/// Makes a row or header a target for a dragged card. A drop on a place moves what the card
+/// carries there; the section of candidates with no place takes no drops, though a card over it
+/// still counts as being dragged. What a drop carries is checked against the review: identities
+/// that are not candidates under review are ignored.
+private struct PlaceDrop: ViewModifier {
+    let place: LocationID?
+    let target: String
+    let intake: IntakeModel
+    @Binding var hovered: Set<DropSpot>
 
-    @ViewBuilder
-    private func dateChoices(_ choice: PendingDateChoice) -> some View {
-        Button(AttentionText.day(choice.monthFirst)) {
-            Task { await intake.chooseDateOrder(.monthFirst, for: summary.id) }
-        }
-        .buttonStyle(.bordered)
-        Button(AttentionText.day(choice.dayFirst)) {
-            Task { await intake.chooseDateOrder(.dayFirst, for: summary.id) }
-        }
-        .buttonStyle(.bordered)
-    }
-
-    private var placeRow: some View {
-        Menu {
-            ForEach(intake.locations) { place in
-                Button(place.name) { Task { await intake.assign(place.id, to: [summary.id]) } }
-            }
-        } label: {
-            VStack(alignment: .leading, spacing: 2) {
-                Label(intake.locationName(summary.location) ?? "Choose where", systemImage: "mappin.and.ellipse")
-                    .font(.subheadline)
-                if let origin = IntakeText.locationOrigin(summary.locationOrigin) {
-                    Text(origin)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .buttonStyle(.borderless)
-        .accessibilityLabel("Where it goes: \(intake.locationName(summary.location) ?? "not chosen")")
-    }
-
-    @ViewBuilder
-    private func noteRow(_ note: CandidateNote) -> some View {
-        if let text = IntakeText.note(note, name: { intake.name(of: $0) }) {
-            VStack(alignment: .leading, spacing: 6) {
-                Label(text, systemImage: Self.symbol(note))
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                if case .mightBeSameAs(let others) = note, let other = others.first {
-                    ViewThatFits(in: .horizontal) {
-                        HStack { sameActions(other) }
-                        VStack(alignment: .leading) { sameActions(other) }
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func sameActions(_ other: IntakeCandidateID) -> some View {
-        Button("Merge", systemImage: "square.on.square") {
-            Task { await intake.merge([summary.id, other]) }
-        }
-        .buttonStyle(.bordered)
-        .accessibilityLabel("Merge with \(intake.name(of: other) ?? "the other item")")
-        Button("Not the same") {
-            Task { await intake.keepApart(summary.id, other) }
-        }
-        .buttonStyle(.bordered)
-    }
-
-    private static func symbol(_ note: CandidateNote) -> String {
-        switch note {
-        case .mightBeSameAs: "square.on.square"
-        case .noName: "questionmark.circle"
-        case .dateUnclear, .datesDisagree, .dateMatchedByOrder: "calendar.badge.exclamationmark"
-        case .lookingUp: "magnifyingglass"
-        case .linkSeen: "qrcode"
-        default: "exclamationmark.circle"
+    func body(content: Content) -> some View {
+        content.dropDestination(for: CandidateDrag.self) { items, _ in
+            hovered = []
+            guard let place, !intake.isFinishing, let review = intake.review else { return false }
+            let ids = review.underReview(items.flatMap(\.ids).map { IntakeCandidateID($0) })
+            guard !ids.isEmpty else { return false }
+            Task { await intake.move(ids, to: place) }
+            return true
+        } isTargeted: { over in
+            let spot = DropSpot(place: place, target: target)
+            if over { hovered.insert(spot) } else { hovered.remove(spot) }
         }
     }
 }

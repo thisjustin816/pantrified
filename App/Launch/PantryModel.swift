@@ -56,7 +56,7 @@ final class PantryModel {
             let fresh = try await pantry.snapshot()
             // Inside the animation, so a food that was used up, moved or put back slides out of or
             // into its list instead of jumping.
-            animated { snapshot = fresh }
+            Motion.animated { snapshot = fresh }
         } catch {
             problem = "Couldn't read your food list. Quit and open Pantrified again."
         }
@@ -144,31 +144,20 @@ final class PantryModel {
     private func offerUndo(_ message: String, _ tokens: [UndoToken]) {
         undoExpiry?.cancel()
         let prompt = UndoPrompt(message: message, tokens: tokens, window: undoWindow)
-        animated { undoPrompt = prompt }
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        Motion.animated { undoPrompt = prompt }
+        Motion.tap()
         let window = undoWindow
         undoExpiry = Task { @MainActor [weak self] in
             try? await Task.sleep(for: window)
             guard !Task.isCancelled, self?.undoPrompt == prompt else { return }
-            self?.animated { self?.undoPrompt = nil }
+            Motion.animated { self?.undoPrompt = nil }
         }
     }
 
     private func clearUndo() {
         undoExpiry?.cancel()
         undoExpiry = nil
-        animated { undoPrompt = nil }
-    }
-
-    /// Makes the change inside an animation, so the banner and the list rows move. The banner sits in
-    /// a safe area inset, which ignores an `.animation` modifier on the screen, so the animation has
-    /// to start where the change is made. With Reduce Motion on, the change is immediate.
-    private func animated(_ change: () -> Void) {
-        if UIAccessibility.isReduceMotionEnabled {
-            change()
-        } else {
-            withAnimation(.spring(duration: 0.45, bounce: 0.3), change)
-        }
+        Motion.animated { undoPrompt = nil }
     }
 
     static func message(for action: PackageAction, name: String, locations: [StorageLocation]) -> String {

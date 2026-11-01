@@ -66,7 +66,12 @@ final class IntakeModel {
 
     var locations: [StorageLocation] { pantry.snapshot?.locations ?? [] }
     var summaries: [CandidateSummary] { review?.summaries ?? [] }
-    var readyIDs: [IntakeCandidateID] { review?.readyToAdd ?? [] }
+    /// The candidates by place: those with no place first, then each of the household's locations.
+    var sections: [PlaceSection] { review?.sections(in: locations) ?? [] }
+    /// What Add all adds: candidates with a name and one of the household's places.
+    var readyIDs: [IntakeCandidateID] { review?.readyToAdd(in: locations) ?? [] }
+    var unplacedIDs: [IntakeCandidateID] { review?.unplaced(in: locations) ?? [] }
+    var namelessCount: Int { summaries.filter { $0.notes.contains(.noName) }.count }
     var canUndoChange: Bool { review?.canUndo ?? false }
     var photoLimit: Int { IntakeLimits.photosPerBatch }
 
@@ -256,8 +261,21 @@ final class IntakeModel {
         await change { try $0.setCount(count, for: id) }
     }
 
-    func assign(_ location: LocationID, to ids: Set<IntakeCandidateID>) async {
-        await change { _ = $0.assignLocation(location, to: ids) }
+    /// Puts candidates in one of the household's places, as a drop, a card's place menu, Move to and
+    /// VoiceOver's move actions do. Candidates no longer under review are ignored. A move that took
+    /// effect settles with a short spring and a light tap, and VoiceOver hears where they went.
+    func move(_ ids: [IntakeCandidateID], to location: LocationID) async {
+        guard let place = locations.first(where: { $0.id == location }), let review else { return }
+        let moving = review.underReview(ids).filter { review.candidate($0)?.location != location }
+        guard !moving.isEmpty else { return }
+        let wanted = Set(moving)
+        guard await change(settling: Motion.drop, { _ = $0.assignLocation(location, to: wanted) }) else { return }
+        let moved = moving.filter { self.review?.candidate($0)?.location == location }
+        guard !moved.isEmpty else { return }
+        Motion.tap()
+        AccessibilityNotification.Announcement(
+            IntakeText.moved(moved.count, name: moved.first.flatMap { name(of: $0) }, to: place.name)
+        ).post()
     }
 
     func merge(_ ids: [IntakeCandidateID]) async {
@@ -280,14 +298,21 @@ final class IntakeModel {
         await change { _ = $0.undo() }
     }
 
-    private func change(_ body: @escaping @Sendable (inout IntakeReview) throws -> Void) async {
+    /// Saves a change to the review and shows the review as saved. Returns whether the change saved.
+    @discardableResult
+    private func change(
+        settling animation: Animation = .snappy,
+        _ body: @escaping @Sendable (inout IntakeReview) throws -> Void
+    ) async -> Bool {
         // The list shown while the last photos are read is not the review yet.
-        guard let batchID, !isFinishing else { return }
+        guard let batchID, !isFinishing else { return false }
+        var saved = false
         do {
             try await services.store.updateReview(batchID) { try body(&$0) }
+            saved = true
         } catch StagingError.unknownBatch {
             await batchExpired()
-            return
+            return false
         } catch IntakeReviewError.differentBarcodes {
             problem = "These have different barcodes, so they're different products."
         } catch IntakeReviewError.tooManyCandidates {
@@ -295,13 +320,14 @@ final class IntakeModel {
         } catch {
             problem = "That change didn't save. Try again."
         }
-        await reloadReview()
+        await reloadReview(settling: animation)
+        return saved
     }
 
-    private func reloadReview() async {
+    private func reloadReview(settling animation: Animation = .snappy) async {
         guard let batchID else { return }
         let fresh = await services.store.batch(batchID)?.review
-        animated { review = fresh }
+        Motion.animated(animation) { review = fresh }
     }
 
     // MARK: Adding
@@ -374,11 +400,7 @@ final class IntakeModel {
     }
 
     private func animated(_ change: () -> Void) {
-        if UIAccessibility.isReduceMotionEnabled {
-            change()
-        } else {
-            withAnimation(.snappy, change)
-        }
+        Motion.animated(.snappy, change)
     }
 }
 

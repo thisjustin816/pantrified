@@ -41,14 +41,23 @@ struct CandidateEditor: View {
                 if let summary {
                     nameSection(summary)
                     dateSection(summary)
-                    Section("Where does it go?") {
+                    Section {
                         Picker("Where", selection: Binding(
                             get: { summary.location },
-                            set: { place in if let place { Task { await intake.assign(place, to: [id]) } } }
+                            set: { place in if let place { Task { await intake.move([id], to: place) } } }
                         )) {
+                            if summary.location == nil {
+                                Text("Choose where").tag(LocationID?.none)
+                            }
                             ForEach(intake.locations) { place in
                                 Text(place.name).tag(Optional(place.id))
                             }
+                        }
+                    } header: {
+                        Text("Where does it go?")
+                    } footer: {
+                        if let origin = IntakeText.locationOrigin(summary.locationOrigin) {
+                            Text(origin)
                         }
                     }
                     Section {

@@ -65,7 +65,7 @@ final class BatchCameraModel {
     func shoot() {
         guard state == .running else { return }
         pending += 1
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        Motion.tap()
         camera?.shoot()
     }
 
