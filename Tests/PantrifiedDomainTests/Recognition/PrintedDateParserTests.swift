@@ -118,6 +118,41 @@ struct PrintedDateFormatTests {
         #expect(resolved(parser.parse("FEB 2028")).first?.1 == day(2028, 2, 29))
     }
 
+    @Test("a numeric month and year reads with a slash, dot or dash, and after a date label with a space", arguments: [
+        ("BEST IF USED BY: BB 11.2027", PrintedDateLabel.bestBy),
+        ("BB 11.2027", .bestBy),
+        ("BB 11/2027", .bestBy),
+        ("BBD 11/2027", .bestBy),
+        ("BEST BY 11 2027", .bestBy),
+        ("Best if used by 11-2027", .bestBy),
+        ("EXP 11.2027", .useBy),
+        ("USE BY 11 2027", .useBy),
+        ("11.2027", .unlabeled),
+        ("11-2027", .unlabeled),
+    ])
+    func numericMonthAndYear(text: String, label: PrintedDateLabel) {
+        let readings = resolved(parser.parse(text))
+        #expect(readings.count == 1)
+        #expect(readings.first?.0 == label)
+        #expect(readings.first?.1 == day(2027, 11, 30))
+        #expect(readings.first?.2 == .month)
+    }
+
+    @Test("two numbers apart are not a month and year without a date label right before them")
+    func spacedNeedsLabel() {
+        #expect(parser.parse("11 2027").isEmpty)
+        #expect(parser.parse("LOT 11 2027").isEmpty)
+        #expect(parser.parse("SERVES 4 2027 RECIPES").isEmpty)
+        #expect(parser.parse("BEST BY 31 12 2027").isEmpty)
+    }
+
+    @Test("a month and year with a dot or dash is not read out of a longer number")
+    func dottedTail() {
+        #expect(parser.parse("SKU.12.2026").isEmpty)
+        #expect(parser.parse("REF A-12-2026").isEmpty)
+        #expect(parser.parse("VERSION 1.2027.3").isEmpty)
+    }
+
     @Test("a month and a two-digit number is not read as a date, since it could be a day or a year")
     func monthAndTwoDigits() {
         #expect(parser.parse("DEC 26").isEmpty)
@@ -209,6 +244,8 @@ struct OCRNoiseTests {
         ("2026-1O-05", 2026, 10, 5),
         ("12/O5/2026", 2026, 12, 5),
         ("l2/25/2026", 2026, 12, 25),
+        ("BB 1I.2027", 2027, 11, 30),
+        ("BB I1.2O27", 2027, 11, 30),
     ])
     func digits(text: String, year: Int, month: Int, dayOfMonth: Int) {
         #expect(resolved(parser.parse(text, hint: .monthFirst)).first?.1 == day(year, month, dayOfMonth))

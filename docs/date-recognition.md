@@ -11,7 +11,7 @@ between. A date with no such label is unlabeled.
 
 | Printed | Label |
 |---|---|
-| BEST BY, BEST BEFORE, BEST IF USED BY, BEST IF USED BEFORE, BB | best by |
+| BEST BY, BEST BEFORE, BEST IF USED BY, BEST IF USED BEFORE, BB, BBD | best by |
 | USE BY, USE BEFORE, EXP, EXPIRES, EXPIRATION DATE | use by |
 | SELL BY | sell by |
 | FREEZE BY | freeze by |
@@ -25,12 +25,16 @@ A label inside a longer word is not a label.
 - Numeric with a four or two digit year: `12/25/2026`, `25/12/26`, with `/`, `-` or `.` as separators.
 - With a month name, in either order, with or without spaces, ordinals and commas: `DEC 5, 2026`,
   `5DEC26`, `05 DEC 2026`, `Dec. 5th, 2026`.
-- A month and a four digit year: `DEC 2026`, `12/2026`.
+- A month and a four digit year: `DEC 2026`, `12/2026`, `12.2026`, `12-2026`, and `12 2026` only when a
+  date label comes right before it (`BEST BY 12 2026`), because two numbers apart are too often
+  something else. `BEST IF USED BY: BB 11.2027` reads as best by November 2027.
 
 A two digit year is 20xx, and only years 2000 to 2099 are accepted. A date that is not a real calendar
 date is rejected, and a rejected match claims its text, so part of it, such as `04/2026` inside
 `31/04/2026`, is not read as another date. `DEC 26` is not read at all, because it could be a day or a
-year. A month and year pattern is not read as the tail of a longer part or reference number.
+year. A month and year pattern is not read as the tail or the start of a longer part or reference
+number, such as `SKU.12.2026` or `1.2027.3`. A month and a two digit year (`11/27`) is not read, because
+it could be a day and a month.
 
 ## Ambiguous dates
 
@@ -48,8 +52,9 @@ the person enters or clears also settles the question.
 
 ## OCR digit errors
 
-Inside a token shaped like a numeric date that has at least one real digit, `O` is read as `0` and `I`
-or `L` as `1`. A word is never turned into digits.
+Inside a token shaped like a numeric date, or like a numeric month and four digit year, that has at
+least one real digit, `O` is read as `0` and `I` or `L` as `1`, so `BB 1I.2027` reads as November 2027.
+A word is never turned into digits.
 
 ## Choosing a date to propose
 
@@ -102,7 +107,9 @@ and Vision's behavior on a device are not verified.
 ## Owner decisions
 
 1. **A month and year is the last day of that month**, and the reading is marked as month precision.
-   The earlier reading, the first of the month, would flag food a month early.
+   The earlier reading, the first of the month, would flag food a month early. This holds for every
+   way of printing one, by name or by number with a slash, dot, dash or space: `BB 11.2027` is
+   proposed as best by November 30, 2027. No day is chosen any other way.
 2. **EXP and EXPIRES are use-by dates**, treated as a deadline, and a sell-by or packed date is never
    one.
 3. **The parser does not choose the order of an ambiguous date.** The caller supplies a hint only when
