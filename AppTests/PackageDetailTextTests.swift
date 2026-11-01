@@ -107,8 +107,13 @@ struct PackageDetailTextTests {
     @Test("only the windows for the storage the food is in are shown")
     func onlyThisStorage() throws {
         let entry = try guidanceEntry(opened: false, guidance: mayonnaise, storage: .roomTemperature)
+        // The unopened window counts from the day it was added, so it is the one in use now.
+        let end = try #require(Self.utc.date(byAdding: .day, value: 90, to: now))
 
-        #expect(guidanceRows(entry, storage: .roomTemperature) == ["Unopened: About 90 days, about 3 months"])
+        #expect(guidanceRows(entry, storage: .roomTemperature) == [
+            "Unopened: About 90 days, about 3 months",
+            "Guidance runs to: on \(end.timeIntervalSince1970)",
+        ])
         #expect(guidanceRows(entry, storage: .frozen) == nil)
     }
 
@@ -128,7 +133,12 @@ struct PackageDetailTextTests {
             ]
         )
 
-        #expect(guidanceRows(try guidanceEntry(opened: false, guidance: guidance), storage: .refrigerated) == ["Unopened: About 3 days"])
+        let end = try #require(Self.utc.date(byAdding: .day, value: 3, to: now))
+
+        #expect(guidanceRows(try guidanceEntry(opened: false, guidance: guidance), storage: .refrigerated) == [
+            "Unopened: About 3 days",
+            "Guidance runs to: on \(end.timeIntervalSince1970)",
+        ])
     }
 
     @Test("windows are listed opened, unopened, thawed, whatever order the source gives them")
@@ -142,10 +152,14 @@ struct PackageDetailTextTests {
             ]
         )
 
+        // Not opened and not thawed, so the window from the day it was added is the one in use.
+        let end = try #require(Self.utc.date(byAdding: .day, value: 240, to: now))
+
         #expect(guidanceRows(try guidanceEntry(opened: false, guidance: guidance, storage: .frozen), storage: .frozen) == [
             "After opening: About 30 days",
             "Unopened: About 240 days, about 8 months",
             "After thawing: About 2 days",
+            "Guidance runs to: on \(end.timeIntervalSince1970)",
         ])
     }
 
