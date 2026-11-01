@@ -13,7 +13,8 @@ final class PantryModel {
     struct UndoPrompt: Identifiable, Equatable {
         let id = UUID()
         let message: String
-        let token: UndoToken
+        /// What undoes the action: one token, or one for each field an edit changed.
+        let tokens: [UndoToken]
         /// How long the offer stays, so the banner can show the time running out.
         let window: Duration
     }
@@ -72,7 +73,7 @@ final class PantryModel {
     func perform(_ action: PackageAction, on entry: PantryEntry) async {
         do {
             if case .applied(let token) = try await pantry.perform(action, on: entry.id) {
-                offerUndo(Self.message(for: action, name: entry.package.name, locations: snapshot?.locations ?? []), token)
+                offerUndo(Self.message(for: action, name: entry.package.name, locations: snapshot?.locations ?? []), [token])
             }
         } catch {
             problem = "Couldn't do that. Your list has been refreshed."
@@ -80,11 +81,32 @@ final class PantryModel {
         await load()
     }
 
+    /// Saves what the person changed about a food and offers one undo for all of it. Returns whether
+    /// the food was left in the state the person asked for, so the form can close.
+    func edit(_ change: PackageEdit, on entry: PantryEntry) async -> Bool {
+        do {
+            if case .applied(let tokens) = try await pantry.edit(change, on: entry.id) {
+                var name = entry.package.name
+                if case .set(let typed) = change.name { name = typed.trimmingCharacters(in: .whitespacesAndNewlines) }
+                offerUndo("Updated \(name)", tokens)
+            }
+            await load()
+            return true
+        } catch PantryError.nameRequired {
+            problem = "Enter a name for the food."
+            return false
+        } catch {
+            problem = "That didn't save. Your list has been refreshed."
+            await load()
+            return false
+        }
+    }
+
     func undo() async {
         guard let prompt = undoPrompt else { return }
         clearUndo()
         do {
-            try await pantry.undo(prompt.token)
+            try await pantry.undo(prompt.tokens)
         } catch {
             problem = "Couldn't undo that. Your list has been refreshed."
         }
@@ -95,9 +117,9 @@ final class PantryModel {
 
     func dismissUndo() { clearUndo() }
 
-    private func offerUndo(_ message: String, _ token: UndoToken) {
+    private func offerUndo(_ message: String, _ tokens: [UndoToken]) {
         undoExpiry?.cancel()
-        let prompt = UndoPrompt(message: message, token: token, window: undoWindow)
+        let prompt = UndoPrompt(message: message, tokens: tokens, window: undoWindow)
         animated { undoPrompt = prompt }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         let window = undoWindow

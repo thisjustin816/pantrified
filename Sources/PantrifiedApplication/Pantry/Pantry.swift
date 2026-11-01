@@ -52,6 +52,7 @@ public struct Pantry: Sendable {
     private let useSoon: UseSoon
     private let putAway: PutAway
     private let actions: PackageActions
+    private let editor: PackageEditor
 
     public init(
         space: SpaceID,
@@ -67,6 +68,7 @@ public struct Pantry: Sendable {
         useSoon = UseSoon(inventory: inventory, locations: locations, guidance: guidance, time: time, policy: policy)
         putAway = PutAway(inventory: inventory, locations: locations, evidence: evidence, time: time)
         actions = PackageActions(inventory: inventory, locations: locations, time: time)
+        editor = PackageEditor(inventory: inventory, time: time)
     }
 
     /// Gives a new Space its Fridge, Freezer and Pantry, all in one write. A Space that already has
@@ -111,6 +113,16 @@ public struct Pantry: Sendable {
 
     public func undo(_ token: UndoToken) async throws {
         try await actions.undo(token)
+    }
+
+    /// Changes what a person says a food is: its name, how much is left, the date on its package.
+    /// A name that is empty or only spaces is refused. Each changed field can be undone, all at once.
+    public func edit(_ edit: PackageEdit, on id: PackageID) async throws -> EditOutcome {
+        try await editor.apply(edit, to: id)
+    }
+
+    public func undo(_ tokens: [UndoToken]) async throws {
+        try await editor.undo(tokens)
     }
 
     private static func mostUrgentFirst(_ a: PantryEntry, _ b: PantryEntry) -> Bool {

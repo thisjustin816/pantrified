@@ -27,6 +27,8 @@ public enum ActionOutcome: Sendable, Hashable {
 public enum PackageActionError: Error, Sendable, Equatable {
     case packageNotFound
     case unknownLocation
+    /// The undo tokens given together belong to more than one package.
+    case undoSpansPackages
 }
 
 /// Opened / Used up / Move / Discard, each undoable.
