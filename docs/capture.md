@@ -1,7 +1,7 @@
 # Barcode capture
 
-The first capture slice: scan one barcode with the camera, open Add food with the barcode attached, and
-suggest the product's name from USDA FoodData Central when the build has a key. The person reviews the form
+The first capture slice: scan one barcode with the camera, or a QR code holding a product's GS1 Digital
+Link, open Add food with the barcode attached, and suggest the product's name from USDA FoodData Central when the build has a key. The person reviews the form
 and adds the food as they do by hand. The scanner keeps no photos. Taking or picking photos of many
 packages at once, reading their labels and dates, and grouping them for review is batch intake, a
 separate screen described in `batch-intake.md`; it shares the GTIN rules and the lookup below.
@@ -20,6 +20,8 @@ the barcode is kept).
 Today or Food → Scan
   → camera state (below)
   → barcode read in two frames → success haptic → camera stops
+      (a QR code counts only as a product's GS1 Digital Link; any other QR code shows a message
+      and scanning goes on: QR codes, below)
   → Add food, in the same sheet, with the barcode shown
       → lookup on: "Looking up this barcode with USDA FoodData Central", then a suggested name,
         "No product found for this barcode", "Name lookups are paused" or "Couldn't look this up"
@@ -59,21 +61,67 @@ and keeps no photos or video."
   frame can be kept, even by mistake. It is also cheaper on battery than running Vision on every frame. Date
   recognition will need frames and Vision; when that is built, barcode reading can move to the same Vision
   pass if one pipeline is simpler.
-- **Symbologies.** EAN-13, EAN-8 and UPC-E. AVFoundation reports UPC-A as EAN-13 with a leading zero, and the
-  normalization below makes both one GTIN.
+- **Symbologies.** EAN-13, EAN-8, UPC-E and QR (QR codes, below). AVFoundation reports UPC-A as EAN-13 with a
+  leading zero, and the normalization below makes both one GTIN.
 - **Two frames.** A product is accepted only when the same GTIN is read in two frames within two seconds
   (`BarcodeScan`), so one misread frame cannot name a product. Two barcodes of the same product in one frame
   count as one frame. At camera frame rates this adds a few hundredths of a second.
 - **Repeats.** After a product is accepted the scan ignores everything and the camera stops. A barcode that is
   refused (below) is announced once, with a warning haptic and a line of text, and again only after it has
-  been out of view for two seconds.
+  been out of view for two seconds. The line stays until another refusal replaces it. Unusable QR codes
+  are handled together (QR codes, below).
 - **Lifecycle.** The camera starts when the scan screen appears and stops when it disappears, when a product
   is read, and when the app leaves the foreground. The torch is turned off whenever the camera stops.
 - **Close focus.** The back camera is the triple or dual wide virtual device when the phone has one, zoomed to
   the wide camera's field of view, so it can switch to the ultra wide camera for close focus. Otherwise it is
   the wide camera, with focus restricted to near range where supported.
-- **Whole frame.** Any barcode in the frame is read; there is no region of interest. With two products in
-  view, the first read twice wins, and the form shows its number for the person to compare.
+- **Whole frame.** Any barcode in the frame is read; there is no region of interest. With two products'
+  barcodes in view, the first read twice wins, and the form shows its number for the person to compare. QR
+  codes follow a stricter rule (below).
+
+## QR codes
+
+Some packages print a GS1 Digital Link QR code, such as `https://id.gs1.org/01/09506000134352` or the same
+path on a brand's own domain, beside or in place of the barcode. QR text comes from whoever printed it, so
+the scanner treats every payload as hostile.
+
+- **What counts as a product.** A QR code names a product only when it is a GS1 Digital Link whose `01`
+  segment holds a GTIN that passes the rules under GTIN normalization. The scanner uses batch intake's
+  reader (`CodeMeaning.classify` in `Sources/PantrifiedDomain/Intake/PhotoObservation.swift`), so the rules
+  are the same as for a code in a batch photo: an `http` or `https` link in ASCII with a host, and the GTIN
+  as 8, 12, 13 or 14 ASCII digits with nothing else in its segment. Percent-encoding, look-alike digits,
+  direction marks, NULs or white space in the `01` key or the number make the code unusable. Nothing else
+  in an ASCII link is used, so control characters elsewhere in it neither stop nor change the GTIN. It then
+  goes through the same two-frame confirmation, normalization, lookup and Add food as a barcode with that
+  GTIN, and a Digital Link and the product's barcode confirm each other.
+- **Length cap.** A payload over 512 bytes of UTF-8 (`IntakeLimits.codePayloadBytes`, shared with batch
+  intake) is unusable without being read further. A real Digital Link is far shorter, and a QR code holds
+  at most a few thousand characters, so counting the bytes stays cheap.
+- **Unusable codes.** Any other QR code shows "This code links to a web page. Pantrified does not open
+  links. Scan the barcode, or add by hand." That covers web links, text, contact cards, Wi-Fi codes, a
+  Digital Link whose GTIN is refused, and a code whose bytes are not text, which iOS hands over with no
+  string and the camera passes on as empty text. The message uses the line of text and the warning haptic
+  of a refused barcode, so there is no new screen. The camera keeps running and Add by hand stays on
+  screen. The message is the same for every unusable QR code, so the screen never shows any of its text.
+- **Repeats.** No QR text is kept, so unusable QR codes are not told apart: the message is announced once
+  and again only after two seconds with no unusable QR code in view, whichever codes they are. While one
+  stays in view the line does not change, so it does not flicker and VoiceOver has nothing new to read.
+  A frame announces at most one refusal: when a refused barcode and an unusable QR code first appear in the
+  same frame, the barcode's message is shown. A refused barcode that appears while an unusable QR code is
+  in view is announced as usual.
+- **Several codes in one frame.** A Digital Link names a product only when its GTIN is the one product the
+  frame shows. Digital Links naming different products, or a Digital Link beside another product's
+  barcode, are ambiguous: the QR codes count as unusable and show the message, and barcodes in the frame
+  are read as before. Unusable QR codes beside one Digital Link do not stop it. A Digital Link shown twice,
+  or with its own product's barcode, counts as one sighting for the frame. Every code in a frame is
+  examined, since dropping some could hide a second product; the byte cap bounds the work for each.
+- **Nothing is kept or logged.** A QR code's text is read in the frame that carries it and then dropped.
+  Only a GTIN taken from a Digital Link is kept, as for a barcode, and nothing about a QR code is logged.
+- **Links are never opened.** No link from a QR code is opened, fetched, resolved, previewed or connected
+  to. `ScannerOpensNoLinksTests` reads the scanner's sources (`App/Capture/`, `BarcodeScan.swift`,
+  `PhotoObservation.swift` and `GTIN.swift`) and fails if any of them calls `open`, `openURL` or `URL(`, or
+  uses `URLSession`, a web view, Safari, a link preview, `Link` or a network framework. The Denied screen's
+  Open Settings button is the one allowed link, matched by its exact text.
 
 ## GTIN normalization
 
@@ -279,14 +327,15 @@ the default and largest accessibility text sizes.
 
 | Level | What runs |
 |---|---|
-| Linux `swift test` | GTIN normalization and every refusal, UPC-E expansion, coding; two-frame confirmation, repeat and refusal suppression, the forget window; barcodes through `Pantry` and `PutAway`, including failure, retry and order; suggested names saved as proposals; the device-local row and its refusal of a stored value that is not a GTIN; the FoodData Central search forms for every symbology, the request shape, matching, a fake catalog stored in mixed lengths, every status and transport failure, malformed and oversized answers, names with their brand, word-boundary cut and byte limit, hostile brand text, and cancellation, with a fake transport; and the URLSession transport against a local HTTP server: a body growing past 1 MB is cut off early, an announced oversize length and a redirect are refused, the key reaches no second server, other origins are never contacted, and a 429 with and without `Retry-After`, `X-RateLimit-Remaining` in either case, and hostile or repeated headers are read as above. Tables of header values, valid and hostile. Pacing with a fake clock and sleeper, never waiting in real time: the pause on a 429 with each kind of `Retry-After`, no request during it and one exactly at its end, no pause after other failures, a pause kept by a new instance through a fake store and through the file, unusable and corrupt saved values, a clock that moved back, the spacing thresholds, three in flight, sharing one barcode, and cancellation while queued, spacing or sharing. Never the real network |
+| Linux `swift test` | GTIN normalization and every refusal, UPC-E expansion, coding; two-frame confirmation, repeat and refusal suppression, the forget window; QR codes: Digital Links as products and with their barcode, every kind of unusable payload (web links, text, contact and Wi-Fi codes, refused GTINs, percent-encoding, look-alike digits, direction marks, NULs, white space, replacement characters, empty text), the byte cap, repeats, several codes in one frame, that the scan's state holds no QR text, and a source check that the scanner opens no links; barcodes through `Pantry` and `PutAway`, including failure, retry and order; suggested names saved as proposals; the device-local row and its refusal of a stored value that is not a GTIN; the FoodData Central search forms for every symbology, the request shape, matching, a fake catalog stored in mixed lengths, every status and transport failure, malformed and oversized answers, names with their brand, word-boundary cut and byte limit, hostile brand text, and cancellation, with a fake transport; and the URLSession transport against a local HTTP server: a body growing past 1 MB is cut off early, an announced oversize length and a redirect are refused, the key reaches no second server, other origins are never contacted, and a 429 with and without `Retry-After`, `X-RateLimit-Remaining` in either case, and hostile or repeated headers are read as above. Tables of header values, valid and hostile. Pacing with a fake clock and sleeper, never waiting in real time: the pause on a 429 with each kind of `Retry-After`, no request during it and one exactly at its end, no pause after other failures, a pause kept by a new instance through a fake store and through the file, unusable and corrupt saved values, a clock that moved back, the spacing thresholds, three in flight, sharing one barcode, and cancellation while queued, spacing or sharing. Never the real network |
 | macOS `make test-package` | The same against Apple's Foundation, including the transport tests against URLSession on macOS |
 | `make build` and `make test` | The camera and scan code compile against the iOS SDK; the hosted tests check the usage description and the empty key in the merged Info.plist, the scan screen's start state, and the paused lookup wording |
 | Screenshots | The no-camera state's layout |
 | Device | Nothing yet |
 
-Not verified: live scanning, the permission prompt, torch, low light, close focus, real packaging, real
-UPC-E reads (AVFoundation is expected to report UPC-E as eight digits with the number system and check
+Not verified: live scanning, the permission prompt, torch, low light, close focus, real packaging, QR
+detection on a device, what AVFoundation hands over for a QR code whose bytes are not UTF-8 text (no string
+is assumed, or replacement characters, and both are unusable), real UPC-E reads (AVFoundation is expected to report UPC-E as eight digits with the number system and check
 digit), and the real FoodData Central response for real barcodes in any automated test. The search
 behavior under Search forms and the brand fields were checked by hand against the live service on
 2026-10-31: `brandName` is present on branded search results but null on some, the same brand appears in
@@ -326,6 +375,9 @@ handled. How the hourly allowance refills is not documented either.
 7. **Only the barcode and the key are sent**, plus the fixed search options, a fixed User-Agent and language.
    The barcode goes in up to four lengths in one request, so that a record stored with or without leading
    zeros is found.
+8. **QR codes count only as GS1 Digital Links**, by batch intake's rules, and only when the frame shows no
+   other product. Every other QR code gets one message and is otherwise ignored, so a QR code beside a
+   package cannot override its barcode, and no QR code can make the app open a link.
 
 ## Owner decisions
 

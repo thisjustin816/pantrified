@@ -124,7 +124,7 @@ private struct ScanView: View {
                     .accessibilityAddTraits(.updatesFrequently)
                 Button("Add by hand") { finish(nil) }
                     .buttonStyle(.borderedProminent)
-                Text("Only the barcode number is read. No photos are taken.")
+                Text("Only the product number is kept. No photos are taken.")
                     .font(.footnote)
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)
@@ -171,14 +171,15 @@ private struct ScanView: View {
         }
     }
 
-    static func message(_ refusal: GTINRejection) -> String {
+    static func message(_ refusal: ScannerModel.Refusal) -> String {
         switch refusal {
-        case .storeInternal: "That's the store's own barcode, so it can't name the product. Add this food by hand."
-        case .coupon: "That's a coupon barcode. Look for the product barcode."
-        case .publication: "That's a book or magazine barcode."
-        case .refundReceipt: "That's a receipt barcode."
-        case .notAConsumerUnit: "That barcode is for a case, not one package."
-        case .malformed, .checkDigit: "That barcode didn't read cleanly. Hold the phone steady."
+        case .barcode(.storeInternal): "That's the store's own barcode, so it can't name the product. Add this food by hand."
+        case .barcode(.coupon): "That's a coupon barcode. Look for the product barcode."
+        case .barcode(.publication): "That's a book or magazine barcode."
+        case .barcode(.refundReceipt): "That's a receipt barcode."
+        case .barcode(.notAConsumerUnit): "That barcode is for a case, not one package."
+        case .barcode(.malformed), .barcode(.checkDigit): "That barcode didn't read cleanly. Hold the phone steady."
+        case .qrCode: "This code links to a web page. Pantrified does not open links. Scan the barcode, or add by hand."
         }
     }
 }

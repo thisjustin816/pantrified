@@ -77,6 +77,6 @@ data types change when the flow is built.
 | Generation in the cloud | The Make Something request context: selected foods, restrictions and preferences | Apple Private Cloud Compute | Not built |
 | Purchases | Purchase and entitlement state | Apple StoreKit | Not built |
 | Reminders export | The shopping selection | The person's own Reminders | Not built |
-| Camera: Scan | Nothing. Only the decoded barcode number reaches the app, and it is kept on the device | Nobody | Built |
+| Camera: Scan | Nothing. Only decoded code text reaches the app, and only the product number from a barcode or a GS1 Digital Link QR code is kept, on the device. Other QR text is dropped, and a link is never opened | Nobody | Built |
 | Camera and picked photos: Add a batch | Nothing. Photos and what was read from them are kept in the app's storage on the device only, and deleted while the app is open: a day after the batch is finished, or 3 days after an unfinished batch was last used. Only a barcode read from them may go to the product lookup above | Nobody | Built (`batch-intake.md`) |
 | Evidence crops | Nothing; only an approved crop may sync | Nobody, or iCloud for a crop | Not built |

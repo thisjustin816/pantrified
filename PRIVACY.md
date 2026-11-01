@@ -18,9 +18,12 @@ or third-party crash-reporting SDKs.
 Pantrified uses the camera only when you tap Scan or Add a batch, and the
 camera stops when you leave that screen or the app.
 
-**Scan** reads the number in one product barcode. It does not take, keep or
-save photos or video: the camera's frames are shown on screen and decoded by
-iOS, and only the barcode number reaches the app.
+**Scan** reads the number in one product barcode, or in a QR code that holds
+the product's GS1 Digital Link. It does not take, keep or save photos or
+video: the camera's frames are shown on screen and decoded by iOS, and only
+the decoded code text reaches the app. The app keeps only the product number.
+The rest of a QR code's text is never kept, and a link in a QR code is never
+opened.
 
 **Add a batch** takes photos of the food you add so the app can read their
 labels: the name, a printed date, barcodes and QR codes. You can also pick

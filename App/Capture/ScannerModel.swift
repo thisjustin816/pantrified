@@ -23,9 +23,16 @@ final class ScannerModel {
         case failed
     }
 
+    /// A code that was read but names no food product.
+    enum Refusal: Equatable {
+        case barcode(GTINRejection)
+        /// A QR code other than a product's GS1 Digital Link. Its text is not kept.
+        case qrCode
+    }
+
     private(set) var state: State
-    /// A barcode was read that is not a food product's. Shown until the next one.
-    private(set) var refusal: GTINRejection?
+    /// Shown until the next refusal.
+    private(set) var refusal: Refusal?
     /// The product read, which ends the scan.
     private(set) var product: GTIN?
     private(set) var hasTorch = false
@@ -107,7 +114,10 @@ final class ScannerModel {
             product = gtin
         case .refused(let reason):
             UINotificationFeedbackGenerator().notificationOccurred(.warning)
-            refusal = reason
+            refusal = .barcode(reason)
+        case .unusableQRCode:
+            UINotificationFeedbackGenerator().notificationOccurred(.warning)
+            refusal = .qrCode
         case nil:
             break
         }
