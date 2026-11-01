@@ -155,6 +155,78 @@ struct StagingStoreTests {
         #expect(world.files.photoNames.isEmpty)
     }
 
+    /// Rewrites the batch list as version 1 wrote it: each observation inside its photo's record and
+    /// no observation files.
+    private func rewriteAsVersion1(_ world: IntakeWorld) throws {
+        let data = try #require(world.files.contents(of: StagingStore.manifestName))
+        var list = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        var batches = try #require(list["batches"] as? [[String: Any]])
+        for b in batches.indices {
+            var photos = try #require(batches[b]["photos"] as? [[String: Any]])
+            for p in photos.indices {
+                // A photo's file is named after its identity.
+                let stem = try #require((photos[p]["fileName"] as? String)?.split(separator: ".").first)
+                let name = StagingStore.observationName(IntakePhotoID(try #require(UUID(uuidString: String(stem)))))
+                photos[p]["observation"] = try JSONSerialization.jsonObject(with: try #require(world.files.contents(of: name)))
+                photos[p]["read"] = nil
+                try world.files.remove(name)
+            }
+            batches[b]["photos"] = photos
+        }
+        list["batches"] = batches
+        list["version"] = 1
+        try world.files.write(try JSONSerialization.data(withJSONObject: list), to: StagingStore.manifestName)
+    }
+
+    @Test("a version 1 batch list keeps what was read from its photos through its first save and a relaunch")
+    func version1Observations() async throws {
+        let world = IntakeWorld()
+        let batch: IntakeBatchID
+        do {
+            let store = world.launch()
+            batch = try await world.stage(["yogurt-front", "yogurt-back", "rice"], in: store)
+            _ = try await world.process(batch, store)
+        }
+        try rewriteAsVersion1(world)
+        #expect(world.files.observationNames.isEmpty)
+
+        let store = world.launch()
+        try await store.updateReview(batch) { review in try review.setName("Skyr", for: review.summaries[0].id) }
+        let relaunched = world.launch()
+        #expect(await relaunched.photosToRecognize(in: batch).isEmpty)
+        #expect(await relaunched.batch(batch)?.review?.observations.count == 3)
+        #expect(world.files.observationNames.count == 3)
+        let manifest = String(decoding: try #require(world.files.contents(of: StagingStore.manifestName)), as: UTF8.self)
+        #expect(!manifest.contains("\"observation\""))
+    }
+
+    @Test("an observation from a version 1 list whose file cannot be written stays in the list until it can")
+    func version1ObservationWriteFails() async throws {
+        let world = IntakeWorld()
+        let batch: IntakeBatchID
+        do {
+            let store = world.launch()
+            batch = try await world.stage(["rice", "beans"], in: store)
+            _ = try await world.process(batch, store)
+        }
+        let photo = try #require(await world.launch().batch(batch)?.photos[0])
+        try rewriteAsVersion1(world)
+        world.files.failWrites(to: StagingStore.observationName(photo.id))
+
+        let store = world.launch()
+        try await store.updateReview(batch) { review in try review.setName("Rice", for: review.summaries[0].id) }
+        #expect(world.files.observationNames.count == 1)
+        world.files.allowWrites()
+
+        let relaunched = world.launch()
+        #expect(await relaunched.batch(batch)?.photos[0].observation == photo.observation)
+        try await relaunched.updateReview(batch) { review in try review.setName("Basmati", for: review.summaries[0].id) }
+        let again = world.launch()
+        #expect(await again.photosToRecognize(in: batch).isEmpty)
+        #expect(await again.batch(batch)?.review?.observations.count == 2)
+        #expect(world.files.observationNames.count == 2)
+    }
+
     @Test("a photo taken back before reading is deleted with its file")
     func removePhoto() async throws {
         let world = IntakeWorld()

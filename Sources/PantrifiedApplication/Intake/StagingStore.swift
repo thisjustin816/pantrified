@@ -42,6 +42,9 @@ public struct StagedPhoto: Sendable, Hashable, Codable, Identifiable {
     public internal(set) var fileRemoved = false
     /// Decoded from a record that says the observation is in its own file, not loaded yet.
     var observationInFile = false
+    /// Decoded from a record that holds the observation in the list, as version 1 records do, and not
+    /// yet written to its own file. Until it is, the list keeps holding it.
+    var observationInList = false
 }
 
 extension StagedPhoto {
@@ -49,8 +52,9 @@ extension StagedPhoto {
         case id, fileName, source, sequence, capturedAt, contentDigest, observation, read, readAttempts, couldNotRead, fileRemoved
     }
 
-    /// The observation is not written here but in its own file (`StagingStore.observationName`),
-    /// once, so the batch list stays small while photos are read.
+    /// The observation is written once to its own file (`StagingStore.observationName`), so the
+    /// batch list stays small while photos are read. Only an observation from a version 1 list whose
+    /// file could not be written yet is still written here.
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
@@ -60,6 +64,7 @@ extension StagedPhoto {
         try container.encode(capturedAt, forKey: .capturedAt)
         try container.encodeIfPresent(contentDigest, forKey: .contentDigest)
         try container.encode(observation != nil || observationInFile, forKey: .read)
+        if observationInList { try container.encodeIfPresent(observation, forKey: .observation) }
         try container.encode(readAttempts, forKey: .readAttempts)
         try container.encode(couldNotRead, forKey: .couldNotRead)
         try container.encode(fileRemoved, forKey: .fileRemoved)
@@ -75,6 +80,7 @@ extension StagedPhoto {
         capturedAt = try container.decode(Date.self, forKey: .capturedAt)
         contentDigest = try container.decodeIfPresent(String.self, forKey: .contentDigest)
         observation = try container.decodeIfPresent(PhotoObservation.self, forKey: .observation)
+        observationInList = observation != nil
         let read = try container.decodeIfPresent(Bool.self, forKey: .read) ?? false
         observationInFile = observation == nil && read
         readAttempts = try container.decodeIfPresent(Int.self, forKey: .readAttempts) ?? 0
@@ -198,7 +204,8 @@ public actor StagingStore {
     static let photoExtensions: Set<String> = ["jpg", "heic", "png"]
 
     /// The batch list's format. A file with a higher version is opened read only. Version 2 keeps each
-    /// observation in its own file; version 1 lists, which held them inline, still load.
+    /// observation in its own file; version 1 lists, which held them inline, still load, and their
+    /// observations move to their own files as they load.
     public static let manifestVersion = 2
     /// A batch list that could not be understood is kept under this name for a recovery window,
     /// then deleted.
@@ -272,10 +279,11 @@ public actor StagingStore {
         guard let stored = try? JSONDecoder().decode(Stored.self, from: data) else {
             return setAside(data, keeping: [], files: files, now: now)
         }
-        let batches = stored.batches.compactMap(\.batch).map { loadObservations($0, files: files) }
+        var batches = stored.batches.compactMap(\.batch).map { loadObservations($0, files: files) }
         if stored.version > manifestVersion {
             return Load(batches: batches, setAsideAt: stored.setAsideAt, unfinishedExpired: stored.unfinishedExpired ?? false, readOnly: true, problem: .newerVersion)
         }
+        batches = batches.map { moveObservationsToFiles($0, files: files) }
         if batches.count < stored.batches.count { return setAside(data, keeping: batches, files: files, now: now) }
         return Load(batches: batches, setAsideAt: stored.setAsideAt, unfinishedExpired: stored.unfinishedExpired ?? false)
     }
@@ -293,6 +301,21 @@ public actor StagingStore {
             batch.photos[index].observationInFile = false
         }
         batch.review?.attachObservations(batch.photos.compactMap(\.observation))
+        return batch
+    }
+
+    /// Writes each observation a version 1 list held to its own file, before the list is written
+    /// again without it. One whose file cannot be written stays in the list and is tried again on the
+    /// next load.
+    private static func moveObservationsToFiles(_ batch: IntakeBatch, files: any StagingFiles) -> IntakeBatch {
+        var batch = batch
+        for index in batch.photos.indices where batch.photos[index].observationInList {
+            guard let observation = batch.photos[index].observation,
+                  let data = try? JSONEncoder().encode(observation),
+                  (try? files.write(data, to: observationName(batch.photos[index].id))) != nil
+            else { continue }
+            batch.photos[index].observationInList = false
+        }
         return batch
     }
 

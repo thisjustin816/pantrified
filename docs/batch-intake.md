@@ -208,7 +208,10 @@ What was read from each photo is kept once, in its own file beside the photo (th
 photos' records and the review. With reading after every photo this keeps writes small: for 120 photos
 with full-size readings the list ends near 94 KB and about 9 MB is written while they are read, where
 keeping observations in the list made it 1.5 MB and wrote about 180 MB. A test holds both bounds. A lost
-or unreadable observation file leaves its photo unread, so it is read again.
+or unreadable observation file leaves its photo unread, so it is read again. A batch list in the
+earlier format (version 1), which held observations inside it, still loads: each observation is written
+to its own file as the list loads, and one whose file cannot be written stays in the list until a later
+load writes it.
 
 `StagingStore` writes every change before returning, so a crash or kill loses at most the change in
 progress, and a change whose save fails is undone in memory too:
