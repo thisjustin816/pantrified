@@ -259,7 +259,8 @@ Each candidate proposes, and says where each proposal came from:
 - **Place**: the location of the stated type when a label says "Keep frozen" or "Keep refrigerated";
   otherwise the first location (Fridge). "Refrigerate after opening" is not read as a place.
 - **Barcode** and **how many**: one package, unless the person says more. A barcode seen in photos taken
-  apart asks "More than one?".
+  apart asks "More than one?". Decided on 2026-11-03: two different printed dates read for the same
+  product make separate packages automatically. Not built: today the person sets the count.
 
 What the person sets wins: a name, date or place they set is never replaced by a lookup or a re-read,
 and a name or date left as proposed is saved as a proposal, not as a confirmed field, as Add food does
@@ -379,11 +380,12 @@ reasoned, not measured on a device.
    text weights makes grouping more cautious. Lowering `detailPhotoAfter` to 15 or less makes a back
    taken after a front a suggestion instead of a merge; raising `nearWordLetters` makes fewer words
    match one letter off.
-2. **Shot order is evidence.** In effect, for the owner to confirm: a back (a barcode, date or panel,
-   and a name smaller than its biggest text) taken within 20 seconds straight after a front is grouped
-   with it on the order alone, and one taken straight before is suggested, because the back of a
-   package often shares no word with its front. A front photographed alone and followed by another
-   product's unrelated back is then grouped wrongly; splitting is one tap.
+2. **Shot order is not evidence.** Decided on 2026-11-03, reversing the earlier rule. Photos are taken
+   item by item, so the last photo of one item sits next to the first of the next, and an adjacent back
+   must not merge with a front on order alone. Matching comes from the recognized package (the barcode
+   lookup's name and brand, label words, image similarity); order may only break a tie where content
+   already links photos. Not built: the code and the weights table above still contain the order rule
+   (a back taken within 20 seconds after a front merges), which is to be removed.
 3. **One letter off.** In effect, for the owner to confirm: a name word of 7 letters or more one letter
    off a word on the other photo counts toward a suggestion, never a merge, and two fronts are compared
    on exact words only.
