@@ -51,7 +51,7 @@ enum ReadExportSample {
                   codes: [.product(IntakeFixture.yogurt)], print: print(0, offset: 0.3)),
             photo(2, 45, [line("ARM & HAMMER", row: 0.08, size: 0.09), line("BAKING SODA", row: 0.2, size: 0.1)], print: print(2)),
             photo(3, 57, [line("CLABBER GIRL", row: 0.08, size: 0.09), line("BAKING POWDER", row: 0.2, size: 0.1)],
-                  print: print(2, offset: 0.7)),
+                  print: print(2, offset: 0.45)),
             photo(4, 97, [line("Basmati rice", row: 0.2, size: 0.1), line("BEST BEFORE 05/06/28", row: 0.85, size: 0.02)]),
             photo(5, 137, [line("Birds Eye", row: 0.08, size: 0.08), line("Sweet peas", row: 0.2, size: 0.1),
                            line("KEEP FROZEN", row: 0.9, size: 0.02)], codes: [.link]),

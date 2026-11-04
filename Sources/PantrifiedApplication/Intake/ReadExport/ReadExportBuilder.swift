@@ -95,7 +95,7 @@ struct ReadExportBuilder {
             guard let a = sequence[pair.first], let b = sequence[pair.second] else { return nil }
             return ReadExport.Pair(
                 first: a, second: b, distance: pair.distance.map { Self.rounded($0, places: 4) }, signals: pair.signals,
-                oneLetterOffPoints: pair.oneLetterOffPoints, shotOrderPoints: pair.shotOrderPoints, score: pair.score
+                oneLetterOffPoints: pair.oneLetterOffPoints, score: pair.score
             )
         }
 

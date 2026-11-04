@@ -34,11 +34,19 @@ public enum MatchSignal: String, Sendable, Hashable, Codable, CaseIterable {
     case sharedLabelWords
     /// One distinctive word, or two short ones, in common, or a long word one letter off.
     case someLabelWords
-    /// Taken one straight after the other.
+    /// Words of the barcode lookup's product name, for the barcode one photo shows, on the other
+    /// photo's label.
+    case lookupName
+    /// Words of one photo's name in the other photo's ingredients list.
+    case nameInIngredients
+    /// The same lot code printed on both.
+    case sameLotCode
+    /// Taken one straight after the other, counted only beside other evidence.
     case takenRightAfter
-    /// A photo of only a date, taken straight after this one.
+    /// A photo of only a date, taken straight after this one. Grouping never gives it, since the
+    /// order of shots is not evidence; it exists so saved reviews that hold it still decode.
     case datePhotoAfter
-    /// A photo of only a date, taken straight before this one.
+    /// A photo of only a date, taken straight before this one. Never given, like `datePhotoAfter`.
     case datePhotoBefore
     /// The person merged the candidates.
     case groupedByPerson
@@ -63,18 +71,36 @@ public struct GroupingPolicy: Sendable, Hashable {
     public var similarImage = 25
     public var sharedLabelWords = 50
     public var someLabelWords = 25
+    /// Points when the other photo's label holds `sharedWordsForStrongText` or more words of the
+    /// lookup name for this photo's barcode, covering `overlapForStrongText` of that name. Enough to
+    /// group alone. Label words and lookup words count once: a pair gets the larger of the two.
+    public var lookupNameWords = 60
+    /// Points for fewer lookup name words: two, or one of `longWordLetters` letters or more. Also
+    /// given, toward a suggestion only, for a name word one letter off a lookup word, and for any
+    /// lookup words when the photos showing the barcode have words and none of them is in the
+    /// lookup's name, which happens when the lookup describes another product.
+    public var someLookupNameWords = 30
+    /// Points when `ingredientWordsForLink` or more words of one photo's name, at least half of
+    /// them, are in the other photo's ingredients list. Toward a suggestion only, since a panel
+    /// never names a product: a "Sparkling water lime" front and a panel listing carbonated water
+    /// and lime.
+    public var nameInIngredients = 30
+    public var ingredientWordsForLink = 2
+    /// Points when both photos print the same lot code: a run of letters and digits at least
+    /// `lotCodeCharacters` long with at least `lotCodeDigits` digits, such as "LFE282315113". A
+    /// suggestion alone, and a group beside 10 more points that count toward one, such as a similar
+    /// image or the order of shots.
+    public var sameLotCode = 50
+    public var lotCodeCharacters = 8
+    public var lotCodeDigits = 3
+    /// Points when the photos were taken one straight after the other, within `adjacentSeconds`.
+    /// Given only when what the photos show already reaches `suggestAt` without points that count
+    /// toward a suggestion only, so the order of shots never makes a suggestion or a group by
+    /// itself. With `orderCountsTowardGroup` they can turn a suggestion of 45 or more into a group,
+    /// such as a front and its back that repeat three of the same words; without it they only rank
+    /// a pair above another with the same evidence.
     public var takenRightAfter = 15
-    public var datePhotoAfter = 45
-    public var datePhotoBefore = 15
-    /// Points, beyond `takenRightAfter`, when a photo showing a barcode, a date or a panel is taken
-    /// straight after a front: the usual second shot of one package. Together they reach `mergeAt`.
-    public var detailPhotoAfter = 45
-    /// The same, taken straight before a front. Less usual; together they make a suggestion.
-    public var detailPhotoBefore = 15
-    /// A photo with a barcode, date or panel counts as a back only when its name, if any, is less
-    /// tall than this share of its tallest line. A photo whose name is its biggest text, such as a
-    /// can photographed with its barcode in view, is a product's front, not another one's back.
-    public var backNameShare = 0.75
+    public var orderCountsTowardGroup = true
 
     /// A pair at or above this is grouped as one package.
     public var mergeAt = 60
@@ -86,7 +112,8 @@ public struct GroupingPolicy: Sendable, Hashable {
     public var similarDistance = 0.5
 
     public var sharedWordsForStrongText = 3
-    /// The share of the shorter photo's words that must be shared for strong text.
+    /// The share of the shorter photo's words, or of the lookup name's words, that must be shared
+    /// for strong text.
     public var overlapForStrongText = 0.5
     /// One shared word counts as some text only when it has at least this many letters.
     public var longWordLetters = 5
@@ -149,6 +176,36 @@ public struct GroupingResult: Sendable, Hashable {
     public var suggestions: [GroupSuggestion]
 
     public static let empty = GroupingResult(groups: [], suggestions: [])
+
+    /// Pairs of photos this result puts in one group or suggests as one, and `earlier` does
+    /// neither, such as photos a lookup answer links. Photos of several products are left out.
+    /// Each pair once, in a fixed order.
+    public func photosLinked(beyond earlier: GroupingResult) -> [(IntakePhotoID, IntakePhotoID)] {
+        let before = earlier.linkedPairs
+        return linkedPairs.subtracting(before)
+            .map { ($0[0], $0[1]) }
+            .sorted { ($0.0.rawValue.uuidString, $0.1.rawValue.uuidString) < ($1.0.rawValue.uuidString, $1.1.rawValue.uuidString) }
+    }
+
+    private var linkedPairs: Set<[IntakePhotoID]> {
+        func own(_ group: PhotoGroup) -> [IntakePhotoID] { group.photos.filter { !group.sharedPhotos.contains($0) } }
+        func pair(_ x: IntakePhotoID, _ y: IntakePhotoID) -> [IntakePhotoID] {
+            x.rawValue.uuidString < y.rawValue.uuidString ? [x, y] : [y, x]
+        }
+        var pairs: Set<[IntakePhotoID]> = []
+        for group in groups {
+            let photos = own(group)
+            for (index, x) in photos.enumerated() {
+                for y in photos[(index + 1)...] { pairs.insert(pair(x, y)) }
+            }
+        }
+        for suggestion in suggestions where suggestion.first < groups.count && suggestion.second < groups.count {
+            for x in own(groups[suggestion.first]) {
+                for y in own(groups[suggestion.second]) where x != y { pairs.insert(pair(x, y)) }
+            }
+        }
+        return pairs
+    }
 }
 
 /// The work one grouping did: photos prepared and pairs of photos scored. Deterministic, unlike a
@@ -158,26 +215,34 @@ public struct GroupingCost: Sendable, Hashable {
     public var pairsScored = 0
     /// Lookups made to find words one letter off, at most `nearLookupsPerPair` for each pair.
     public var nearWordLookups = 0
+    /// Lookup names read into words, once for each answer.
+    public var lookupNamesPrepared = 0
 
-    public init(photos: Int = 0, pairsScored: Int = 0, nearWordLookups: Int = 0) {
+    public init(photos: Int = 0, pairsScored: Int = 0, nearWordLookups: Int = 0, lookupNamesPrepared: Int = 0) {
         self.photos = photos
         self.pairsScored = pairsScored
         self.nearWordLookups = nearWordLookups
+        self.lookupNamesPrepared = lookupNamesPrepared
     }
 
     public static func + (a: GroupingCost, b: GroupingCost) -> GroupingCost {
         GroupingCost(
             photos: a.photos + b.photos, pairsScored: a.pairsScored + b.pairsScored,
-            nearWordLookups: a.nearWordLookups + b.nearWordLookups
+            nearWordLookups: a.nearWordLookups + b.nearWordLookups,
+            lookupNamesPrepared: a.lookupNamesPrepared + b.lookupNamesPrepared
         )
     }
 }
 
-/// Groups a batch's photos into package candidates. Deterministic for the same input in any order:
+/// Groups a batch's photos into package candidates. A pure function of the photos and the barcode
+/// lookups' names, deterministic for the same photos and names in any order:
 ///
-/// 1. Every pair of photos gets a score from the signals in `GroupingPolicy`. Two photos with
-///    different barcodes are different products and can never be grouped. Two photos whose labels
-///    differ in a distinguishing word or amount are never grouped automatically either.
+/// 1. Every pair of photos gets a score from the signals in `GroupingPolicy`, all from what the
+///    photos show: barcodes, label words, the lookup name of a barcode a photo shows, ingredients,
+///    lot codes and looks. The order of shots only supports pairs those already link. Two photos
+///    with different barcodes are different products and can never be grouped. Two photos whose
+///    labels, or a label and a lookup name, differ in a distinguishing word or amount are never
+///    grouped automatically either.
 /// 2. Pairs at or above `mergeAt` join their groups, strongest first, unless that would put two
 ///    barcodes, or two photos whose labels differ, in one group.
 /// 3. Pairs between `suggestAt` and `mergeAt` that end up in different groups are suggestions.
@@ -203,36 +268,60 @@ public struct PhotoGrouper: Sendable {
         let a: Int
         let b: Int
         let signals: [MatchSignal]
+        /// The points each signal added, in the order of `signals`. A signal that counts against
+        /// adds 0, and so do label words found only one letter off, whose points are `nearPoints`.
+        let signalPoints: [Int]
         let score: Int
-        /// Points from words one letter off, which never count toward `mergeAt`.
+        /// Points from a name word one letter off a word on the other photo.
         let nearPoints: Int
-        /// Points from what the photos show: label words, words one letter off and looks.
-        let content: Int
-        /// The points each signal added, in the order of `signals`. A signal that adds none, such as
-        /// one that counts against, or label words found only one letter off, has 0.
-        var signalPoints: [Int] = []
-        /// Points the order of the shots added: `detailPhotoAfter` or `detailPhotoBefore`.
-        var orderPoints = 0
+        /// Points that count toward a suggestion only, never toward `mergeAt`: `nearPoints`, a name
+        /// in the other photo's ingredients, lookup words not to be relied on, and the order of shots
+        /// unless `orderCountsTowardGroup`.
+        let suggestOnly: Int
         var separated: Bool { signals.contains(where: \.separates) }
-        var mergeScore: Int { score - nearPoints }
+        var mergeScore: Int { score - suggestOnly }
     }
 
-    public func group(_ observations: [PhotoObservation]) -> GroupingResult {
-        measuredGroup(observations).result
+    /// What lookups said for the barcodes in a batch, and whether the photos showing each barcode
+    /// agree with it.
+    struct Bridges {
+        let lookups: [GTIN: PreparedLookup]
+        /// Barcodes whose photos have label words, none of them in the lookup's name.
+        let doubtful: Set<GTIN>
+
+        func lookup(for photo: PreparedPhoto) -> PreparedLookup? {
+            photo.barcode.flatMap { lookups[$0] }
+        }
+    }
+
+    /// Groups the photos. `lookupNames` holds the product name a barcode lookup found, by barcode;
+    /// a barcode with no answer, a miss or a failure is simply left out.
+    public func group(_ observations: [PhotoObservation], lookupNames: [GTIN: String] = [:]) -> GroupingResult {
+        measuredGroup(observations, lookupNames: lookupNames).result
     }
 
     /// Groups, and counts the work done, so a change that makes grouping costlier shows in a test.
-    public func measuredGroup(_ observations: [PhotoObservation]) -> (result: GroupingResult, cost: GroupingCost) {
-        measuredGroup(prepared: batch(observations, sequence: \.sequence, photo: \.photo).map(prepare))
+    public func measuredGroup(
+        _ observations: [PhotoObservation],
+        lookupNames: [GTIN: String] = [:]
+    ) -> (result: GroupingResult, cost: GroupingCost) {
+        let lookups = lookupNames.mapValues(prepare(lookupName:))
+        var measured = measuredGroup(prepared: batch(observations, sequence: \.sequence, photo: \.photo).map(prepare), lookups: lookups)
+        measured.cost.lookupNamesPrepared += lookups.count
+        return measured
     }
 
-    /// Groups photos prepared earlier, so a batch grouped again as each photo arrives reads each
-    /// photo once. The same as grouping their observations.
-    public func measuredGroup(prepared: [PreparedPhoto]) -> (result: GroupingResult, cost: GroupingCost) {
+    /// Groups photos and lookup names prepared earlier, so a batch grouped again as each photo or
+    /// answer arrives reads each photo and each name once. The same as grouping their observations
+    /// with those names.
+    public func measuredGroup(
+        prepared: [PreparedPhoto],
+        lookups: [GTIN: PreparedLookup] = [:]
+    ) -> (result: GroupingResult, cost: GroupingCost) {
         let photos = batch(prepared, sequence: \.observation.sequence, photo: \.id)
         let single = photos.indices.filter { photos[$0].products.count < 2 }
         var cost = GroupingCost(photos: photos.count)
-        var pairs = scoredPairs(photos, cost: &cost)
+        var pairs = scoredPairs(photos, lookups: lookups, cost: &cost)
         pairs.sort { x, y in
             if x.mergeScore != y.mergeScore { return x.mergeScore > y.mergeScore }
             if x.score != y.score { return x.score > y.score }
@@ -307,19 +396,22 @@ public struct PhotoGrouper: Sendable {
         return (result, cost)
     }
 
-    /// Every pair of photos showing at most one product that any signal links or separates, with the
-    /// shot order applied. `photos` are in sequence order, as `batch` gives them.
-    func scoredPairs(_ photos: [PreparedPhoto], cost: inout GroupingCost) -> [Pair] {
+    /// Every pair of photos showing at most one product that any signal links or separates.
+    /// `photos` are in sequence order, as `batch` gives them.
+    func scoredPairs(_ photos: [PreparedPhoto], lookups: [GTIN: PreparedLookup], cost: inout GroupingCost) -> [Pair] {
         let single = photos.indices.filter { photos[$0].products.count < 2 }
         let common = commonWords(photos)
+        let bridges = self.bridges(photos, lookups)
         var pairs: [Pair] = []
         for (position, i) in single.enumerated() {
             for j in single[(position + 1)...] {
                 cost.pairsScored += 1
-                if let pair = score(photos, i, j, ignoring: common, lookups: &cost.nearWordLookups) { pairs.append(pair) }
+                if let pair = score(photos, i, j, ignoring: common, bridges: bridges, lookups: &cost.nearWordLookups) {
+                    pairs.append(pair)
+                }
             }
         }
-        return withShotOrder(pairs, photos)
+        return pairs
     }
 
     private func suggestions(
@@ -366,27 +458,65 @@ public struct PhotoGrouper: Sendable {
     /// the batch, so it can be kept while the batch grows.
     public func prepare(_ observation: PhotoObservation) -> PreparedPhoto {
         // Each line outside a panel with its words, read once for the label words and the words
-        // compared one letter off.
-        let labelLines = observation.lines.compactMap { line -> (line: RecognizedTextLine, words: [String])? in
-            LabelText.isPanelLine(line.text) ? nil : (line, LabelText.significantTokens(line.text))
+        // compared one letter off. A panel's words are kept apart and only ever looked in for a
+        // name.
+        var labelLines: [(line: RecognizedTextLine, words: [String])] = []
+        var panelWords: Set<String> = []
+        for line in observation.lines {
+            let words = LabelText.significantTokens(line.text)
+            if LabelText.isPanelLine(line.text) {
+                panelWords.formUnion(words)
+            } else {
+                labelLines.append((line, words))
+            }
         }
-        let tokens = Set(labelLines.flatMap(\.words))
         let products = observation.products
-        let panel = LabelText.showsPanel(observation.lines)
-        let showsDetails = !products.isEmpty || panel
+        let showsDetails = !products.isEmpty || LabelText.showsPanel(observation.lines)
             || !dates.readings(in: observation.lines, takenAt: observation.capturedAt).isEmpty
-        let isDateOnly = tokens.isEmpty && products.isEmpty && !panel && showsDetails
-        let tallest = observation.lines.map(\.box.height).max() ?? 0
-        let nameHeight = LabelText.prominentLine(in: observation.lines)?.height
         let amounts = LabelText.variantAmounts(of: observation)
         let prominent = LabelText.nameTokens(of: observation)
         return PreparedPhoto(
-            observation: observation, tokens: tokens, products: products, isDateOnly: isDateOnly,
-            showsDetails: showsDetails, isBack: showsDetails && !isDateOnly && nameHeight.map { $0 < policy.backNameShare * tallest } ?? true,
-            prominent: prominent, percents: amounts.percents, sizes: amounts.sizes,
-            near: nearWords(labelLines, prominent: prominent)
+            observation: observation, tokens: Set(labelLines.flatMap(\.words)), products: products,
+            showsDetails: showsDetails, prominent: prominent, percents: amounts.percents, sizes: amounts.sizes,
+            near: nearWords(labelLines, prominent: prominent), panelWords: panelWords,
+            lotCodes: LabelText.lotCodes(in: observation.lines, characters: policy.lotCodeCharacters, digits: policy.lotCodeDigits)
         )
     }
+
+    /// What grouping reads from a lookup's product name: its words, ready for finding words one
+    /// letter off, and its percentages. Made once for each answer, never for each pair.
+    public func prepare(lookupName: String) -> PreparedLookup {
+        let name = BoundedText.clean(lookupName, characters: IntakeLimits.nameCharacters, bytes: IntakeLimits.nameBytes)
+        let words = LabelText.significantTokens(name)
+        let range = policy.nearWordLetters...policy.nearWordMaximumLetters
+        var near = NearWords()
+        for word in words where range.contains(word.unicodeScalars.count) { near.add(word) }
+        let percents = LabelText.amounts(in: name).filter { $0.unit == "%" }.map { $0.number + "%" }
+        return PreparedLookup(tokens: Set(words), near: near, percents: Set(percents))
+    }
+
+    /// The product names lookups found, by barcode. Misses, failures, deferrals and barcodes not
+    /// asked yet give no name.
+    public static func lookupNames(_ answers: [GTIN: LookupAnswer]) -> [GTIN: String] {
+        answers.compactMapValues { answer in
+            if case .found(let name, _) = answer { return name }
+            return nil
+        }
+    }
+
+    /// Which barcodes' lookup names the photos showing them contradict: those photos have label
+    /// words and none of them is in the name.
+    private func bridges(_ photos: [PreparedPhoto], _ lookups: [GTIN: PreparedLookup]) -> Bridges {
+        var speaks: Set<GTIN> = []
+        var agrees: Set<GTIN> = []
+        for photo in photos {
+            guard let barcode = photo.barcode, let lookup = lookups[barcode], !photo.tokens.isEmpty else { continue }
+            speaks.insert(barcode)
+            if !photo.tokens.isDisjoint(with: lookup.tokens) { agrees.insert(barcode) }
+        }
+        return Bridges(lookups: lookups, doubtful: speaks.subtracting(agrees))
+    }
+
 
     /// The photo's words ready for finding words one letter off. Only words of `nearWordLetters` to
     /// `nearWordMaximumLetters` letters outside a panel take part: at most `nearWordsPerPhoto` of
@@ -411,86 +541,101 @@ public struct PhotoGrouper: Sendable {
     }
 
     /// The most lookups one pair can make: every name word of both photos, each looked up whole and
-    /// with two keys a letter, and every name word of one photo compared with every name word of
-    /// the other.
+    /// with two keys a letter in the other photo's words, the name words of the photo without a
+    /// barcode looked up the same way in the lookup name for the other's barcode, and every name
+    /// word of one photo compared with every name word of the other.
     public var nearLookupsPerPair: Int {
-        2 * policy.nearWordsPerName * (1 + 2 * policy.nearWordMaximumLetters) + policy.nearWordsPerName * policy.nearWordsPerName
-    }
-
-    /// Adds `detailPhotoAfter` or `detailPhotoBefore` to a front and a photo of a package's details
-    /// taken one right after the other. Not when either photo's words or looks point more strongly,
-    /// by at least `suggestAt`, to another photo of the other kind: a back that shares its name with
-    /// the next front, after a front photographed alone, belongs with that next front.
-    private func withShotOrder(_ pairs: [Pair], _ photos: [PreparedPhoto]) -> [Pair] {
-        func isFront(_ index: Int) -> Bool { !photos[index].showsDetails && !photos[index].prominent.isEmpty }
-        func isDetail(_ index: Int) -> Bool { photos[index].isBack }
-        func across(_ x: Int, _ y: Int) -> Bool { (isFront(x) && isDetail(y)) || (isDetail(x) && isFront(y)) }
-
-        // Each photo's two strongest links by content to photos of the other kind.
-        var strongest: [Int: [(partner: Int, content: Int)]] = [:]
-        for pair in pairs where pair.content > 0 && across(pair.a, pair.b) {
-            for (photo, partner) in [(pair.a, pair.b), (pair.b, pair.a)] {
-                var links = strongest[photo, default: []] + [(partner, pair.content)]
-                links.sort { $0.content != $1.content ? $0.content > $1.content : $0.partner < $1.partner }
-                strongest[photo] = Array(links.prefix(2))
-            }
-        }
-        // Only a link worth a suggestion on its own counts: a brand alone in a maker's address does
-        // not take a back away from the front taken right before it.
-        func strongerElsewhere(_ photo: Int, than content: Int, besides partner: Int) -> Bool {
-            strongest[photo]?.contains { $0.partner != partner && $0.content > content && $0.content >= policy.suggestAt } ?? false
-        }
-
-        return pairs.map { pair in
-            // `a` was taken first: photos are in sequence order and `a` < `b`.
-            guard pair.signals.contains(.takenRightAfter) else { return pair }
-            let points: Int
-            if isFront(pair.a), isDetail(pair.b) {
-                points = policy.detailPhotoAfter
-            } else if isDetail(pair.a), isFront(pair.b) {
-                points = policy.detailPhotoBefore
-            } else {
-                return pair
-            }
-            guard !strongerElsewhere(pair.a, than: pair.content, besides: pair.b),
-                  !strongerElsewhere(pair.b, than: pair.content, besides: pair.a) else { return pair }
-            return Pair(
-                a: pair.a, b: pair.b, signals: pair.signals, score: pair.score + points, nearPoints: pair.nearPoints,
-                content: pair.content, signalPoints: pair.signalPoints, orderPoints: points
-            )
-        }
+        3 * policy.nearWordsPerName * (1 + 2 * policy.nearWordMaximumLetters) + policy.nearWordsPerName * policy.nearWordsPerName
     }
 
     private func commonWords(_ photos: [PreparedPhoto]) -> Set<String> {
         var counts: [String: Int] = [:]
         for photo in photos {
-            for token in photo.tokens { counts[token, default: 0] += 1 }
+            for token in photo.tokens.union(photo.lotCodes) { counts[token, default: 0] += 1 }
         }
         let limit = max(policy.commonWordMinimumPhotos, Int((Double(photos.count) * policy.commonWordFraction).rounded(.up)))
         return Set(counts.filter { $0.value > limit }.keys)
     }
 
     /// The signals and score for two photos on their own, as grouping would weigh them in a batch
-    /// of two. Nil when nothing links them, and when their barcodes differ.
-    public func evidence(between a: PhotoObservation, and b: PhotoObservation) -> (signals: [MatchSignal], score: Int)? {
+    /// of two with these lookup names. Nil when nothing links them, and when their barcodes differ.
+    public func evidence(
+        between a: PhotoObservation,
+        and b: PhotoObservation,
+        lookupNames: [GTIN: String] = [:]
+    ) -> (signals: [MatchSignal], score: Int)? {
         let photos = batch([a, b], sequence: \.sequence, photo: \.photo).map(prepare)
         guard photos.count == 2 else { return nil }
         var lookups = 0
-        guard let scored = score(photos, 0, 1, ignoring: [], lookups: &lookups),
-              let pair = withShotOrder([scored], photos).first else { return nil }
+        let bridges = self.bridges(photos, lookupNames.mapValues(prepare(lookupName:)))
+        guard let pair = score(photos, 0, 1, ignoring: [], bridges: bridges, lookups: &lookups) else { return nil }
         return (pair.signals, pair.score)
     }
 
-    private func score(_ photos: [PreparedPhoto], _ i: Int, _ j: Int, ignoring common: Set<String>, lookups: inout Int) -> Pair? {
+    /// How a lookup name for one photo's barcode meets a photo without a barcode.
+    private struct LookupMatch {
+        let lookup: PreparedLookup
+        let other: PreparedPhoto
+        /// Lookup words on the other photo's label, outside its panel.
+        let exact: Set<String>
+        /// The other photo's name words one letter off a lookup word, and the lookup words they match.
+        let nearName: Set<String>
+        let nearLookup: Set<String>
+        let doubtful: Bool
+    }
+
+    private func match(
+        _ lookup: PreparedLookup,
+        doubtful: Bool,
+        other: PreparedPhoto,
+        ignoring common: Set<String>,
+        lookups: inout Int
+    ) -> LookupMatch {
+        var nearName: Set<String> = []
+        var nearLookup: Set<String> = []
+        for query in other.near.queries where !lookup.tokens.contains(query.word) && !common.contains(query.word) {
+            lookups += 1 + query.removals.count + query.replacements.count
+            let found = lookup.near.near(query).subtracting(common)
+            if !found.isEmpty {
+                nearName.insert(query.word)
+                nearLookup.formUnion(found)
+            }
+        }
+        return LookupMatch(
+            lookup: lookup, other: other, exact: lookup.tokens.subtracting(common).intersection(other.tokens),
+            nearName: nearName, nearLookup: nearLookup, doubtful: doubtful
+        )
+    }
+
+    /// Whether `ingredientWordsForLink` or more of the photo's name words, at least half of them,
+    /// are among the panel words of another photo.
+    private func nameIsIn(_ photo: PreparedPhoto, _ panelWords: Set<String>, ignoring common: Set<String>) -> Bool {
+        let name = photo.prominent.subtracting(common)
+        let found = name.intersection(panelWords).count
+        return found >= policy.ingredientWordsForLink && found * 2 >= name.count
+    }
+
+    private func score(
+        _ photos: [PreparedPhoto],
+        _ i: Int,
+        _ j: Int,
+        ignoring common: Set<String>,
+        bridges: Bridges,
+        lookups: inout Int
+    ) -> Pair? {
         let (a, b) = (photos[i], photos[j])
         if let x = a.barcode, let y = b.barcode, x != y { return nil }
         var signals: [MatchSignal] = []
         var points: [Int] = []
         var score = 0
+        var suggestOnly = 0
         func add(_ signal: MatchSignal, _ added: Int) {
             signals.append(signal)
             points.append(added)
             score += added
+        }
+        func mark(_ signal: MatchSignal) {
+            if !signals.contains(signal) { add(signal, 0) }
         }
 
         if let x = a.barcode, x == b.barcode { add(.sameBarcode, policy.sameBarcode) }
@@ -504,13 +649,18 @@ public struct PhotoGrouper: Sendable {
             }
         }
 
+        // Words, from the labels and from the lookup name of a barcode one photo shows. They count
+        // once: the pair gets the larger of the two.
+        var words = 0
         let shared = a.tokens.intersection(b.tokens).subtracting(common)
         let smaller = min(a.tokens.subtracting(common).count, b.tokens.subtracting(common).count)
         if shared.count >= policy.sharedWordsForStrongText, smaller > 0,
            Double(shared.count) / Double(smaller) >= policy.overlapForStrongText {
             add(.sharedLabelWords, policy.sharedLabelWords)
+            words = policy.sharedLabelWords
         } else if shared.count >= 2 || shared.contains(where: { $0.count >= policy.longWordLetters }) {
             add(.someLabelWords, policy.someLabelWords)
+            words = policy.someLabelWords
         }
 
         // Name words one letter off a word on the other photo, such as a misread "Toacker" for
@@ -525,22 +675,51 @@ public struct PhotoGrouper: Sendable {
         }
         var nearPoints = 0
         if !nearA.isEmpty || !nearB.isEmpty {
-            if !signals.contains(.sharedLabelWords), !signals.contains(.someLabelWords) { add(.someLabelWords, 0) }
-            score += policy.nearlySameWord
+            if !signals.contains(.sharedLabelWords) { mark(.someLabelWords) }
             nearPoints = policy.nearlySameWord
+            score += nearPoints
+            suggestOnly += nearPoints
         }
 
-        let content = score - (signals.contains(.sameBarcode) ? policy.sameBarcode : 0)
-            - (signals.contains(.identicalPhoto) ? policy.identicalPhoto : 0)
-        let gap = abs(b.observation.capturedAt.timeIntervalSince(a.observation.capturedAt))
-        if b.observation.sequence - a.observation.sequence == 1, gap <= policy.adjacentSeconds {
-            add(.takenRightAfter, policy.takenRightAfter)
-            if b.isDateOnly, !a.isDateOnly {
-                add(.datePhotoAfter, policy.datePhotoAfter)
-            } else if a.isDateOnly, !b.isDateOnly {
-                add(.datePhotoBefore, policy.datePhotoBefore)
+        // The lookup name stands in for the words a back shares with its front: a front has no
+        // barcode, and its back often repeats nothing of its name.
+        var bridge: LookupMatch?
+        if let barcode = a.barcode, b.products.isEmpty, let lookup = bridges.lookup(for: a) {
+            bridge = match(lookup, doubtful: bridges.doubtful.contains(barcode), other: b, ignoring: common, lookups: &lookups)
+        } else if let barcode = b.barcode, a.products.isEmpty, let lookup = bridges.lookup(for: b) {
+            bridge = match(lookup, doubtful: bridges.doubtful.contains(barcode), other: a, ignoring: common, lookups: &lookups)
+        }
+        if let bridge {
+            let named = bridge.lookup.tokens.subtracting(common)
+            let strong = bridge.exact.count >= policy.sharedWordsForStrongText && !named.isEmpty
+                && Double(bridge.exact.count) / Double(named.count) >= policy.overlapForStrongText
+            let some = bridge.exact.count >= 2 || bridge.exact.contains { $0.count >= policy.longWordLetters }
+            if strong || some || !bridge.nearName.isEmpty {
+                if bridge.doubtful || !(strong || some) {
+                    add(.lookupName, policy.someLookupNameWords)
+                    suggestOnly += policy.someLookupNameWords
+                } else {
+                    // Only what the lookup adds beyond the label words.
+                    add(.lookupName, max(0, (strong ? policy.lookupNameWords : policy.someLookupNameWords) - words))
+                }
             }
         }
+
+        if nameIsIn(a, b.panelWords, ignoring: common) || nameIsIn(b, a.panelWords, ignoring: common) {
+            add(.nameInIngredients, policy.nameInIngredients)
+            suggestOnly += policy.nameInIngredients
+        }
+        if !a.lotCodes.intersection(b.lotCodes).subtracting(common).isEmpty { add(.sameLotCode, policy.sameLotCode) }
+
+        // The order of shots supports a pair the photos already link, and never stands in for what
+        // they show.
+        let gap = abs(b.observation.capturedAt.timeIntervalSince(a.observation.capturedAt))
+        if b.observation.sequence - a.observation.sequence == 1, gap <= policy.adjacentSeconds,
+           score - suggestOnly >= policy.suggestAt {
+            add(.takenRightAfter, policy.takenRightAfter)
+            if !policy.orderCountsTowardGroup { suggestOnly += policy.takenRightAfter }
+        }
+
         // A barcode or identical bytes settle it; otherwise a differing label counts against.
         // Recorded even when nothing links the pair, so a third photo cannot chain the two together.
         if !signals.contains(.sameBarcode), !signals.contains(.identicalPhoto) {
@@ -561,14 +740,28 @@ public struct PhotoGrouper: Sendable {
             let aLacks = a.prominent.subtracting(b.tokens).subtracting(nearly.0)
             let bLacks = b.prominent.subtracting(a.tokens).subtracting(nearly.1)
             if sharesProminentWord, !aLacks.isEmpty, !bLacks.isEmpty {
-                add(.differentLabelWords, 0)
+                mark(.differentLabelWords)
             }
             let percentsDiffer = !a.percents.isEmpty && !b.percents.isEmpty && a.percents.isDisjoint(with: b.percents)
             let sizesDiffer = !a.sizes.isEmpty && !b.sizes.isEmpty && a.sizes.isDisjoint(with: b.sizes)
-            if percentsDiffer || sizesDiffer { add(.differentAmounts, 0) }
+            if percentsDiffer || sizesDiffer { mark(.differentAmounts) }
+
+            // The lookup name read as the back's name: a front that shares a word with it, while
+            // each has a word the other lacks, is another version of the product ("Vanilla" and
+            // "Chocolate", baking soda and baking powder), as is a different prominent percentage.
+            if let bridge {
+                let other = bridge.other
+                let sharesName = !other.prominent.isDisjoint(with: bridge.lookup.tokens) || !bridge.nearName.isEmpty
+                let otherLacks = other.prominent.subtracting(bridge.lookup.tokens).subtracting(bridge.nearName)
+                let lookupLacks = bridge.lookup.tokens.subtracting(other.tokens).subtracting(bridge.nearLookup)
+                if sharesName, !otherLacks.isEmpty, !lookupLacks.isEmpty { mark(.differentLabelWords) }
+                if !bridge.lookup.percents.isEmpty, !other.percents.isEmpty, bridge.lookup.percents.isDisjoint(with: other.percents) {
+                    mark(.differentAmounts)
+                }
+            }
         }
         return signals.isEmpty ? nil : Pair(
-            a: i, b: j, signals: signals, score: score, nearPoints: nearPoints, content: content, signalPoints: points
+            a: i, b: j, signals: signals, signalPoints: points, score: score, nearPoints: nearPoints, suggestOnly: suggestOnly
         )
     }
 }
@@ -578,16 +771,25 @@ public struct PreparedPhoto: Sendable {
     let observation: PhotoObservation
     let tokens: Set<String>
     let products: [GTIN]
-    let isDateOnly: Bool
     /// Shows a barcode, a printed date or a panel: what the back or side of a package shows.
     let showsDetails: Bool
-    /// Shows details, is not a photo of only a date, and has no name as big as its biggest text.
-    let isBack: Bool
     /// The words of the photo's prominent name.
     let prominent: Set<String>
     let percents: Set<String>
     let sizes: Set<String>
     let near: NearWords
+    /// The words of the photo's panel lines. Only ever searched for another photo's name; never
+    /// label words or a name.
+    let panelWords: Set<String>
+    let lotCodes: Set<String>
     public var id: IntakePhotoID { observation.photo }
     var barcode: GTIN? { products.count == 1 ? products[0] : nil }
+}
+
+/// What grouping reads from one lookup answer's product name, worked out once by
+/// `PhotoGrouper.prepare(lookupName:)`.
+public struct PreparedLookup: Sendable {
+    let tokens: Set<String>
+    let near: NearWords
+    let percents: Set<String>
 }

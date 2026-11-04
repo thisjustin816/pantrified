@@ -75,7 +75,7 @@ public struct ReadExportReplay: Sendable {
     public func run(policy: GroupingPolicy = .standard, proposer: IntakeProposer = IntakeProposer()) -> ReplayReport {
         let observations = self.observations
         let byID = Dictionary(uniqueKeysWithValues: observations.map { ($0.photo, $0) })
-        let trace = grouper(policy: policy).trace(observations)
+        let trace = grouper(policy: policy).trace(observations, lookupNames: lookupNames)
         let sequence = { (id: IntakePhotoID) in byID[id]?.sequence ?? -1 }
         let groups = trace.result.groups.map { group in
             let label = proposer.proposals(photos: group.photos, shared: Set(group.sharedPhotos), barcode: group.barcode, observations: byID)
@@ -87,13 +87,24 @@ public struct ReadExportReplay: Sendable {
         let pairs = trace.pairs.map { pair in
             ReadExport.Pair(
                 first: sequence(pair.first), second: sequence(pair.second), distance: pair.distance, signals: pair.signals,
-                oneLetterOffPoints: pair.oneLetterOffPoints, shotOrderPoints: pair.shotOrderPoints, score: pair.score
+                oneLetterOffPoints: pair.oneLetterOffPoints, score: pair.score
             )
         }
         let suggestions = trace.result.suggestions.map {
             ReadExport.Suggestion(first: $0.first, second: $0.second, signals: $0.signals, score: $0.score)
         }
         return ReplayReport(groups: groups, suggestions: suggestions, pairs: pairs)
+    }
+
+    /// The product names the export's lookups found, by barcode. A name the person withheld gives
+    /// none, so the replay groups without it.
+    public var lookupNames: [GTIN: String] {
+        var names: [GTIN: String] = [:]
+        for lookup in export.lookups where lookup.answer == .found {
+            guard let text = lookup.name?.text, case .success(let gtin) = GTIN.parse(lookup.barcode) else { continue }
+            names[gtin] = text
+        }
+        return names
     }
 
     /// The groups the export recorded, as photo sequences.

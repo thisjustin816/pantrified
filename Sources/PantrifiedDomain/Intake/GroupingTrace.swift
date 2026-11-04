@@ -1,6 +1,7 @@
 import Foundation
 
-/// What grouping took a photo to be, from its own text and codes.
+/// What a photo looks like it is, from its own text and codes. A description for the record only:
+/// grouping never uses it, since what a photo shows links it to another, never its role.
 public enum PhotoRole: String, Sendable, Hashable, Codable {
     /// A name and no barcode, date or panel: the front of a package.
     case front
@@ -41,10 +42,8 @@ public struct PairTrace: Sendable, Hashable {
     public let distance: Double?
     public let signals: [SignalPoints]
     /// Points from a name word one letter off a word on the other photo. They count toward a
-    /// suggestion only.
+    /// suggestion only. With the signals' points they make the score.
     public let oneLetterOffPoints: Int
-    /// Points from a back taken right after or before a front.
-    public let shotOrderPoints: Int
     public let score: Int
 }
 
@@ -61,14 +60,15 @@ public struct GroupingTrace: Sendable, Hashable {
 }
 
 extension PhotoGrouper {
-    /// Groups the photos as `group` does and keeps the evidence for each pair. A pair with no
-    /// signal is kept only for its feature print distance, when it is at most twice
+    /// Groups the photos with the lookup names as `group` does and keeps the evidence for each pair.
+    /// A pair with no signal is kept only for its feature print distance, when it is at most twice
     /// `policy.similarDistance`.
-    public func trace(_ observations: [PhotoObservation]) -> GroupingTrace {
+    public func trace(_ observations: [PhotoObservation], lookupNames: [GTIN: String] = [:]) -> GroupingTrace {
         let photos = batch(observations, sequence: \.sequence, photo: \.photo).map(prepare)
+        let lookups = lookupNames.mapValues(prepare(lookupName:))
         var cost = GroupingCost()
         var scored: [[Int]: Pair] = [:]
-        for pair in scoredPairs(photos, cost: &cost) { scored[[pair.a, pair.b]] = pair }
+        for pair in scoredPairs(photos, lookups: lookups, cost: &cost) { scored[[pair.a, pair.b]] = pair }
         let keepUpTo = 2 * policy.similarDistance
 
         let single = photos.indices.filter { photos[$0].products.count < 2 }
@@ -85,26 +85,33 @@ extension PhotoGrouper {
                     signals: pair.map { pair in
                         zip(pair.signals, pair.signalPoints).map { SignalPoints(signal: $0, points: $1) }
                     } ?? [],
-                    oneLetterOffPoints: pair?.nearPoints ?? 0, shotOrderPoints: pair?.orderPoints ?? 0,
-                    score: pair?.score ?? 0
+                    oneLetterOffPoints: pair?.nearPoints ?? 0, score: pair?.score ?? 0
                 ))
             }
         }
 
         let traces = photos.map { photo in
-            let role: PhotoRole = if photo.isDateOnly {
-                .dateOnly
-            } else if photo.isBack {
-                .back
-            } else if !photo.showsDetails, !photo.prominent.isEmpty {
-                .front
-            } else {
-                .other
-            }
-            return PhotoTrace(photo: photo.id, role: role, showsPanel: LabelText.showsPanel(photo.observation.lines))
+            PhotoTrace(photo: photo.id, role: Self.role(of: photo), showsPanel: LabelText.showsPanel(photo.observation.lines))
         }
         return GroupingTrace(
-            result: measuredGroup(prepared: photos).result, photos: traces, pairs: pairs, distanceKeptUpTo: keepUpTo
+            result: measuredGroup(prepared: photos, lookups: lookups).result, photos: traces, pairs: pairs, distanceKeptUpTo: keepUpTo
         )
+    }
+
+    /// A photo whose name, if any, is less tall than this share of its tallest line counts as a back
+    /// in the record: a back's biggest print is usually its date or panel.
+    static let backNameShare = 0.75
+
+    static func role(of photo: PreparedPhoto) -> PhotoRole {
+        let lines = photo.observation.lines
+        let panel = LabelText.showsPanel(lines)
+        if photo.showsDetails, photo.tokens.isEmpty, photo.products.isEmpty, !panel { return .dateOnly }
+        if photo.showsDetails {
+            let tallest = lines.map(\.box.height).max() ?? 0
+            let nameHeight = LabelText.prominentLine(in: lines)?.height
+            if nameHeight.map({ $0 < backNameShare * tallest }) ?? true { return .back }
+            return .other
+        }
+        return photo.prominent.isEmpty ? .other : .front
     }
 }

@@ -26,7 +26,7 @@ struct ReadExportTests {
         let text = String(decoding: data, as: UTF8.self)
         #expect(text.hasPrefix("{\n"))
         #expect(text.contains("\"format\" : \"pantrified.read-export\""))
-        #expect(text.contains("\"version\" : 1"))
+        #expect(text.contains("\"version\" : 2"))
         let topLevel = text.split(separator: "\n").filter { $0.hasPrefix("  \"") }.map { $0.split(separator: "\"")[1] }
         #expect(topLevel == topLevel.sorted())
         #expect(topLevel.count == 12)
@@ -116,7 +116,7 @@ struct ReadExportTests {
         #expect(soup.distance == nil)
         #expect(soup.signals.map(\.signal).contains(.identicalPhoto))
         let baking = try #require(export.pairs.first { $0.first == 2 && $0.second == 3 })
-        #expect(baking.distance == 0.7)
+        #expect(baking.distance == 0.45)
         #expect(baking.signals.last == SignalPoints(signal: .differentLabelWords, points: 0))
         #expect(export.distanceKeptUpTo == 1.0)
     }
@@ -133,7 +133,9 @@ struct ReadExportTests {
             ReadExport.Link(photo: 1, matchedWith: 0, signals: [.similarImage, .sharedLabelWords, .takenRightAfter], score: 90),
         ])
         #expect(export.suggestions == [
-            ReadExport.Suggestion(first: 1, second: 2, signals: [.someLabelWords, .takenRightAfter, .differentLabelWords], score: 40),
+            ReadExport.Suggestion(
+                first: 1, second: 2, signals: [.similarImage, .someLabelWords, .takenRightAfter, .differentLabelWords], score: 65
+            ),
         ])
     }
 

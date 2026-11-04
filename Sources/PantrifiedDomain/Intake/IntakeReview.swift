@@ -19,14 +19,16 @@ public struct IntakeProposer: Sendable {
         let own = all.filter { !shared.contains($0.photo) && $0.kind == .package }
         var result = LabelProposals()
 
-        // The tallest name on a photo without a panel; a panel photo's other lines only when no
-        // photo without a panel has a name. A panel line is never a name.
-        var best: (name: String, height: Double, onPanel: Bool)?
+        // The tallest name on a front, a photo with no barcode, date or panel; then on a photo with
+        // a barcode or date and no panel; a panel photo's other lines only when no other photo has
+        // a name. A panel line or a maker's line is never a name.
+        var best: (name: String, height: Double, rank: Int)?
         for observation in own {
             guard let line = LabelText.prominentLine(in: observation.lines) else { continue }
-            let onPanel = LabelText.showsPanel(observation.lines)
-            if let current = best, current.onPanel == onPanel ? current.height >= line.height : !current.onPanel { continue }
-            best = (line.name, line.height, onPanel)
+            let rank = LabelText.showsPanel(observation.lines) ? 2
+                : !observation.products.isEmpty || !dates.readings(in: observation.lines, takenAt: observation.capturedAt).isEmpty ? 1 : 0
+            if let current = best, current.rank == rank ? current.height >= line.height : current.rank < rank { continue }
+            best = (line.name, line.height, rank)
         }
         result.name = best?.name
 
@@ -319,6 +321,36 @@ public struct IntakeReview: Sendable, Hashable, Codable {
     /// Takes the answers already kept for the batch, which were combined as they arrived.
     public mutating func useLookups(_ answers: [GTIN: LookupAnswer]) {
         lookups.merge(answers) { _, kept in kept }
+    }
+
+    /// Marks candidates as "might be the same" when photos of one are linked to photos of the other
+    /// by grouping with something learned after the review was made, such as a lookup's name. It
+    /// never merges, so no edit is lost. Like a lookup answer it is not a change: an undo keeps it.
+    /// Candidates with two barcodes, or already suggested together, are left alone. Returns the
+    /// pairs of candidates newly suggested.
+    @discardableResult
+    public mutating func suggest(linkedPhotos pairs: [(IntakePhotoID, IntakePhotoID)]) -> Int {
+        var candidateOf: [IntakePhotoID: IntakeCandidateID] = [:]
+        for candidate in reviewing {
+            for photo in candidate.photos where !candidate.sharedPhotos.contains(photo) { candidateOf[photo] = candidate.id }
+        }
+        var added: [(IntakeCandidateID, IntakeCandidateID)] = []
+        for (x, y) in pairs {
+            guard let a = candidateOf[x], let b = candidateOf[y], a != b, let i = index(a), let j = index(b),
+                  candidates[i].barcode == nil || candidates[j].barcode == nil || candidates[i].barcode == candidates[j].barcode,
+                  !candidates[i].mightBeSameAs.contains(b), !added.contains(where: { $0 == (a, b) || $0 == (b, a) }) else { continue }
+            added.append((a, b))
+        }
+        func apply(_ list: inout [IntakeCandidate]) {
+            for (a, b) in added {
+                guard let i = list.firstIndex(where: { $0.id == a }), let j = list.firstIndex(where: { $0.id == b }) else { continue }
+                if !list[i].mightBeSameAs.contains(b) { list[i].mightBeSameAs.append(b) }
+                if !list[j].mightBeSameAs.contains(a) { list[j].mightBeSameAs.append(a) }
+            }
+        }
+        apply(&candidates)
+        for index in history.indices { apply(&history[index]) }
+        return added.count
     }
 
     // MARK: The person's changes, each undoable

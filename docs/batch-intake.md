@@ -21,7 +21,8 @@ Today or Food → Add a batch
     a strip shows what was taken and whether each is read; "9 packages so far" counts
     what is read; the photo button adds photos from the library
       (behind it: each kept photo is read, one at a time at low priority; the photos read
-       so far are grouped again; each new barcode is looked up, at most 2 at once)
+       so far are grouped again; each new barcode is looked up, at most 2 at once, and the
+       photos are grouped again when its answer arrives)
   → Done
   → 1 to 3 photos left: the list so far at once, with "Reading 2 more photos",
       not changeable until they are read (how long that takes is not measured)
@@ -86,22 +87,26 @@ batch is taken back. A read that finished but whose result could not be kept on 
 count to the photo's next read, so storage trouble cannot mark a good photo "could not read". The store
 keeps that in memory only, so after a relaunch such a read counts like one that crashed.
 
-**Grouping as photos arrive.** After each read, `LiveGrouping` runs `PhotoGrouper` again over every
-observation read so far, unchanged. Grouping is a pure function of the set of observations, so the
-review, made once when the last photo is read, is the one-shot grouping of the whole batch whatever
-order the readings arrived in. Results before that are shown only as the tentative count. Two photos
-with different barcodes, or whose labels differ in a distinguishing word or amount, are never in one
-group at any step, because those refusals do not depend on the rest of the batch. Tests check both
-over 300 seeded arrival orders of a batch with front, barcode and date photos, a duplicate, a photo of
-two products, near-identical products and a doubtful pair, and through the pipeline over 12 orders. A
-candidate whose newest photo is three shots or 15 seconds old (`SettlingPolicy`) gets a filled check on
-its thumbnails, as a hint only.
+**Grouping as photos arrive.** After each read, and each lookup answer, `LiveGrouping` runs
+`PhotoGrouper` again over every observation read so far and every product name the lookups found so
+far. Grouping is a pure function of the set of observations and the set of names, so the review, made
+once when the last photo is read, is the one-shot grouping of the whole batch with the names kept by
+then, whatever order the readings and answers arrived in. Results before that are shown only as the
+tentative count. Two photos with different barcodes, or whose labels differ in a distinguishing word
+or amount, are never in one group at any step, because those refusals do not depend on the rest of
+the batch. Tests check both over 300 seeded arrival orders of a batch with a front, barcode photo and
+date photo, a duplicate, a photo of two products, near-identical products and a doubtful pair, again
+over 300 orders with three lookup answers arriving among the photos, and through the pipeline over 12
+orders. An answer that arrives after the review exists adds suggestions only ("Where lookup answers
+enter grouping" below). A candidate whose newest photo is three shots or 15 seconds old
+(`SettlingPolicy`) gets a filled check on its thumbnails, as a hint only.
 
 **Cost.** Grouping 120 photos scores 7,140 pairs; grouping again after each of 120 arrivals scores
 287,980 pairs in all. What grouping reads from a photo (its words, name, amounts, panel, dates and the
-forms of its words one letter off) is worked out once, when the photo arrives, and kept. A test holds
-the pair counts, and that the lookups for words one letter off stay within their bound per pair, so a
-change that makes grouping costlier fails. On the Linux development machine the 120 arrivals took
+forms of its words one letter off) is worked out once, when the photo arrives, and kept; a lookup
+name's words are worked out once, when the answer arrives. A test holds the pair counts, that each
+name is prepared once however often the batch is grouped again, and that the lookups for words one
+letter off stay within their bound per pair, so a change that makes grouping costlier fails. On the Linux development machine the 120 arrivals took
 about 1.1 seconds in a release build, as before words one letter off were matched, and 3.5 to 6 seconds
 in a debug build, the longer times while other tests ran. A phone has not been measured.
 
@@ -124,47 +129,61 @@ is the first thing to try, watching the shutter's responsiveness and the thermal
 
 ## Grouping
 
-`PhotoGrouper` scores every pair of photos and groups pairs that score high enough. It is deterministic:
-the same photos in any order give the same groups. All weights and thresholds are in `GroupingPolicy`
-(`PhotoGrouping.swift`), in one place, so they can be tuned after trying the app on real groceries.
-**None of these values has been checked against real photos.**
+`PhotoGrouper` scores every pair of photos and groups pairs that score high enough. Matching comes
+from the package the photos show: barcodes, label words, the barcode lookup's product name, an
+ingredients list, a lot code and looks. The order the photos were taken in only supports a pair those
+already link. Grouping is a pure function of the photos and the lookup names kept so far: the same
+photos and names, in any order, give the same groups. All weights and thresholds are in
+`GroupingPolicy` (`PhotoGrouping.swift`), in one place, so they can be tuned after trying the app on
+real groceries. **None of these values has been checked against real photos.**
 
 | Signal | Points | Why |
 |---|---|---|
 | Same product barcode | 100 | A GTIN names one product. Enough alone. |
 | Same bytes (SHA-256 of the file) | 100 | The same photo added twice. |
-| Feature prints within 0.25 | 50 | Near duplicate. Not enough alone: two flavours of one brand look alike. |
+| Feature prints within 0.25 | 50 | Near duplicate. Not enough alone: two flavors of one brand look alike. |
 | Feature prints within 0.5 | 25 | Looks alike. Supporting evidence only. |
-| Three or more shared label words, covering half the shorter label | 50 | Front and back of one package usually repeat the brand and product name. |
+| Three or more shared label words, covering half the shorter label | 50 | Front and back of one package often repeat the brand and product name. A suggestion alone. |
 | Two shared words, or one of five letters or more | 25 | A brand alone. Supporting evidence only. |
-| A name word one letter off a word on the other photo | 20 | A misread ("Toacker" for "Loacker"). Counts toward a suggestion only, never toward a merge. |
-| Taken one straight after the other, within 20 seconds | 15 | People photograph one package at a time. Never enough alone. |
-| A photo of only a date, taken straight after | 45 | The usual order is front, then date. With the 15 above, it groups. |
-| A photo of only a date, taken straight before | 15 | Less usual; with the 15 above it is only a suggestion. |
-| A back (barcode, date or panel, name not its biggest text) taken straight after a front | 45 | The usual second shot of one package. With the 15 above, it groups, with no words in common. |
-| A back taken straight before a front | 15 | Less usual; with the 15 above it is only a suggestion. |
+| Three or more words of the lookup name for one photo's barcode on the other photo's label, covering half the name | 60 | The lookup names the product the back shows; its words on a front are that product's front. Enough alone. |
+| Fewer lookup name words: two, or one of five letters or more | 30 | Often the brand alone. A suggestion. |
+| The same lot code on both, 8 or more letters and digits with at least 3 digits | 50 | Two photos of one package's back, such as the barcode and a close-up of the date. A suggestion alone. |
+| A name word one letter off a word on the other photo | 20 | A misread ("Toacker" for "Loacker"). Toward a suggestion only. |
+| A name word one letter off a lookup name word | 30 | A misread brand that the lookup spells right. Toward a suggestion only. |
+| Two or more of one photo's name words, at least half of them, in the other photo's ingredients list | 30 | A front's name in its own nutrition side ("Sparkling water lime" and "carbonated water, natural lime flavor"). Toward a suggestion only, since a panel never names a product. |
+| Taken one straight after the other, within 20 seconds | 15 | Counted only when the rest, without the points toward a suggestion only, already reaches 30, so it never makes a suggestion or a group by itself. Counts toward a group while `orderCountsTowardGroup` is on (Owner decisions 2). |
 
-A pair at **60** or more, not counting the points for words one letter off, is grouped; a pair from
+A pair at **60** or more, not counting the points toward a suggestion only, is grouped; a pair from
 **30** up to 60, counting them, is shown on both cards as "Might be the same as …" with Merge and Not
 the same. Pairs join strongest first.
 
+Label words and lookup name words count once: a pair gets the larger of the two, so a brand printed in
+the back's address and repeated in the lookup's name is still one brand. Because the order of shots
+adds its 15 only above 30, it can turn a suggestion of 45 or more into a group (three shared label
+words, 50 + 15), and never makes a suggestion or a group by itself. With `orderCountsTowardGroup` off,
+its points count toward a suggestion only, so it only ranks a pair above another with the same
+evidence, and such a front and back stay a suggestion. Ten different products photographed one after
+another, front and back each, with nothing linking one product to the next, stay ten or twenty
+candidates with no suggestion between products, however quickly they were taken. A photo of only a
+date has nothing to match by and stays its own candidate, marked "No name found", unless it shows a
+lot code that another photo of the package shows too.
+
 Label words are lower case, without accents, at least three letters, with no digits, and not in a list
 of words printed on most packages (units, nutrition panel words, date labels, months, storage
-instructions, legal and marketing filler). A word on more than four photos and more than 30% of the
-batch, such as a store brand, is ignored for that batch.
+instructions, legal and marketing filler). A word or lot code on more than four photos and more than
+30% of the batch, such as a store brand, is ignored for that batch.
 
 **Words one letter off.** Recognition often gets one letter wrong ("Toacker" for the stylized
 "Loacker", "Sparking" for "Sparkling"), and exact matching then loses the word. Each word of a photo's
 name (at most 4) is looked for one letter off (one letter added, dropped or changed, not two letters
-swapped) among the other photo's label words (at most 64, from its tallest lines first). Both words
-must have at least **7 letters** (`nearWordLetters`) and at most 20. Shorter words one letter apart are
-too often different products: coffee and toffee, skim and skip, salt and malt. Lemon and melon are two
-changes apart and never match. A word on most of the batch's photos is never matched this way either. A
-match is shown as "words on the label" and adds 20 points that count toward a suggestion only. Each
-photo's words are prepared once, with every word's one-letter-removed and one-letter-replaced forms, so
-a pair needs at most a fixed number of lookups (`PhotoGrouper.nearLookupsPerPair`, 344 with these
-values): the name words' forms looked up in the other photo's prepared forms, and the two names' words,
-at most 4 by 4, compared with each other.
+swapped) among the other photo's label words (at most 64, from its tallest lines first) and among the
+words of the lookup name for the other photo's barcode. Both words must have at least **7 letters**
+(`nearWordLetters`) and at most 20. Shorter words one letter apart are too often different products:
+coffee and toffee, skim and skip, salt and malt. Lemon and melon are two changes apart and never
+match. A word on most of the batch's photos is never matched this way either. Each photo's words, and
+each lookup name's words, are prepared once, with every word's one-letter-removed and
+one-letter-replaced forms, so a pair needs at most a fixed number of lookups
+(`PhotoGrouper.nearLookupsPerPair`, 508 with these values).
 
 What 7 letters cannot prevent: two products whose names differ by one letter in a long word, such as
 mustard and custard, roasted and toasted, or noodles and doodles, can match one letter off. Between two
@@ -179,56 +198,80 @@ values, calories with a number, a nutrient with an amount in g, mg or mcg ("Tota
 or more commas, which an ingredients list running on from the line above has. A panel word of five
 letters or more also matches a word one letter off, so "Nutritlon Facts" and "Calorles 50" count. A
 percentage alone does not make a line a panel line, so "2% Reduced fat milk" keeps its amount. A photo
-**shows a panel** when one of its lines is a heading, serving, ingredients, allergen or daily value
-line; nutrient claims on a front, such as "0 calories" or "0g sugar", do not make it a panel photo.
+**shows a panel** when one of its lines is a heading, serving line, ingredients, allergen or daily value
+line; nutrient claims on a front, such as "0 calories" or "0g sugar", do not make it a panel photo. A
+panel's words are only ever searched for another photo's name, for the ingredients signal above.
 
-**Fronts and backs by the order they were taken.** A photo is a **back** when it shows a product
-barcode, a printed date or a panel, is not a photo of only a date (which has its own rule), and has no
-name, or a name less than 75% as tall as its tallest line (`backNameShare`): a back's biggest print is
-usually its date or panel. A can photographed with its barcode in view and its name the biggest text
-is not a back. A photo is a **front** when it shows none of these and has a name. The back of a package often shares no word with
-its front: on the device, a Loacker wafer's front read "Toacker Minis" and its back held only the
-barcode, the date, the maker's address and a nutrition panel. So a back taken straight after a front,
-within 20 seconds, joins it on the order alone (15 + 45), and a back taken straight before a front is
-a suggestion (15 + 15). The order is not used when the back's words or looks point more strongly to
-another front, or the front's to another back: a back that repeats the name of the next front, taken
-after a front photographed alone, joins the next front. Only a link worth a suggestion on its own (30
-points of words, words one letter off and looks) counts for this, so a back that shares just a brand
-in the maker's address with another front of the same brand still joins the front taken right before
-it. Different barcodes, differing names and amounts, and the batch's common words keep two products
-apart as before; the order points never outweigh them. The points are shown as "taken one after
-another".
+**Makers and addresses.** A line that says who made, packed or sold the product, or where, is never a
+name or a distinguishing word (`LabelText.isMakerLine`): "Distributed by", "Manufactured for", "Mfd.
+by", "Made in Italy", "Product of Austria", a company's legal form ("Inc", "LLC", "Co", "Company",
+"S.p.A.", "GmbH"), a street with its number, a town with a 4 or 5 digit postal code after a comma,
+"Questions? Call 1-800-...", a website, or a certification seal ("Non GMO Project Verified"). Keywords
+of five letters or more also match one letter off ("Distrlbuted"), and only a line's first 160
+characters are read. Such a line still gives label words, where a back's brand often is. "Made by"
+counts only with a comma, colon or digit on the line, so a brand such as "Made by Nature" stays a name;
+a brand whose name ends in "Company" is not taken for a name either, and the line under it is. A back
+whose biggest short line is "Distributed by Chobani, Norwich NY" therefore has no name to differ from
+its front's, and shares the brand with it (25).
 
-What this cannot tell: a front photographed alone, followed by a different product's back that shares
-nothing with any photo, is put with that front. And a back whose largest short line is not a name but,
-say, "Distributed by Chobani, Norwich NY" shares the brand with the front and has words the front
-lacks, so the two count as differing names and stay apart, as before this rule. Splitting or merging
-is one tap.
+**Matching a back to its front through the lookup.** A front has no barcode, and its back often
+repeats nothing of its name: on the device, a Loacker wafer's front read "Toacker Minis" and its back
+held only the barcode, the date, the maker's address and a nutrition panel. The barcode lookup bridges
+them. When a lookup answers for a barcode, its brand-first product name ("Loacker crispy wafers with
+vanilla cream filling, vanilla") is read into words once (`LabelText.significantTokens`), and those
+words stand for the photos showing that barcode when they are compared with a photo that shows no
+barcode. The front's "crispy", "wafers", "vanilla", "cream" and "filling" are five of the name's six
+words (60), and "Toacker" is one letter off "Loacker". The lookup's words are never the photo's label
+words or name: the name still comes from the person, then the lookup's answer, then the front's label.
 
-**All fronts first, then all backs.** Then no back is taken next to its own front, so the order says
-nothing, and each back joins its front only on what they show: a shared barcode never applies (fronts
-have none), so a back sharing three or more label words with its front, covering half the shorter
-label, is a suggestion (50), and joins it with a similar image as well (50 + 25); one or two shared
-words are below a suggestion unless the photos also look alike. The last front and the first back are
-taken one after the other: when the back's words or looks link it to an earlier front by a suggestion's
-worth they stay apart, and otherwise they are put together, which is wrong and is one tap to split.
+- **Refusals still hold.** Two barcodes never meet through a lookup: only a photo without a barcode is
+  compared with a lookup name. The name is read as the back's name for the distinguishing-word rule: a
+  front that shares a word with it while each has a word the other lacks ("Vanilla" and "Chocolate",
+  baking soda and baking powder, whole and skim, coffee and toffee) is a different version, and a
+  prominent percentage on the front that the name contradicts (1% and 2%) is a different amount. Such
+  pairs are never grouped automatically.
+- **A lookup for the wrong product.** When the photos showing the barcode have label words and none of
+  them is in the lookup's name, the name probably describes another product, and its words count
+  toward a suggestion only. A back with no label words at all cannot contradict a wrong answer; that
+  case groups as if the answer were right.
+- **No answer.** A miss, a failure, an offline or rate-limited deferral, or a build without a key gives
+  no name and no bridge. Grouping never waits for a lookup.
+
+**Where lookup answers enter grouping.** Answers are kept by barcode on the batch as they arrive
+(`IntakeBatch.lookups`). `LiveGrouping` keeps the found names beside the observations and groups again
+when an answer arrives, as it does when a photo is read; the review is made from every photo and the
+names kept by then, so it equals the one-shot grouping of those photos and names whatever order they
+arrived in. The review is made once, so an answer that arrives after it, as one for the last photo
+often does, cannot regroup it without losing the person's edits. Instead, photos that grouping with
+the new name links (in one group or a suggestion) and grouping without it does not are shown as
+"Might be the same as" on their cards (`IntakeReview.suggest`). That is never a merge, survives an
+undo like a lookup answer, and is skipped for two candidates with different barcodes or already
+suggested together.
+
+**All fronts first, then all backs.** The order of shots says nothing then, and nothing depends on it.
+With lookup answers, each back joins the front its lookup name matches, wherever the two are in the
+batch. Without them, a back that repeats three or more of its front's words, covering half the
+shorter label, is suggested with it (50), and grouped if the photos also look alike (50 + 25); a back
+that shares only the brand, or nothing, stays apart with no suggestion. The last front and the first
+back, taken one after the other, are treated as any other pair.
 
 **What keeps two products apart.** Two photos are never grouped, directly or through a third photo,
 when:
 
 - they show **different barcodes**: two products, however alike (no suggestion either);
-- their **names differ by a distinguishing word**: the two prominent names share a word but each has a
-  word that appears nowhere on the other photo, such as baking soda and baking powder, whole milk and
-  skim milk, vanilla and strawberry yogurt (shown as a suggestion when they are otherwise alike). The
-  name's words here include a short line printed right under it, of one to three words, where a flavor
-  often is: "Loacker Minis" over "VANILLA" and over "CHOCOLATE" differ by flavor. Two
-  fronts are compared on exact words only, so "Mustard" and "Custard" fronts stay apart. When either
-  photo shows a barcode, a date or a panel, a name word one letter off a word on the other photo
-  counts as that word, misread, both for sharing a word and for lacking one: a back reading "Sparking
-  water" does not differ from a "Sparkling water" front, while a "Toacker Vanilla" front and a
-  "Loacker Chocolate" back still differ by flavor;
+- their **names differ by a distinguishing word**: the two prominent names, or a name and the lookup
+  name for the other photo's barcode, share a word but each has a word that appears nowhere on the
+  other, such as baking soda and baking powder, whole milk and skim milk, vanilla and strawberry
+  yogurt (shown as a suggestion when they are otherwise alike). The name's words here include a short
+  line printed right under it, of one to three words, where a flavor often is: "Loacker Minis" over
+  "VANILLA" and over "CHOCOLATE" differ by flavor. Two fronts are compared on exact words only, so
+  "Mustard" and "Custard" fronts stay apart. When either photo shows a barcode, a date or a panel, a
+  name word one letter off a word on the other photo counts as that word, misread, both for sharing a
+  word and for lacking one: a back reading "Sparking water" does not differ from a "Sparkling water"
+  front, while a "Toacker Vanilla" front and a "Loacker Chocolate" back still differ by flavor;
 - they show **different prominent percentages or net contents**: 2% and 1% milk, 16 oz and 32 oz.
-  Percentages count only on large lines that hold a real word, so nutrition panels do not count.
+  Percentages count only on large lines that hold a real word, so nutrition panels do not count. A
+  percentage in the lookup's name counts too.
 
 A barcode or identical bytes settle a pair, so these differences are not checked then.
 
@@ -251,9 +294,12 @@ Each candidate proposes, and says where each proposal came from:
 - **Name**, in this order: a name the person set; the barcode lookup's name ("From USDA FoodData
   Central"), kept by barcode on the batch, so it applies as soon as any photo of the candidate shows
   the barcode; otherwise the tallest line of words on its photos that show no panel, joined to a brand
-  printed right above it ("Read from the label. Check it."); otherwise the tallest line outside the
-  panel on a panel photo; otherwise nothing, marked "No name found". A panel line is never a name, and
-  a name is never invented. Lines Vision was less than 30% sure of are not used. A merge reads the
+  printed right above it ("Read from the label. Check it."), taken first from a front (a photo with no
+  barcode, date or panel), then from a photo with a barcode or date; otherwise the tallest line outside
+  the panel on a panel photo; otherwise nothing, marked "No name found". A panel line, or a maker,
+  address, contact or certification line ("Distributed by Ferrara Candy Company", "Made in USA"), is
+  never a name, and a name is never invented. A back with nothing else to read stays "No name found"
+  until it is merged with its front or its lookup answers. Lines Vision was less than 30% sure of are not used. A merge reads the
   name again from all the merged photos by the same order, so a panel photo's large print cannot win
   over a front.
 - **Date**: the preferred printed date, or a pending choice when it reads two ways. "The photos show
@@ -398,8 +444,9 @@ with a key. Every lookup goes through the injected `ProductLookupService`, so th
 around it (`PacedProductLookup`) applies here too. A barcode is looked up as soon as a photo showing it
 is read, while photos are still being taken, at most 2 at once (below the decorator's own 3) and at most
 40 a pass; a pass starts when the batch opens and again at Done. Each distinct barcode is asked once a
-pass, and a miss is final. Answers are kept by barcode on the batch, apart from grouping, so they attach
-to whichever candidate shows that barcode. When the device is offline or the service answers "rate
+pass, and a miss is final. Answers are kept by barcode on the batch, so they attach to whichever
+candidate shows that barcode, and a found name also takes part in grouping ("Where lookup answers enter
+grouping" above). When the device is offline or the service answers "rate
 limited", including the decorator's own pause, the rest of the pass is deferred, not failed: cards say
 "Barcode lookups are paused for now", and the next pass asks again. Other failures are tried again on
 later passes up to three times. Discarding or closing the camera cancels lookups in flight. None of
@@ -422,14 +469,17 @@ temporary file) and `PhotoGrouper.trace` (`Sources/PantrifiedDomain/Intake/Group
 review screen calls `.readExportMenu(intake)` once; nothing else about the review changes.
 
 **What the file holds.** One JSON file, `pantrified-what-the-app-read.json`, format
-`pantrified.read-export` version 1 (`ReadExport`), pretty printed with keys in sorted order:
+`pantrified.read-export` version 2 (`ReadExport`), pretty printed with keys in sorted order. Version 2
+groups with the lookups' names and records the signals `lookupName`, `nameInIngredients` and
+`sameLotCode`; shot order adds points only as the `takenRightAfter` signal, so pairs have no
+`shotOrderPoints`. Version 1 files, which have it, still read and replay with this build's rules:
 
 | Key | Contents |
 |---|---|
 | `app` | Marketing version, build number, system version ("iOS 27.0") and model identifier ("iPhone17,1") |
 | `batchDay` | The UTC calendar day of the first photo, so dates read the same in a replay. No time of day |
-| `photos` | Per photo: sequence, seconds after the first photo (tenths), kind, role (`front`, `back`, `dateOnly`, `other`, as grouping's shot order reads it), whether it shows a panel, whether it had a feature print, the earlier photo with the same bytes, whether the person left it out, its lines (text, box rounded to a thousandth, confidence rounded to a thousandth) and its codes (a product number, a refusal reason, or only that a link or other QR code was seen) |
-| `pairs` | Each pair of photos grouping weighed, by sequence: feature print distance (four decimals, the number only), each signal with the points it added, points from words one letter off and from shot order, and the score. A pair with no signal is listed when its distance is at most twice `similarDistance` (`distanceKeptUpTo`), so a looser image threshold can be tried |
+| `photos` | Per photo: sequence, seconds after the first photo (tenths), kind, role (`front`, `back`, `dateOnly`, `other`, a description only: grouping does not use it), whether it shows a panel, whether it had a feature print, the earlier photo with the same bytes, whether the person left it out, its lines (text, box rounded to a thousandth, confidence rounded to a thousandth) and its codes (a product number, a refusal reason, or only that a link or other QR code was seen) |
+| `pairs` | Each pair of photos grouping weighed, by sequence: feature print distance (four decimals, the number only), each signal with the points it added, points from words one letter off, and the score. A pair with no signal is listed when its distance is at most twice `similarDistance` (`distanceKeptUpTo`), so a looser image threshold can be tried |
 | `groups` | The groups grouping made, by sequence, with barcode, shared photos, links, and the proposals each first showed: the label's name, whether the card showed the lookup's name or the label's, the date (one day, or both readings), dates disagreeing, the place by kind and position with its source, refused codes, a link seen, a barcode seen apart |
 | `suggestions` | "Might be the same" pairs of groups, with signals and score |
 | `lookups` | Each barcode's answer: found with the name as returned and the service, not found, failed with attempts, or deferred |
@@ -511,9 +561,10 @@ proposer with any `GroupingPolicy`, and reports groups, suggestions, signals and
    as a known issue; when a change fixes it, the test reports that the known issue is gone and the entry is
    removed. Every fixture must also hold no text the automatic check flags.
 
-Two synthetic fixtures are committed: `sample-batch.json`, which the app groups as the person did, and
-`front-then-unrelated-back.json`, a front photographed alone followed by another product's back with no
-words in common, which the app still groups together (owner decision 2), so it is a known failure.
+Two synthetic fixtures are committed, both version 1 files that the app now groups as the person did:
+`sample-batch.json`, and `front-then-unrelated-back.json`, a front photographed alone followed by
+another product's back with no words in common, which the order rule used to put together and which
+stays apart now that order is never evidence on its own. `knownFailures` is empty.
 
 Tests prove that a replay gives the recorded groups, suggestions, signals and label names. Boxes and
 confidences are rounded to a thousandth and times to a tenth of a second, so a value that close to a
@@ -524,16 +575,18 @@ reads.
 
 | Level | What runs |
 |---|---|
-| Linux `swift test` | Place proposals in order (barcode, name, label, FoodKeeper, none), the newest and moved packages, places the household no longer has, a remembered FoodKeeper choice, the unopened storage rule, the sections, moves and their undo, what a drop carries, Add all leaving candidates with no place, places read from used up packages and their barcodes, and a place chosen in one batch proposed in the next; bounds and hostile text; code classification and Digital Links; label words, names, amounts and stated storage; grouping: same product twice, similar products with different barcodes, front without barcode then barcode, a photo of several products, no text, duplicates, date photos, near-identical products (baking soda and powder, whole and skim milk, 2% and 1%, sizes, flavours), chaining, a common brand, order independence, a 140-photo batch; panel lines with misread words; words one letter off and their bound on hostile text; a back taken right after or before a front, and all fronts before all backs; synthetic readings modeled on the first device test (Loacker front and back, a sparkling water front and nutrition side, two Loacker flavors and other look-alikes) in 100 arrival orders; the review's proposals, provenance, merge, split, delete, bulk location, counts, undo and coding; the staging lifecycle and its deletion rules; reading while photos are taken, one at a time, and two at a time after Done; pausing for heat and Low Power Mode; never reading a photo twice; unreadable and crashing photos; incremental grouping equal to one-shot grouping over many arrival orders, and its cost for 120 photos; the list held until the last reads end, with edits kept; lookups started early, once per barcode, at most 2 at once, within the pass budget, deferred and retried; cancelling reads and lookups on discard and on closing the camera; Add all, Undo and partial adds; and kill and resume while capturing, during a read while capturing, during a lookup, reading, reviewing, adding, and undoing, including the undo of Add all, which runs in a finished batch; the read export's contents, rounding and absence of identities, what leaving out a photo, line or name removes, the automatic check's catches and misses, the TestFlight gate, the temporary file, the app sources' gate and single entry, and the replay round trip and fixtures |
+| Linux `swift test` | Place proposals in order (barcode, name, label, FoodKeeper, none), the newest and moved packages, places the household no longer has, a remembered FoodKeeper choice, the unopened storage rule, the sections, moves and their undo, what a drop carries, Add all leaving candidates with no place, places read from used up packages and their barcodes, and a place chosen in one batch proposed in the next; bounds and hostile text; code classification and Digital Links; label words, names, amounts and stated storage; grouping: same product twice, similar products with different barcodes, front without barcode then barcode, a photo of several products, no text, duplicates, date photos, near-identical products (baking soda and powder, whole and skim milk, 2% and 1%, sizes, flavors), chaining, a common brand, order independence, a 140-photo batch; panel lines with misread words; maker and address lines with misread words, and their bound on hostile text; words one letter off and their bound on hostile text; the order of shots never grouping or suggesting by itself, ten products taken in turn, and all fronts before all backs, with and without lookup answers; the lookup name as a bridge, its refusals for other versions and amounts, a lookup for the wrong product, a name in an ingredients list, lot codes, and suggestions added to a review by a late answer; synthetic readings modeled on the device tests (Loacker front and back with other products between them, a sparkling water front and nutrition side, a Butterfinger front and back, two Loacker flavors and other look-alikes) in 100 arrival orders with the lookup answer arriving at any point; the review's proposals, provenance, merge, split, delete, bulk location, counts, undo and coding; the staging lifecycle and its deletion rules; reading while photos are taken, one at a time, and two at a time after Done; pausing for heat and Low Power Mode; never reading a photo twice; unreadable and crashing photos; incremental grouping equal to one-shot grouping over many arrival orders, and its cost for 120 photos; the list held until the last reads end, with edits kept; lookups started early, once per barcode, at most 2 at once, within the pass budget, deferred and retried; cancelling reads and lookups on discard and on closing the camera; Add all, Undo and partial adds; and kill and resume while capturing, during a read while capturing, during a lookup, reading, reviewing, adding, and undoing, including the undo of Add all, which runs in a finished batch; the read export's contents, rounding and absence of identities, what leaving out a photo, line or name removes, the automatic check's catches and misses, the TestFlight gate, the temporary file, the app sources' gate and single entry, and the replay round trip and fixtures |
 | macOS `make test-package` | The same against Apple's Foundation |
 | Hosted app tests | The usage description; the review sample on the real local store, with places remembered from the sample food and from the bundled FoodKeeper snapshot, its sections, and Add all and Undo; staged files' protection class and backup exclusion; Vision reading drawn text from a still. Vision's barcode and QR detection found nothing in the CI simulator, which logged a model load failure, so those tests only check that nothing wrong is read and mark the rest as a known simulator issue |
 | Screenshots | The review screen by place, on synthetic readings with placeholder photos, with candidates in "Needs a place", Fridge, Freezer and Pantry, light and dark, default and largest text |
-| Device | One batch photographed by the owner, which found the problems below; nothing measured |
+| Device | Batches photographed by the owner, which found the problems below; nothing measured |
 
 **Not verified:** Vision's barcode and QR detection at all (it found nothing in the simulator), recognition on real packaging, lighting and curved labels; whether the thresholds group
 real photos well; how often Vision's misreads are one letter off, and whether it reads a flavor line
 and panel headings as the fixtures assume; feature print distances on real photos (the 0.25 and 0.5 values assume revision 2's
-unit vectors and are a guess); dragging and dropping cards, the lift, the lit place, the spring, the
+unit vectors and are a guess); how real FoodData Central names compare with what Vision reads on real
+fronts, how often a lookup misses or answers late, and how often a back's own words disagree with a
+right answer; whether Vision splits maker lines as the fixtures assume; dragging and dropping cards, the lift, the lit place, the spring, the
 tap and the timing, which no test or screenshot shows; VoiceOver's move actions and announcements,
 Reduce Motion, and the sections at the largest text sizes on a phone; the camera itself, rapid shots, focus and memory on a device; the Photos
 picker with real libraries; how long reading takes on a phone, whether one read at a time keeps up
@@ -546,15 +599,19 @@ VoiceOver, and how long the preview takes to open for a full batch.
 ## Owner decisions
 
 1. **Thresholds.** Tune `GroupingPolicy` after trying real groceries. Raising `mergeAt` or lowering the
-   text weights makes grouping more cautious. Lowering `detailPhotoAfter` to 15 or less makes a back
-   taken after a front a suggestion instead of a merge; raising `nearWordLetters` makes fewer words
-   match one letter off.
+   text weights makes grouping more cautious. Lowering `lookupNameWords` below 60 makes a front and back
+   linked only through the lookup a suggestion instead of a group; raising `nearWordLetters` makes fewer
+   words match one letter off.
 2. **Shot order is not evidence.** Decided on 2026-11-03, reversing the earlier rule. Photos are taken
    item by item, so the last photo of one item sits next to the first of the next, and an adjacent back
    must not merge with a front on order alone. Matching comes from the recognized package (the barcode
    lookup's name and brand, label words, image similarity); order may only break a tie where content
-   already links photos. Not built: the code and the weights table above still contain the order rule
-   (a back taken within 20 seconds after a front merges), which is to be removed.
+   already links photos. Built ("Grouping" above): order adds its 15 points only to a pair whose
+   content already makes a suggestion. For the owner to confirm: with `orderCountsTowardGroup` on, as
+   built, those points can turn a content suggestion of 45 or more into a group, such as a front and a
+   back that repeat three of the same words taken in turn, which is more than breaking a tie; turning
+   it off makes order rank pairs only, and such a front and back stay a suggestion unless the lookup or
+   a similar image links them.
 3. **One letter off.** In effect, for the owner to confirm: a name word of 7 letters or more one letter
    off a word on the other photo counts toward a suggestion, never a merge, and two fronts are compared
    on exact words only.
@@ -582,29 +639,42 @@ VoiceOver, and how long the preview takes to open for a full batch.
 
 ## Problems found on a device
 
-The first device test of a batch found these. Each fix is checked by Linux tests on synthetic readings
+The device tests of a batch found these. Each fix is checked by Linux tests on synthetic readings
 modeled on the owner's photos (`DeviceFindingsTests`); none is checked on a device or on real recognition
 yet.
 
-- **Front and back of one package stayed apart. Fixed when taken in turn; partly fixed otherwise.** A
+- **Front and back of one package stayed apart. Fixed through the barcode lookup; open without it.** A
   front photo with no barcode (a logo the text reader misread, "Loacker" as "Toacker") and a back photo
   with the barcode, the date and a nutrition panel stayed apart with no "might be the same" suggestion:
-  they shared no exact word, and nothing used the order they were taken in. A back taken straight
-  after its front now joins it, and one taken straight before is suggested; "Toacker" also matches the
-  back's "LOACKER" one letter off, toward a suggestion. Taken more than 20 seconds apart, or with other
-  photos between them, they still stay apart unless they share words or look alike, and the misread
-  alone (20 points) is below a suggestion. Whether Vision reads the back's sideways "BEST IF USED BY:"
-  and the address lines as modeled is not verified.
+  they shared no exact word. A rule that joined a back to the front taken right before it was tried and
+  removed, since the owner photographs different items one after another. The back's lookup name now
+  bridges them: "Loacker crispy wafers with vanilla cream filling, vanilla" shares five words with the
+  front's description line, so the two are one candidate wherever they are in the batch, with other
+  products between them or the back taken first. Without an answer (a miss, offline, or a build with no
+  key) they stay apart, and "Toacker" one letter off the back's "LOACKER" (20 points) is below a
+  suggestion. A front read without its description line is only suggested with the back. An answer that
+  arrives after the review exists adds the suggestion. Whether Vision reads the front's description line
+  and the back's address lines as modeled, and how FoodData Central names this product, is not verified.
 - **Two shots of one sparkling water stayed apart, and the merged candidate took its name from the
-  nutrition label. Fixed for a front and its nutrition side; open for two fronts.** A front and a panel
-  photo taken in turn now group, panel lines are never a name, and a merge takes the name from the
-  front. Two shots of the front, one read "Sparking", stay two candidates with a suggestion: two fronts
-  that differ in one letter of a long word could be two products (mustard and custard), so tolerance
-  never merges them.
+  nutrition label. Partly fixed.** Panel lines are never a name, and a merge takes the name from the
+  front. A front and its nutrition side, which has no barcode and no word outside its panel, are
+  suggested as one because the front's "Sparkling water" and "Lime" are in the side's ingredients list;
+  they were grouped by the order rule before, and are not grouped now. Two shots of the front, one read
+  "Sparking", stay two candidates with a suggestion: two fronts that differ in one letter of a long word
+  could be two products (mustard and custard), so tolerance never merges them.
 - **The added food list showed "Toacker Minis" and "Sparking water".** Partly fixed: once front and back
-  are one candidate, the barcode lookup's name ("Loacker crispy wafers with vanilla cream filling,
-  vanilla") wins over the misread front. A candidate with no barcode, or before its lookup answers,
-  still shows the misread name; the name is never corrected by guessing a letter.
+  are one candidate, the barcode lookup's name wins over the misread front. A candidate with no barcode,
+  or before its lookup answers, still shows the misread name; the name is never corrected by guessing a
+  letter.
+- **A Butterfinger front and back stayed apart, and the back was named "Ferrenu". Partly fixed.** The
+  back's name most likely came from a maker line ("Ferrara Candy Company" misread). Maker, address,
+  contact, website and certification lines are never a name now, also with one letter misread, so a back
+  with nothing else to read shows "No name found", and a front's name or the lookup's always wins over
+  a back's. The pair is suggested as one when the back's lookup answers ("Butterfinger" is one long word
+  of the name), and stays apart without it. A logo read alone as "Ferrenu", with no maker word on its
+  line, still counts as a name and is not caught. The owner tells the two apart by the wrapper's size
+  and color, which grouping does not read: the feature print measures overall likeness, not color or
+  shape, and storing a color or shape per photo would change the batch format, so it is not built.
 - **A printed month and year, "BEST IF USED BY: BB 11.2027", showed no date. Fixed.** The format was not
   read: a numeric month and year was read only with a slash. It is now read with a dot, dash or slash,
   and with a space after a date label, as the last day of the month (`date-recognition.md`). A proposed

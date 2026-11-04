@@ -9,7 +9,10 @@ import PantrifiedDomain
 /// each field.
 public struct ReadExport: Sendable, Hashable, Codable {
     public static let formatName = "pantrified.read-export"
-    public static let currentVersion = 1
+    /// Version 2: grouping uses the lookup names, signals include `lookupName`, `nameInIngredients`
+    /// and `sameLotCode`, and shot order adds points only as the `takenRightAfter` signal, so pairs
+    /// have no `shotOrderPoints`. Version 1 files still read.
+    public static let currentVersion = 2
 
     public var format: String
     public var version: Int
@@ -98,11 +101,12 @@ public struct ReadExport: Sendable, Hashable, Codable {
         public var distance: Double?
         public var signals: [SignalPoints]
         public var oneLetterOffPoints: Int
-        public var shotOrderPoints: Int
+        /// Points a back taken right after or before a front added, in version 1 files only.
+        public var shotOrderPoints: Int?
         public var score: Int
 
         public init(
-            first: Int, second: Int, distance: Double?, signals: [SignalPoints], oneLetterOffPoints: Int, shotOrderPoints: Int, score: Int
+            first: Int, second: Int, distance: Double?, signals: [SignalPoints], oneLetterOffPoints: Int, shotOrderPoints: Int? = nil, score: Int
         ) {
             self.first = first
             self.second = second

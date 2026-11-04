@@ -572,6 +572,20 @@ public actor StagingStore {
         return changed
     }
 
+    /// Marks the review's candidates whose photos a later grouping links as "might be the same"
+    /// (`IntakeReview.suggest`). Not the person's use of the batch. Returns the pairs newly suggested.
+    @discardableResult
+    public func suggestInReview(_ pairs: [(IntakePhotoID, IntakePhotoID)], in id: IntakeBatchID) throws(StagingError) -> Int {
+        try writable()
+        guard let index = index(id) else { throw .unknownBatch }
+        guard var review = batches[index].review else { return 0 }
+        let added = review.suggest(linkedPhotos: pairs)
+        guard added > 0 else { return 0 }
+        batches[index].review = review
+        try save()
+        return added
+    }
+
     // MARK: Review
 
     /// Changes the review and writes it before returning. Nothing is written when `change` throws.

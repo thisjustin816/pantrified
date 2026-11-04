@@ -14,7 +14,7 @@ struct ReadExportReplayTests {
 
     /// Fixtures recording a grouping the app still gets wrong. Each stays here until grouping is fixed,
     /// when its test starts to pass and the known issue has to be removed from this list.
-    static let knownFailures: Set<String> = ["front-then-unrelated-back.json"]
+    static let knownFailures: Set<String> = []
 
     static var fixtureNames: [String] {
         ((try? FileManager.default.contentsOfDirectory(atPath: fixtures.path)) ?? []).filter { $0.hasSuffix(".json") }.sorted()

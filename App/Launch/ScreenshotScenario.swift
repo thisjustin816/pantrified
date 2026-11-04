@@ -124,8 +124,8 @@ struct ScreenshotScenario {
         return [
             SamplePhoto(lines: [("CHOBANI", 0.08, 0.09), ("GREEK YOGURT", 0.2, 0.1), ("Plain nonfat", 0.6, 0.03)], secondsAfterLast: 0),
             SamplePhoto(lines: [("Chobani greek yogurt", 0.1, 0.03), ("Plain nonfat", 0.2, 0.03), (printed, 0.8, 0.02)], codes: [.product(yogurt)]),
-            SamplePhoto(lines: [("BAKING SODA", 0.2, 0.1), ("Pure, 1 lb", 0.6, 0.03)], secondsAfterLast: 40),
-            SamplePhoto(lines: [("BAKING POWDER", 0.2, 0.1), ("Double acting, 8.1 oz", 0.6, 0.03)], secondsAfterLast: 12),
+            SamplePhoto(lines: [("BAKING SODA", 0.2, 0.1), ("Pure, 1 lb", 0.6, 0.03), ("Bob's Red Mill", 0.7, 0.03)], secondsAfterLast: 40),
+            SamplePhoto(lines: [("BAKING POWDER", 0.2, 0.1), ("Double acting, 8.1 oz", 0.6, 0.03), ("Bob's Red Mill", 0.7, 0.03)], secondsAfterLast: 12),
             SamplePhoto(lines: [("Basmati rice", 0.2, 0.1), (String(format: "BEST BEFORE 05/06/%02d", nextYear), 0.85, 0.02)], secondsAfterLast: 40),
             SamplePhoto(lines: [("Birds Eye", 0.08, 0.08), ("Sweet peas", 0.2, 0.1), ("KEEP FROZEN", 0.9, 0.02)], secondsAfterLast: 40),
             SamplePhoto(lines: [("Ingredients: black beans, water, salt", 0.5, 0.02)], codes: [.product(beans)], secondsAfterLast: 40),

@@ -86,7 +86,7 @@ public struct ReadExportDraft: Sendable {
         self.source = source
         let observations = source.review.observations.values.sorted { $0.sequence < $1.sequence }
         self.observations = observations
-        let trace = source.grouper.trace(observations)
+        let trace = source.grouper.trace(observations, lookupNames: PhotoGrouper.lookupNames(source.review.lookups))
         self.trace = trace
         let first = observations.first?.capturedAt
         photos = observations.map { observation in

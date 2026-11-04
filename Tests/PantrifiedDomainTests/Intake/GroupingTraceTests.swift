@@ -30,20 +30,39 @@ struct GroupingTraceTests {
                           codes: [.product(Fixture.beans)]),
             Fixture.photo(2, seconds: 200, lines: Fixture.front("Greek yogurt", brand: "Chobani"), codes: [.product(Fixture.yogurt)]),
             Fixture.photo(3, seconds: 900, lines: Fixture.back(["Chobani greek yogurt plain"]), codes: [.product(Fixture.yogurt)]),
+            Fixture.photo(4, seconds: 1_000, lines: Fixture.front("Black beans", brand: "Goya")),
+            Fixture.photo(5, seconds: 1_006, lines: Fixture.back(["Goya black beans"])),
         ]
         let trace = grouper.trace(photos)
-        let backAfterFront = try #require(pair(trace, photos, 0, 1))
-        #expect(backAfterFront.signals == [SignalPoints(signal: .takenRightAfter, points: 15)])
-        #expect(backAfterFront.shotOrderPoints == 45)
-        #expect(backAfterFront.score == 60)
+        // A back taken right after a front, with nothing in common, is not a pair at all.
+        #expect(pair(trace, photos, 0, 1) == nil)
 
         let sameBarcode = try #require(pair(trace, photos, 2, 3))
         #expect(sameBarcode.signals.first == SignalPoints(signal: .sameBarcode, points: 100))
         #expect(sameBarcode.signals.contains(SignalPoints(signal: .sharedLabelWords, points: 50)))
-        #expect(sameBarcode.shotOrderPoints == 0)
+
+        // The order of shots adds its points as a signal, beside what the photos show.
+        let inTurn = try #require(pair(trace, photos, 4, 5))
+        #expect(inTurn.signals == [SignalPoints(signal: .sharedLabelWords, points: 50), SignalPoints(signal: .takenRightAfter, points: 15)])
         for evidence in trace.pairs {
-            #expect(evidence.signals.map(\.points).reduce(0, +) + evidence.oneLetterOffPoints + evidence.shotOrderPoints == evidence.score)
+            #expect(evidence.signals.map(\.points).reduce(0, +) + evidence.oneLetterOffPoints == evidence.score)
         }
+    }
+
+    @Test("the lookup name's points are recorded with its signal, beyond the label words it adds to")
+    func lookupPoints() throws {
+        let photos = [
+            Fixture.photo(0, lines: Fixture.front("Black beans", brand: "Goya")),
+            Fixture.photo(1, seconds: 600, lines: [Fixture.line("Distributed by Goya Foods", row: 0.02, size: 0.012)] + Fixture.back([]),
+                          codes: [.product(Fixture.beans)]),
+        ]
+        let names = [Fixture.beans: "Goya black beans"]
+        let trace = grouper.trace(photos, lookupNames: names)
+        #expect(trace.result == grouper.group(photos, lookupNames: names))
+        let evidence = try #require(pair(trace, photos, 0, 1))
+        #expect(evidence.signals == [SignalPoints(signal: .lookupName, points: 60)])
+        #expect(evidence.score == 60)
+        #expect(grouper.trace(photos).result == grouper.group(photos))
     }
 
     @Test("a name word read one letter off adds its points apart from the label words signal, which adds none")

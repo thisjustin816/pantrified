@@ -65,10 +65,12 @@ public struct IntakeLiveStatus: Sendable, Hashable {
 ///   paused while the device is warm, in Low Power Mode or in the background, and two at a time
 ///   after Done. A photo already read is never read again, and one not read yet is read when the
 ///   batch opens again, after a kill too.
-/// - Grouping for the screen re-runs `PhotoGrouper` over every observation read so far
-///   (`LiveGrouping`). The review is made once, when every photo is read, from all of them, so it is
-///   the one-shot grouping whatever order the readings arrived in. Until then nothing can be edited,
-///   so no edit is ever lost to a regroup.
+/// - Grouping for the screen re-runs `PhotoGrouper` over every observation read so far and every
+///   lookup name kept so far (`LiveGrouping`), after each reading and each answer. The review is made
+///   once, when every photo is read, from all of them and the names kept by then, so it is the
+///   one-shot grouping whatever order the readings and answers arrived in. Until then nothing can
+///   be edited, so no edit is ever lost to a regroup. Grouping never waits for a lookup: a name
+///   that arrives after the review exists only adds "might be the same" suggestions to it.
 /// - Lookups go only through the injected `ProductLookupService`, at most `LookupPolicy.inFlight`
 ///   at once and `LookupPolicy.perPass` per pass, each distinct barcode once a pass. Answers are kept
 ///   by barcode on the batch, so they attach to whichever candidate forms. A miss is final. Offline
@@ -255,11 +257,14 @@ public actor IntakePipeline {
         }
         guard generation == started, let record = await store.batch(id) else { throw CancellationError() }
         let observations = record.photos.compactMap(\.observation)
+        let names = PhotoGrouper.lookupNames(record.lookups)
         let review = IntakeReview(
-            space: record.space, observations: observations, grouping: grouper.group(observations),
+            space: record.space, observations: observations, grouping: grouper.group(observations, lookupNames: names),
             proposer: proposer, places: places, looksUp: lookup != nil
         )
-        let kept = try await store.finishRecognition(id, review: review)
+        var kept = try await store.finishRecognition(id, review: review)
+        // An answer kept while the review was made did not take part in its grouping.
+        if await suggestFromLookups(id, before: { _ in names }), let updated = await store.batch(id)?.review { kept = updated }
         await pump()
         return kept
     }
@@ -269,7 +274,7 @@ public actor IntakePipeline {
     public func preview(places: PlaceContext) async -> IntakeReview? {
         guard let id = batch, let record = await store.batch(id) else { return nil }
         if let review = record.review { return review }
-        live.sync(with: record.photos.compactMap(\.observation))
+        live.sync(with: record.photos.compactMap(\.observation), lookupNames: PhotoGrouper.lookupNames(record.lookups))
         var review = IntakeReview(
             space: record.space, observations: Array(live.observations.values), grouping: live.result,
             proposer: proposer, places: places, looksUp: lookup != nil
@@ -468,6 +473,9 @@ public actor IntakePipeline {
         if (try? await store.recordLookups([(barcode, answer)], in: id)) != nil {
             lookupAnswers += 1
             if answer != .deferred { pass.answered += 1 }
+            if case .found = answer {
+                await suggestFromLookups(id) { names in names.filter { $0.key != barcode } }
+            }
         }
         lookingUp[barcode] = nil
         guard started == generation else { return }
@@ -475,11 +483,28 @@ public actor IntakePipeline {
         await publish()
     }
 
+    /// Once the review exists, a lookup answer can no longer regroup it without losing the person's
+    /// edits. Photos that grouping with the names kept now links, and grouping with `before` of
+    /// them does not, become "might be the same" suggestions instead. Returns whether any was added.
+    @discardableResult
+    private func suggestFromLookups(_ id: IntakeBatchID, before: ([GTIN: String]) -> [GTIN: String]) async -> Bool {
+        guard let record = await store.batch(id), record.review != nil else { return false }
+        let names = PhotoGrouper.lookupNames(record.lookups)
+        let earlier = before(names)
+        guard earlier != names else { return false }
+        let observations = record.photos.compactMap(\.observation)
+        let linked = grouper.group(observations, lookupNames: names)
+            .photosLinked(beyond: grouper.group(observations, lookupNames: earlier))
+        guard !linked.isEmpty, let added = try? await store.suggestInReview(linked, in: id), added > 0 else { return false }
+        lookupAnswers += 1
+        return true
+    }
+
     // MARK: The screen
 
     private func publish() async {
         guard let id = batch, let observer, let record = await store.batch(id), batch == id else { return }
-        live.sync(with: record.photos.compactMap(\.observation))
+        live.sync(with: record.photos.compactMap(\.observation), lookupNames: PhotoGrouper.lookupNames(record.lookups))
         var states: [IntakePhotoID: PhotoReadState] = [:]
         for photo in record.livePhotos {
             states[photo.id] = photo.couldNotRead ? .couldNotRead
