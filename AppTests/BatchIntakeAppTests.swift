@@ -191,6 +191,7 @@ struct BatchIntakeAppTests {
         #expect(IntakeText.note(.linkSeen, name: { _ in nil }) == "A QR code with a link was seen. It wasn't opened.")
         #expect(IntakeText.signals([.sameBarcode, .takenRightAfter]) == "Grouped by the same barcode and taken one after another.")
         #expect(IntakeText.signals([.differentLabelWords]) == nil)
+        #expect(IntakeText.signals([.lookupName, .someLabelWords]) == "Grouped by the barcode lookup's name and words on the label.")
     }
 
     /// Black text on white with an optional QR code under it, as PNG bytes.
