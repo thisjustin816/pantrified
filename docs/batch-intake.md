@@ -122,47 +122,59 @@ is the first thing to try, watching the shutter's responsiveness and the thermal
 
 ## Grouping
 
-`PhotoGrouper` scores every pair of photos and groups pairs that score high enough. It is deterministic:
-the same photos in any order give the same groups. All weights and thresholds are in `GroupingPolicy`
-(`PhotoGrouping.swift`), in one place, so they can be tuned after trying the app on real groceries.
-**None of these values has been checked against real photos.**
+`PhotoGrouper` scores every pair of photos and groups pairs that score high enough. Matching comes
+from the package the photos show: barcodes, label words, the barcode lookup's product name, an
+ingredients list, a lot code and looks. The order the photos were taken in only supports a pair those
+already link. Grouping is a pure function of the photos and the lookup names kept so far: the same
+photos and names, in any order, give the same groups. All weights and thresholds are in
+`GroupingPolicy` (`PhotoGrouping.swift`), in one place, so they can be tuned after trying the app on
+real groceries. **None of these values has been checked against real photos.**
 
 | Signal | Points | Why |
 |---|---|---|
 | Same product barcode | 100 | A GTIN names one product. Enough alone. |
 | Same bytes (SHA-256 of the file) | 100 | The same photo added twice. |
-| Feature prints within 0.25 | 50 | Near duplicate. Not enough alone: two flavours of one brand look alike. |
+| Feature prints within 0.25 | 50 | Near duplicate. Not enough alone: two flavors of one brand look alike. |
 | Feature prints within 0.5 | 25 | Looks alike. Supporting evidence only. |
-| Three or more shared label words, covering half the shorter label | 50 | Front and back of one package usually repeat the brand and product name. |
+| Three or more shared label words, covering half the shorter label | 50 | Front and back of one package often repeat the brand and product name. A suggestion alone. |
 | Two shared words, or one of five letters or more | 25 | A brand alone. Supporting evidence only. |
-| A name word one letter off a word on the other photo | 20 | A misread ("Toacker" for "Loacker"). Counts toward a suggestion only, never toward a merge. |
-| Taken one straight after the other, within 20 seconds | 15 | People photograph one package at a time. Never enough alone. |
-| A photo of only a date, taken straight after | 45 | The usual order is front, then date. With the 15 above, it groups. |
-| A photo of only a date, taken straight before | 15 | Less usual; with the 15 above it is only a suggestion. |
-| A back (barcode, date or panel, name not its biggest text) taken straight after a front | 45 | The usual second shot of one package. With the 15 above, it groups, with no words in common. |
-| A back taken straight before a front | 15 | Less usual; with the 15 above it is only a suggestion. |
+| Three or more words of the lookup name for one photo's barcode on the other photo's label, covering half the name | 60 | The lookup names the product the back shows; its words on a front are that product's front. Enough alone. |
+| Fewer lookup name words: two, or one of five letters or more | 30 | Often the brand alone. A suggestion. |
+| The same lot code on both, 8 or more letters and digits with at least 3 digits | 50 | Two photos of one package's back, such as the barcode and a close-up of the date. A suggestion alone. |
+| A name word one letter off a word on the other photo | 20 | A misread ("Toacker" for "Loacker"). Toward a suggestion only. |
+| A name word one letter off a lookup name word | 30 | A misread brand that the lookup spells right. Toward a suggestion only. |
+| Two or more of one photo's name words, at least half of them, in the other photo's ingredients list | 30 | A front's name in its own nutrition side ("Sparkling water lime" and "carbonated water, natural lime flavor"). Toward a suggestion only, since a panel never names a product. |
+| Taken one straight after the other, within 20 seconds | 15 | Counted only when the rest, without the points toward a suggestion only, already reaches 30. Supports what the photos show and never stands in for it. |
 
-A pair at **60** or more, not counting the points for words one letter off, is grouped; a pair from
+A pair at **60** or more, not counting the points toward a suggestion only, is grouped; a pair from
 **30** up to 60, counting them, is shown on both cards as "Might be the same as …" with Merge and Not
 the same. Pairs join strongest first.
 
+Label words and lookup name words count once: a pair gets the larger of the two, so a brand printed in
+the back's address and repeated in the lookup's name is still one brand. Because the order of shots
+adds its 15 only above 30, it can turn a suggestion of 45 or more into a group (three shared label
+words, 50 + 15), and never makes a suggestion or a group by itself. Ten different products
+photographed one after another, front and back each, with nothing linking one product to the next,
+stay ten or twenty candidates with no suggestion between products, however quickly they were taken.
+A photo of only a date has nothing to match by and stays its own candidate, marked "No name found",
+unless it shows a lot code that another photo of the package shows too.
+
 Label words are lower case, without accents, at least three letters, with no digits, and not in a list
 of words printed on most packages (units, nutrition panel words, date labels, months, storage
-instructions, legal and marketing filler). A word on more than four photos and more than 30% of the
-batch, such as a store brand, is ignored for that batch.
+instructions, legal and marketing filler). A word or lot code on more than four photos and more than
+30% of the batch, such as a store brand, is ignored for that batch.
 
 **Words one letter off.** Recognition often gets one letter wrong ("Toacker" for the stylized
 "Loacker", "Sparking" for "Sparkling"), and exact matching then loses the word. Each word of a photo's
 name (at most 4) is looked for one letter off (one letter added, dropped or changed, not two letters
-swapped) among the other photo's label words (at most 64, from its tallest lines first). Both words
-must have at least **7 letters** (`nearWordLetters`) and at most 20. Shorter words one letter apart are
-too often different products: coffee and toffee, skim and skip, salt and malt. Lemon and melon are two
-changes apart and never match. A word on most of the batch's photos is never matched this way either. A
-match is shown as "words on the label" and adds 20 points that count toward a suggestion only. Each
-photo's words are prepared once, with every word's one-letter-removed and one-letter-replaced forms, so
-a pair needs at most a fixed number of lookups (`PhotoGrouper.nearLookupsPerPair`, 344 with these
-values): the name words' forms looked up in the other photo's prepared forms, and the two names' words,
-at most 4 by 4, compared with each other.
+swapped) among the other photo's label words (at most 64, from its tallest lines first) and among the
+words of the lookup name for the other photo's barcode. Both words must have at least **7 letters**
+(`nearWordLetters`) and at most 20. Shorter words one letter apart are too often different products:
+coffee and toffee, skim and skip, salt and malt. Lemon and melon are two changes apart and never
+match. A word on most of the batch's photos is never matched this way either. Each photo's words, and
+each lookup name's words, are prepared once, with every word's one-letter-removed and
+one-letter-replaced forms, so a pair needs at most a fixed number of lookups
+(`PhotoGrouper.nearLookupsPerPair`, 508 with these values).
 
 What 7 letters cannot prevent: two products whose names differ by one letter in a long word, such as
 mustard and custard, roasted and toasted, or noodles and doodles, can match one letter off. Between two
@@ -177,56 +189,80 @@ values, calories with a number, a nutrient with an amount in g, mg or mcg ("Tota
 or more commas, which an ingredients list running on from the line above has. A panel word of five
 letters or more also matches a word one letter off, so "Nutritlon Facts" and "Calorles 50" count. A
 percentage alone does not make a line a panel line, so "2% Reduced fat milk" keeps its amount. A photo
-**shows a panel** when one of its lines is a heading, serving, ingredients, allergen or daily value
-line; nutrient claims on a front, such as "0 calories" or "0g sugar", do not make it a panel photo.
+**shows a panel** when one of its lines is a heading, serving line, ingredients, allergen or daily value
+line; nutrient claims on a front, such as "0 calories" or "0g sugar", do not make it a panel photo. A
+panel's words are only ever searched for another photo's name, for the ingredients signal above.
 
-**Fronts and backs by the order they were taken.** A photo is a **back** when it shows a product
-barcode, a printed date or a panel, is not a photo of only a date (which has its own rule), and has no
-name, or a name less than 75% as tall as its tallest line (`backNameShare`): a back's biggest print is
-usually its date or panel. A can photographed with its barcode in view and its name the biggest text
-is not a back. A photo is a **front** when it shows none of these and has a name. The back of a package often shares no word with
-its front: on the device, a Loacker wafer's front read "Toacker Minis" and its back held only the
-barcode, the date, the maker's address and a nutrition panel. So a back taken straight after a front,
-within 20 seconds, joins it on the order alone (15 + 45), and a back taken straight before a front is
-a suggestion (15 + 15). The order is not used when the back's words or looks point more strongly to
-another front, or the front's to another back: a back that repeats the name of the next front, taken
-after a front photographed alone, joins the next front. Only a link worth a suggestion on its own (30
-points of words, words one letter off and looks) counts for this, so a back that shares just a brand
-in the maker's address with another front of the same brand still joins the front taken right before
-it. Different barcodes, differing names and amounts, and the batch's common words keep two products
-apart as before; the order points never outweigh them. The points are shown as "taken one after
-another".
+**Makers and addresses.** A line that says who made, packed or sold the product, or where, is never a
+name or a distinguishing word (`LabelText.isMakerLine`): "Distributed by", "Manufactured for", "Mfd.
+by", "Made in Italy", "Product of Austria", a company's legal form ("Inc", "LLC", "Co", "Company",
+"S.p.A.", "GmbH"), a street with its number, a town with a 4 or 5 digit postal code after a comma,
+"Questions? Call 1-800-...", a website, or a certification seal ("Non GMO Project Verified"). Keywords
+of five letters or more also match one letter off ("Distrlbuted"), and only a line's first 160
+characters are read. Such a line still gives label words, where a back's brand often is. "Made by"
+counts only with a comma, colon or digit on the line, so a brand such as "Made by Nature" stays a name;
+a brand whose name ends in "Company" is not taken for a name either, and the line under it is. A back
+whose biggest short line is "Distributed by Chobani, Norwich NY" therefore has no name to differ from
+its front's, and shares the brand with it (25).
 
-What this cannot tell: a front photographed alone, followed by a different product's back that shares
-nothing with any photo, is put with that front. And a back whose largest short line is not a name but,
-say, "Distributed by Chobani, Norwich NY" shares the brand with the front and has words the front
-lacks, so the two count as differing names and stay apart, as before this rule. Splitting or merging
-is one tap.
+**Matching a back to its front through the lookup.** A front has no barcode, and its back often
+repeats nothing of its name: on the device, a Loacker wafer's front read "Toacker Minis" and its back
+held only the barcode, the date, the maker's address and a nutrition panel. The barcode lookup bridges
+them. When a lookup answers for a barcode, its brand-first product name ("Loacker crispy wafers with
+vanilla cream filling, vanilla") is read into words once (`LabelText.significantTokens`), and those
+words stand for the photos showing that barcode when they are compared with a photo that shows no
+barcode. The front's "crispy", "wafers", "vanilla", "cream" and "filling" are five of the name's six
+words (60), and "Toacker" is one letter off "Loacker". The lookup's words are never the photo's label
+words or name: the name still comes from the person, then the lookup's answer, then the front's label.
 
-**All fronts first, then all backs.** Then no back is taken next to its own front, so the order says
-nothing, and each back joins its front only on what they show: a shared barcode never applies (fronts
-have none), so a back sharing three or more label words with its front, covering half the shorter
-label, is a suggestion (50), and joins it with a similar image as well (50 + 25); one or two shared
-words are below a suggestion unless the photos also look alike. The last front and the first back are
-taken one after the other: when the back's words or looks link it to an earlier front by a suggestion's
-worth they stay apart, and otherwise they are put together, which is wrong and is one tap to split.
+- **Refusals still hold.** Two barcodes never meet through a lookup: only a photo without a barcode is
+  compared with a lookup name. The name is read as the back's name for the distinguishing-word rule: a
+  front that shares a word with it while each has a word the other lacks ("Vanilla" and "Chocolate",
+  baking soda and baking powder, whole and skim, coffee and toffee) is a different version, and a
+  prominent percentage on the front that the name contradicts (1% and 2%) is a different amount. Such
+  pairs are never grouped automatically.
+- **A lookup for the wrong product.** When the photos showing the barcode have label words and none of
+  them is in the lookup's name, the name probably describes another product, and its words count
+  toward a suggestion only. A back with no label words at all cannot contradict a wrong answer; that
+  case groups as if the answer were right.
+- **No answer.** A miss, a failure, an offline or rate-limited deferral, or a build without a key gives
+  no name and no bridge. Grouping never waits for a lookup.
+
+**Where lookup answers enter grouping.** Answers are kept by barcode on the batch as they arrive
+(`IntakeBatch.lookups`). `LiveGrouping` keeps the found names beside the observations and groups again
+when an answer arrives, as it does when a photo is read; the review is made from every photo and the
+names kept by then, so it equals the one-shot grouping of those photos and names whatever order they
+arrived in. The review is made once, so an answer that arrives after it, as one for the last photo
+often does, cannot regroup it without losing the person's edits. Instead, photos that grouping with
+the new name links (in one group or a suggestion) and grouping without it does not are shown as
+"Might be the same as" on their cards (`IntakeReview.suggest`). That is never a merge, survives an
+undo like a lookup answer, and is skipped for two candidates with different barcodes or already
+suggested together.
+
+**All fronts first, then all backs.** The order of shots says nothing then, and nothing depends on it.
+With lookup answers, each back joins the front its lookup name matches, wherever the two are in the
+batch. Without them, a back that repeats three or more of its front's words, covering half the
+shorter label, is suggested with it (50), and grouped if the photos also look alike (50 + 25); a back
+that shares only the brand, or nothing, stays apart with no suggestion. The last front and the first
+back, taken one after the other, are treated as any other pair.
 
 **What keeps two products apart.** Two photos are never grouped, directly or through a third photo,
 when:
 
 - they show **different barcodes**: two products, however alike (no suggestion either);
-- their **names differ by a distinguishing word**: the two prominent names share a word but each has a
-  word that appears nowhere on the other photo, such as baking soda and baking powder, whole milk and
-  skim milk, vanilla and strawberry yogurt (shown as a suggestion when they are otherwise alike). The
-  name's words here include a short line printed right under it, of one to three words, where a flavor
-  often is: "Loacker Minis" over "VANILLA" and over "CHOCOLATE" differ by flavor. Two
-  fronts are compared on exact words only, so "Mustard" and "Custard" fronts stay apart. When either
-  photo shows a barcode, a date or a panel, a name word one letter off a word on the other photo
-  counts as that word, misread, both for sharing a word and for lacking one: a back reading "Sparking
-  water" does not differ from a "Sparkling water" front, while a "Toacker Vanilla" front and a
-  "Loacker Chocolate" back still differ by flavor;
+- their **names differ by a distinguishing word**: the two prominent names, or a name and the lookup
+  name for the other photo's barcode, share a word but each has a word that appears nowhere on the
+  other, such as baking soda and baking powder, whole milk and skim milk, vanilla and strawberry
+  yogurt (shown as a suggestion when they are otherwise alike). The name's words here include a short
+  line printed right under it, of one to three words, where a flavor often is: "Loacker Minis" over
+  "VANILLA" and over "CHOCOLATE" differ by flavor. Two fronts are compared on exact words only, so
+  "Mustard" and "Custard" fronts stay apart. When either photo shows a barcode, a date or a panel, a
+  name word one letter off a word on the other photo counts as that word, misread, both for sharing a
+  word and for lacking one: a back reading "Sparking water" does not differ from a "Sparkling water"
+  front, while a "Toacker Vanilla" front and a "Loacker Chocolate" back still differ by flavor;
 - they show **different prominent percentages or net contents**: 2% and 1% milk, 16 oz and 32 oz.
-  Percentages count only on large lines that hold a real word, so nutrition panels do not count.
+  Percentages count only on large lines that hold a real word, so nutrition panels do not count. A
+  percentage in the lookup's name counts too.
 
 A barcode or identical bytes settle a pair, so these differences are not checked then.
 
