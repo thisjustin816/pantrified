@@ -186,7 +186,7 @@ public struct GroupingCost: Sendable, Hashable {
 /// A doubtful pair stays as two groups with a suggestion rather than one silent merge.
 public struct PhotoGrouper: Sendable {
     public let policy: GroupingPolicy
-    private let distance: any ImageDistance
+    let distance: any ImageDistance
     private let dates: any PrintedDateReader
 
     public init(
@@ -208,6 +208,11 @@ public struct PhotoGrouper: Sendable {
         let nearPoints: Int
         /// Points from what the photos show: label words, words one letter off and looks.
         let content: Int
+        /// The points each signal added, in the order of `signals`. A signal that adds none, such as
+        /// one that counts against, or label words found only one letter off, has 0.
+        var signalPoints: [Int] = []
+        /// Points the order of the shots added: `detailPhotoAfter` or `detailPhotoBefore`.
+        var orderPoints = 0
         var separated: Bool { signals.contains(where: \.separates) }
         var mergeScore: Int { score - nearPoints }
     }
@@ -226,17 +231,8 @@ public struct PhotoGrouper: Sendable {
     public func measuredGroup(prepared: [PreparedPhoto]) -> (result: GroupingResult, cost: GroupingCost) {
         let photos = batch(prepared, sequence: \.observation.sequence, photo: \.id)
         let single = photos.indices.filter { photos[$0].products.count < 2 }
-        let common = commonWords(photos)
-
-        var pairs: [Pair] = []
         var cost = GroupingCost(photos: photos.count)
-        for (position, i) in single.enumerated() {
-            for j in single[(position + 1)...] {
-                cost.pairsScored += 1
-                if let pair = score(photos, i, j, ignoring: common, lookups: &cost.nearWordLookups) { pairs.append(pair) }
-            }
-        }
-        pairs = withShotOrder(pairs, photos)
+        var pairs = scoredPairs(photos, cost: &cost)
         pairs.sort { x, y in
             if x.mergeScore != y.mergeScore { return x.mergeScore > y.mergeScore }
             if x.score != y.score { return x.score > y.score }
@@ -311,6 +307,21 @@ public struct PhotoGrouper: Sendable {
         return (result, cost)
     }
 
+    /// Every pair of photos showing at most one product that any signal links or separates, with the
+    /// shot order applied. `photos` are in sequence order, as `batch` gives them.
+    func scoredPairs(_ photos: [PreparedPhoto], cost: inout GroupingCost) -> [Pair] {
+        let single = photos.indices.filter { photos[$0].products.count < 2 }
+        let common = commonWords(photos)
+        var pairs: [Pair] = []
+        for (position, i) in single.enumerated() {
+            for j in single[(position + 1)...] {
+                cost.pairsScored += 1
+                if let pair = score(photos, i, j, ignoring: common, lookups: &cost.nearWordLookups) { pairs.append(pair) }
+            }
+        }
+        return withShotOrder(pairs, photos)
+    }
+
     private func suggestions(
         _ pairs: [Pair],
         _ photos: [PreparedPhoto],
@@ -341,7 +352,7 @@ public struct PhotoGrouper: Sendable {
     }
 
     /// One item per photo, in sequence order, at most a batch's worth.
-    private func batch<Item>(_ items: [Item], sequence: (Item) -> Int, photo: (Item) -> IntakePhotoID) -> [Item] {
+    func batch<Item>(_ items: [Item], sequence: (Item) -> Int, photo: (Item) -> IntakePhotoID) -> [Item] {
         var seen: Set<IntakePhotoID> = []
         return Array(items
             .sorted { a, b in
@@ -445,7 +456,7 @@ public struct PhotoGrouper: Sendable {
                   !strongerElsewhere(pair.b, than: pair.content, besides: pair.a) else { return pair }
             return Pair(
                 a: pair.a, b: pair.b, signals: pair.signals, score: pair.score + points, nearPoints: pair.nearPoints,
-                content: pair.content
+                content: pair.content, signalPoints: pair.signalPoints, orderPoints: points
             )
         }
     }
@@ -474,10 +485,12 @@ public struct PhotoGrouper: Sendable {
         let (a, b) = (photos[i], photos[j])
         if let x = a.barcode, let y = b.barcode, x != y { return nil }
         var signals: [MatchSignal] = []
+        var points: [Int] = []
         var score = 0
-        func add(_ signal: MatchSignal, _ points: Int) {
+        func add(_ signal: MatchSignal, _ added: Int) {
             signals.append(signal)
-            score += points
+            points.append(added)
+            score += added
         }
 
         if let x = a.barcode, x == b.barcode { add(.sameBarcode, policy.sameBarcode) }
@@ -512,7 +525,7 @@ public struct PhotoGrouper: Sendable {
         }
         var nearPoints = 0
         if !nearA.isEmpty || !nearB.isEmpty {
-            if !signals.contains(.sharedLabelWords), !signals.contains(.someLabelWords) { signals.append(.someLabelWords) }
+            if !signals.contains(.sharedLabelWords), !signals.contains(.someLabelWords) { add(.someLabelWords, 0) }
             score += policy.nearlySameWord
             nearPoints = policy.nearlySameWord
         }
@@ -548,13 +561,15 @@ public struct PhotoGrouper: Sendable {
             let aLacks = a.prominent.subtracting(b.tokens).subtracting(nearly.0)
             let bLacks = b.prominent.subtracting(a.tokens).subtracting(nearly.1)
             if sharesProminentWord, !aLacks.isEmpty, !bLacks.isEmpty {
-                signals.append(.differentLabelWords)
+                add(.differentLabelWords, 0)
             }
             let percentsDiffer = !a.percents.isEmpty && !b.percents.isEmpty && a.percents.isDisjoint(with: b.percents)
             let sizesDiffer = !a.sizes.isEmpty && !b.sizes.isEmpty && a.sizes.isDisjoint(with: b.sizes)
-            if percentsDiffer || sizesDiffer { signals.append(.differentAmounts) }
+            if percentsDiffer || sizesDiffer { add(.differentAmounts, 0) }
         }
-        return signals.isEmpty ? nil : Pair(a: i, b: j, signals: signals, score: score, nearPoints: nearPoints, content: content)
+        return signals.isEmpty ? nil : Pair(
+            a: i, b: j, signals: signals, score: score, nearPoints: nearPoints, content: content, signalPoints: points
+        )
     }
 }
 

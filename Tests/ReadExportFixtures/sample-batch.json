@@ -1,0 +1,837 @@
+{
+  "app" : {
+    "build" : "57",
+    "device" : "iPhone17,1",
+    "system" : "iOS 27.0",
+    "version" : "0.1"
+  },
+  "batchDay" : "2027-01-15",
+  "corrections" : {
+    "deletedPhotos" : [
+
+    ],
+    "packages" : [
+      {
+        "count" : 1,
+        "dateDecided" : false,
+        "fromGroups" : [
+          0
+        ],
+        "mergedByPerson" : false,
+        "nameDecided" : false,
+        "photos" : [
+          0,
+          1
+        ],
+        "place" : {
+          "kind" : "fridge",
+          "position" : 1,
+          "source" : "standard"
+        },
+        "status" : "added",
+        "suggestedWith" : [
+
+        ]
+      },
+      {
+        "count" : 1,
+        "dateDecided" : false,
+        "fromGroups" : [
+          1
+        ],
+        "mergedByPerson" : false,
+        "nameDecided" : false,
+        "photos" : [
+          2
+        ],
+        "place" : {
+          "kind" : "fridge",
+          "position" : 1,
+          "source" : "standard"
+        },
+        "status" : "added",
+        "suggestedWith" : [
+
+        ]
+      },
+      {
+        "count" : 1,
+        "dateDecided" : false,
+        "fromGroups" : [
+          2
+        ],
+        "mergedByPerson" : false,
+        "nameDecided" : false,
+        "photos" : [
+          3
+        ],
+        "place" : {
+          "kind" : "fridge",
+          "position" : 1,
+          "source" : "standard"
+        },
+        "status" : "added",
+        "suggestedWith" : [
+
+        ]
+      },
+      {
+        "count" : 1,
+        "dateDecided" : false,
+        "fromGroups" : [
+          3
+        ],
+        "mergedByPerson" : false,
+        "nameDecided" : false,
+        "photos" : [
+          4
+        ],
+        "place" : {
+          "kind" : "fridge",
+          "position" : 1,
+          "source" : "standard"
+        },
+        "status" : "added",
+        "suggestedWith" : [
+
+        ]
+      },
+      {
+        "count" : 1,
+        "dateDecided" : false,
+        "fromGroups" : [
+          4
+        ],
+        "mergedByPerson" : false,
+        "nameDecided" : false,
+        "photos" : [
+          5
+        ],
+        "place" : {
+          "kind" : "freezer",
+          "position" : 2,
+          "source" : "label"
+        },
+        "status" : "added",
+        "suggestedWith" : [
+
+        ]
+      },
+      {
+        "count" : 1,
+        "dateDecided" : false,
+        "fromGroups" : [
+          5
+        ],
+        "mergedByPerson" : false,
+        "nameDecided" : false,
+        "photos" : [
+          6
+        ],
+        "place" : {
+          "kind" : "fridge",
+          "position" : 1,
+          "source" : "standard"
+        },
+        "status" : "added",
+        "suggestedWith" : [
+
+        ]
+      },
+      {
+        "count" : 1,
+        "dateDecided" : false,
+        "fromGroups" : [
+          6
+        ],
+        "mergedByPerson" : false,
+        "nameDecided" : false,
+        "photos" : [
+          7,
+          8
+        ],
+        "place" : {
+          "kind" : "fridge",
+          "position" : 1,
+          "source" : "standard"
+        },
+        "status" : "added",
+        "suggestedWith" : [
+
+        ]
+      }
+    ],
+    "splitGroups" : [
+
+    ]
+  },
+  "distanceKeptUpTo" : 1,
+  "format" : "pantrified.read-export",
+  "groups" : [
+    {
+      "barcode" : "04006381333931",
+      "links" : [
+        {
+          "matchedWith" : 0,
+          "photo" : 1,
+          "score" : 90,
+          "signals" : [
+            "similarImage",
+            "sharedLabelWords",
+            "takenRightAfter"
+          ]
+        }
+      ],
+      "photos" : [
+        0,
+        1
+      ],
+      "proposals" : {
+        "barcodeSeenApart" : false,
+        "date" : {
+          "date" : "2027-02-01",
+          "label" : "useBy"
+        },
+        "datesDisagree" : false,
+        "labelName" : {
+          "text" : "Chobani greek yogurt"
+        },
+        "nameSource" : "label",
+        "place" : {
+          "kind" : "fridge",
+          "position" : 1,
+          "source" : "standard"
+        },
+        "refusedCodes" : [
+
+        ],
+        "sawLink" : false
+      },
+      "sharedPhotos" : [
+
+      ]
+    },
+    {
+      "links" : [
+
+      ],
+      "photos" : [
+        2
+      ],
+      "proposals" : {
+        "barcodeSeenApart" : false,
+        "datesDisagree" : false,
+        "labelName" : {
+          "text" : "Arm & hammer baking soda"
+        },
+        "nameSource" : "label",
+        "place" : {
+          "kind" : "fridge",
+          "position" : 1,
+          "source" : "standard"
+        },
+        "refusedCodes" : [
+
+        ],
+        "sawLink" : false
+      },
+      "sharedPhotos" : [
+
+      ]
+    },
+    {
+      "links" : [
+
+      ],
+      "photos" : [
+        3
+      ],
+      "proposals" : {
+        "barcodeSeenApart" : false,
+        "datesDisagree" : false,
+        "labelName" : {
+          "text" : "Clabber girl baking powder"
+        },
+        "nameSource" : "label",
+        "place" : {
+          "kind" : "fridge",
+          "position" : 1,
+          "source" : "standard"
+        },
+        "refusedCodes" : [
+
+        ],
+        "sawLink" : false
+      },
+      "sharedPhotos" : [
+
+      ]
+    },
+    {
+      "links" : [
+
+      ],
+      "photos" : [
+        4
+      ],
+      "proposals" : {
+        "barcodeSeenApart" : false,
+        "date" : {
+          "dayFirst" : "2028-06-05",
+          "label" : "bestBy",
+          "monthFirst" : "2028-05-06"
+        },
+        "datesDisagree" : false,
+        "labelName" : {
+          "text" : "Basmati rice"
+        },
+        "nameSource" : "label",
+        "place" : {
+          "kind" : "fridge",
+          "position" : 1,
+          "source" : "standard"
+        },
+        "refusedCodes" : [
+
+        ],
+        "sawLink" : false
+      },
+      "sharedPhotos" : [
+
+      ]
+    },
+    {
+      "links" : [
+
+      ],
+      "photos" : [
+        5
+      ],
+      "proposals" : {
+        "barcodeSeenApart" : false,
+        "datesDisagree" : false,
+        "labelName" : {
+          "text" : "Birds Eye Sweet peas"
+        },
+        "nameSource" : "label",
+        "place" : {
+          "kind" : "freezer",
+          "position" : 2,
+          "source" : "label"
+        },
+        "refusedCodes" : [
+
+        ],
+        "sawLink" : true
+      },
+      "sharedPhotos" : [
+
+      ]
+    },
+    {
+      "barcode" : "05012345678900",
+      "links" : [
+
+      ],
+      "photos" : [
+        6
+      ],
+      "proposals" : {
+        "barcodeSeenApart" : false,
+        "datesDisagree" : false,
+        "nameSource" : "lookup",
+        "place" : {
+          "kind" : "fridge",
+          "position" : 1,
+          "source" : "standard"
+        },
+        "refusedCodes" : [
+          "coupon"
+        ],
+        "sawLink" : false
+      },
+      "sharedPhotos" : [
+
+      ]
+    },
+    {
+      "barcode" : "07612345678900",
+      "links" : [
+        {
+          "matchedWith" : 7,
+          "photo" : 8,
+          "score" : 240,
+          "signals" : [
+            "sameBarcode",
+            "identicalPhoto",
+            "someLabelWords",
+            "takenRightAfter"
+          ]
+        }
+      ],
+      "photos" : [
+        7,
+        8
+      ],
+      "proposals" : {
+        "barcodeSeenApart" : false,
+        "datesDisagree" : false,
+        "labelName" : {
+          "text" : "Tomato soup"
+        },
+        "nameSource" : "label",
+        "place" : {
+          "kind" : "fridge",
+          "position" : 1,
+          "source" : "standard"
+        },
+        "refusedCodes" : [
+
+        ],
+        "sawLink" : false
+      },
+      "sharedPhotos" : [
+
+      ]
+    }
+  ],
+  "lookups" : [
+    {
+      "answer" : "notFound",
+      "barcode" : "04006381333931"
+    },
+    {
+      "answer" : "found",
+      "barcode" : "05012345678900",
+      "name" : {
+        "text" : "Black beans"
+      },
+      "service" : "USDA FoodData Central"
+    },
+    {
+      "answer" : "failed",
+      "attempts" : 1,
+      "barcode" : "07612345678900"
+    }
+  ],
+  "pairs" : [
+    {
+      "distance" : 0.3,
+      "first" : 0,
+      "oneLetterOffPoints" : 0,
+      "score" : 90,
+      "second" : 1,
+      "shotOrderPoints" : 0,
+      "signals" : [
+        {
+          "points" : 25,
+          "signal" : "similarImage"
+        },
+        {
+          "points" : 50,
+          "signal" : "sharedLabelWords"
+        },
+        {
+          "points" : 15,
+          "signal" : "takenRightAfter"
+        }
+      ]
+    },
+    {
+      "distance" : 0.7,
+      "first" : 2,
+      "oneLetterOffPoints" : 0,
+      "score" : 40,
+      "second" : 3,
+      "shotOrderPoints" : 0,
+      "signals" : [
+        {
+          "points" : 25,
+          "signal" : "someLabelWords"
+        },
+        {
+          "points" : 15,
+          "signal" : "takenRightAfter"
+        },
+        {
+          "points" : 0,
+          "signal" : "differentLabelWords"
+        }
+      ]
+    },
+    {
+      "first" : 7,
+      "oneLetterOffPoints" : 0,
+      "score" : 240,
+      "second" : 8,
+      "shotOrderPoints" : 0,
+      "signals" : [
+        {
+          "points" : 100,
+          "signal" : "sameBarcode"
+        },
+        {
+          "points" : 100,
+          "signal" : "identicalPhoto"
+        },
+        {
+          "points" : 25,
+          "signal" : "someLabelWords"
+        },
+        {
+          "points" : 15,
+          "signal" : "takenRightAfter"
+        }
+      ]
+    }
+  ],
+  "photos" : [
+    {
+      "codes" : [
+
+      ],
+      "hasFeaturePrint" : true,
+      "kind" : "package",
+      "lines" : [
+        {
+          "box" : {
+            "height" : 0.09,
+            "width" : 0.7,
+            "x" : 0.1,
+            "y" : 0.08
+          },
+          "confidence" : 0.9,
+          "text" : "CHOBANI"
+        },
+        {
+          "box" : {
+            "height" : 0.1,
+            "width" : 0.7,
+            "x" : 0.1,
+            "y" : 0.2
+          },
+          "confidence" : 0.9,
+          "text" : "GREEK YOGURT"
+        },
+        {
+          "box" : {
+            "height" : 0.03,
+            "width" : 0.7,
+            "x" : 0.1,
+            "y" : 0.6
+          },
+          "confidence" : 0.9,
+          "text" : "Plain nonfat"
+        }
+      ],
+      "removed" : false,
+      "role" : "front",
+      "secondsAfterFirst" : 0,
+      "sequence" : 0,
+      "showsPanel" : false
+    },
+    {
+      "codes" : [
+        {
+          "kind" : "product",
+          "product" : "04006381333931"
+        }
+      ],
+      "hasFeaturePrint" : true,
+      "kind" : "package",
+      "lines" : [
+        {
+          "box" : {
+            "height" : 0.03,
+            "width" : 0.7,
+            "x" : 0.1,
+            "y" : 0.1
+          },
+          "confidence" : 0.9,
+          "text" : "Chobani greek yogurt"
+        },
+        {
+          "box" : {
+            "height" : 0.03,
+            "width" : 0.7,
+            "x" : 0.1,
+            "y" : 0.2
+          },
+          "confidence" : 0.9,
+          "text" : "Plain nonfat"
+        },
+        {
+          "box" : {
+            "height" : 0.02,
+            "width" : 0.7,
+            "x" : 0.1,
+            "y" : 0.8
+          },
+          "confidence" : 0.9,
+          "text" : "USE BY 2027-02-01"
+        }
+      ],
+      "removed" : false,
+      "role" : "other",
+      "secondsAfterFirst" : 5,
+      "sequence" : 1,
+      "showsPanel" : false
+    },
+    {
+      "codes" : [
+
+      ],
+      "hasFeaturePrint" : true,
+      "kind" : "package",
+      "lines" : [
+        {
+          "box" : {
+            "height" : 0.09,
+            "width" : 0.7,
+            "x" : 0.1,
+            "y" : 0.08
+          },
+          "confidence" : 0.9,
+          "text" : "ARM & HAMMER"
+        },
+        {
+          "box" : {
+            "height" : 0.1,
+            "width" : 0.7,
+            "x" : 0.1,
+            "y" : 0.2
+          },
+          "confidence" : 0.9,
+          "text" : "BAKING SODA"
+        }
+      ],
+      "removed" : false,
+      "role" : "front",
+      "secondsAfterFirst" : 45,
+      "sequence" : 2,
+      "showsPanel" : false
+    },
+    {
+      "codes" : [
+
+      ],
+      "hasFeaturePrint" : true,
+      "kind" : "package",
+      "lines" : [
+        {
+          "box" : {
+            "height" : 0.09,
+            "width" : 0.7,
+            "x" : 0.1,
+            "y" : 0.08
+          },
+          "confidence" : 0.9,
+          "text" : "CLABBER GIRL"
+        },
+        {
+          "box" : {
+            "height" : 0.1,
+            "width" : 0.7,
+            "x" : 0.1,
+            "y" : 0.2
+          },
+          "confidence" : 0.9,
+          "text" : "BAKING POWDER"
+        }
+      ],
+      "removed" : false,
+      "role" : "front",
+      "secondsAfterFirst" : 57,
+      "sequence" : 3,
+      "showsPanel" : false
+    },
+    {
+      "codes" : [
+
+      ],
+      "hasFeaturePrint" : false,
+      "kind" : "package",
+      "lines" : [
+        {
+          "box" : {
+            "height" : 0.1,
+            "width" : 0.7,
+            "x" : 0.1,
+            "y" : 0.2
+          },
+          "confidence" : 0.9,
+          "text" : "Basmati rice"
+        },
+        {
+          "box" : {
+            "height" : 0.02,
+            "width" : 0.7,
+            "x" : 0.1,
+            "y" : 0.85
+          },
+          "confidence" : 0.9,
+          "text" : "BEST BEFORE 05/06/28"
+        }
+      ],
+      "removed" : false,
+      "role" : "other",
+      "secondsAfterFirst" : 97,
+      "sequence" : 4,
+      "showsPanel" : false
+    },
+    {
+      "codes" : [
+        {
+          "kind" : "link"
+        }
+      ],
+      "hasFeaturePrint" : false,
+      "kind" : "package",
+      "lines" : [
+        {
+          "box" : {
+            "height" : 0.08,
+            "width" : 0.7,
+            "x" : 0.1,
+            "y" : 0.08
+          },
+          "confidence" : 0.9,
+          "text" : "Birds Eye"
+        },
+        {
+          "box" : {
+            "height" : 0.1,
+            "width" : 0.7,
+            "x" : 0.1,
+            "y" : 0.2
+          },
+          "confidence" : 0.9,
+          "text" : "Sweet peas"
+        },
+        {
+          "box" : {
+            "height" : 0.02,
+            "width" : 0.7,
+            "x" : 0.1,
+            "y" : 0.9
+          },
+          "confidence" : 0.9,
+          "text" : "KEEP FROZEN"
+        }
+      ],
+      "removed" : false,
+      "role" : "front",
+      "secondsAfterFirst" : 137,
+      "sequence" : 5,
+      "showsPanel" : false
+    },
+    {
+      "codes" : [
+        {
+          "kind" : "product",
+          "product" : "05012345678900"
+        },
+        {
+          "kind" : "refused",
+          "refused" : "coupon"
+        }
+      ],
+      "hasFeaturePrint" : false,
+      "kind" : "package",
+      "lines" : [
+        {
+          "box" : {
+            "height" : 0.02,
+            "width" : 0.7,
+            "x" : 0.1,
+            "y" : 0.5
+          },
+          "confidence" : 0.9,
+          "text" : "Ingredients: black beans, water, salt"
+        }
+      ],
+      "removed" : false,
+      "role" : "back",
+      "secondsAfterFirst" : 177,
+      "sequence" : 6,
+      "showsPanel" : true
+    },
+    {
+      "codes" : [
+        {
+          "kind" : "product",
+          "product" : "07612345678900"
+        }
+      ],
+      "hasFeaturePrint" : false,
+      "kind" : "package",
+      "lines" : [
+        {
+          "box" : {
+            "height" : 0.1,
+            "width" : 0.7,
+            "x" : 0.1,
+            "y" : 0.2
+          },
+          "confidence" : 0.9,
+          "text" : "Tomato soup"
+        }
+      ],
+      "removed" : false,
+      "role" : "other",
+      "secondsAfterFirst" : 217,
+      "sequence" : 7,
+      "showsPanel" : false
+    },
+    {
+      "codes" : [
+        {
+          "kind" : "product",
+          "product" : "07612345678900"
+        }
+      ],
+      "hasFeaturePrint" : false,
+      "kind" : "package",
+      "lines" : [
+        {
+          "box" : {
+            "height" : 0.1,
+            "width" : 0.7,
+            "x" : 0.1,
+            "y" : 0.2
+          },
+          "confidence" : 0.9,
+          "text" : "Tomato soup"
+        }
+      ],
+      "removed" : false,
+      "role" : "other",
+      "sameBytesAs" : 7,
+      "secondsAfterFirst" : 222,
+      "sequence" : 8,
+      "showsPanel" : false
+    }
+  ],
+  "suggestions" : [
+    {
+      "first" : 1,
+      "score" : 40,
+      "second" : 2,
+      "signals" : [
+        "someLabelWords",
+        "takenRightAfter",
+        "differentLabelWords"
+      ]
+    }
+  ],
+  "version" : 1,
+  "withheld" : {
+    "barcodes" : 0,
+    "lines" : 1,
+    "linesByCheck" : 1,
+    "names" : 0,
+    "photos" : [
+
+    ]
+  }
+}
