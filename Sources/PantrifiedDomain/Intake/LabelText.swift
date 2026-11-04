@@ -104,6 +104,7 @@ public enum LabelText {
 
     private static func isUsableName(_ line: RecognizedTextLine) -> Bool {
         isNameLike(line.text) && (line.confidence ?? 1) >= minimumNameConfidence && !isPanelLine(line.text)
+            && !isMakerLine(line.text)
     }
 
     /// The short line printed right under the name, where a flavor or variety often is ("Minis",
@@ -129,7 +130,7 @@ public enum LabelText {
     /// Lines at least half as tall as the photo's tallest line outside a panel: what the label shows
     /// most.
     static func prominentLines(_ lines: [RecognizedTextLine]) -> [RecognizedTextLine] {
-        let usable = lines.filter { ($0.confidence ?? 1) >= minimumNameConfidence && !isPanelLine($0.text) }
+        let usable = lines.filter { ($0.confidence ?? 1) >= minimumNameConfidence && !isPanelLine($0.text) && !isMakerLine($0.text) }
         guard let tallest = usable.map(\.box.height).max(), tallest > 0 else { return [] }
         return usable.filter { $0.box.height >= tallest * 0.5 }
     }
@@ -357,6 +358,108 @@ public enum LabelText {
         "milk", "wheat", "soy", "egg", "eggs", "peanut", "peanuts", "tree", "nut", "nuts", "fish", "shellfish",
         "sesame", "almond", "almonds", "hazelnut", "hazelnuts", "gluten",
     ]
+
+    // MARK: Makers, addresses and codes
+
+    /// Whether the line says who made, packed or sold the product, or where, or how to reach them:
+    /// "Distributed by Ferrara Candy Company", "Made in Italy", "Product of Austria", a company's
+    /// legal form ("Inc", "LLC", "Co", "Company", "S.p.A.", "GmbH"), a street with its number, a
+    /// town with its postal code, "Questions? Call 1-800-...", a website or a certification seal
+    /// ("Non GMO Project Verified"). Such a line is never a
+    /// name and never tells two products apart; its words still count as label words, where a
+    /// back's brand often is. Read like a panel line: only the first `IntakeLimits.charactersPerLine`
+    /// characters, folded, and a keyword of `panelWordTolerantLetters` letters or more also matches
+    /// a word one letter off ("Distrlbuted", "Compary").
+    public static func isMakerLine(_ text: String) -> Bool {
+        let folded = String(text.prefix(IntakeLimits.charactersPerLine))
+            .folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil).lowercased()
+        if folded.contains("www.") || folded.contains("http") || webEndings.contains(where: folded.contains) { return true }
+        // "S.p.A." and "Co." read as words without their dots.
+        let words = folded.replacingOccurrences(of: ".", with: "").split(whereSeparator: { !$0.isLetter }).map(String.init)
+        guard !words.isEmpty else { return false }
+        let found = words.map { word -> Set<String> in
+            var keywords: Set<String> = makerWords.contains(word) ? [word] : []
+            if tolerantMakerLetters.contains(word.unicodeScalars.count) { keywords.formUnion(makerWordIndex.near(.init(word))) }
+            return keywords
+        }
+        let hasDigit = folded.contains(where: \.isNumber)
+        let hasComma = folded.contains(",") || folded.contains(":")
+        let company = found.contains { !$0.isDisjoint(with: companyWords) }
+        if company { return true }
+        func followedBy(_ index: Int, _ options: Set<String>) -> Bool {
+            index + 1 < words.count && options.contains(words[index + 1])
+        }
+        for (index, keywords) in found.enumerated() {
+            if !keywords.isDisjoint(with: makerVerbs), followedBy(index, ["by", "for"]) { return true }
+            if !keywords.isDisjoint(with: originVerbs), followedBy(index, ["in"]) { return true }
+            if words[index] == "made", followedBy(index, ["by", "for"]), hasDigit || hasComma { return true }
+            if keywords.contains("product"), followedBy(index, ["of"]) { return true }
+            if !keywords.isDisjoint(with: ["questions", "comments", "verified"]) || words[index] == "gmo" { return true }
+            if words[index] == "call", hasDigit { return true }
+            if !keywords.isDisjoint(with: streetWords), hasDigit { return true }
+        }
+        return hasComma && hasPostalCode(folded)
+    }
+
+    /// A run of exactly four or five digits, as a postal code is printed.
+    private static func hasPostalCode(_ text: String) -> Bool {
+        var run = 0
+        for character in text {
+            if character.isASCII, character.isNumber {
+                run += 1
+            } else {
+                if run == 4 || run == 5 { return true }
+                run = 0
+            }
+        }
+        return run == 4 || run == 5
+    }
+
+    private static let webEndings = [".com", ".net", ".org"]
+    /// Verbs that name a maker when "by" or "for" follows them.
+    private static let makerVerbs: Set<String> = [
+        "distributed", "distributor", "manufactured", "manufacturer", "produced", "packed", "packaged", "imported",
+        "importer", "marketed", "bottled", "dist", "mfd", "mfg",
+    ]
+    /// Verbs that name where a product comes from when "in" follows them; "made" is one.
+    private static let originVerbs: Set<String> = ["made", "produced", "manufactured"]
+    private static let companyWords: Set<String> = [
+        "inc", "llc", "ltd", "co", "corp", "company", "corporation", "incorporated", "gmbh", "spa", "srl", "plc",
+    ]
+    /// Words of a street address, which counts with a number. "St" and "Rd" are left out because
+    /// ordinals ("1st", "3rd") read the same.
+    private static let streetWords: Set<String> = ["street", "avenue", "boulevard", "road", "suite", "ave", "blvd", "ste"]
+    private static let makerWords: Set<String> = makerVerbs.union(originVerbs).union(companyWords).union(streetWords)
+        .union(["product", "questions", "comments", "verified"])
+
+    /// The lengths of words that can be one letter off a maker word long enough to be tolerant.
+    private static let tolerantMakerLetters: ClosedRange<Int> =
+        (panelWordTolerantLetters - 1)...(makerWords.map(\.unicodeScalars.count).max() ?? 0) + 1
+
+    private static let makerWordIndex: NearWords = {
+        var index = NearWords()
+        for word in makerWords where word.unicodeScalars.count >= panelWordTolerantLetters { index.add(word) }
+        return index
+    }()
+
+    /// Lot and batch codes outside a panel: runs of ASCII letters and digits at least `characters`
+    /// long with at least `digits` digits and a letter, such as "LFE282315113". A number followed by
+    /// a unit is an amount, not a code.
+    static func lotCodes(in lines: [RecognizedTextLine], characters: Int, digits: Int) -> Set<String> {
+        var codes: Set<String> = []
+        for line in lines where !isPanelLine(line.text) {
+            let runs = line.text.prefix(IntakeLimits.charactersPerLine).uppercased()
+                .split(whereSeparator: { !($0.isASCII && ($0.isLetter || $0.isNumber)) })
+            for run in runs where run.count >= characters {
+                let digitCount = run.filter(\.isNumber).count
+                guard digitCount >= digits, digitCount < run.count else { continue }
+                let unit = run.drop(while: \.isNumber).lowercased()
+                if run.first?.isNumber == true, !unit.contains(where: \.isNumber), units[unit] != nil { continue }
+                codes.insert(String(run))
+            }
+        }
+        return codes
+    }
 
     // MARK: Words
 

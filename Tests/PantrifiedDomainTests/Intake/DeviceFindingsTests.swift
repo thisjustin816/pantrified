@@ -3,12 +3,16 @@ import Testing
 import PantrifiedDomain
 import PantrifiedTestSupport
 
-/// Synthetic readings modeled on the photos of the first device test (docs/batch-intake.md,
-/// "Problems found on a device"): what a text reader plausibly returns for a Loacker Minis wafer's
-/// front and back and a sparkling water can's front and nutrition side, with boxes as fractions of
-/// the photo and the misreads seen on the device. No real photo or recognition result is used.
+/// Synthetic readings modeled on the photos of the device tests (docs/batch-intake.md, "Problems
+/// found on a device"): what a text reader plausibly returns for a Loacker Minis wafer's front and
+/// back, a sparkling water can's front and nutrition side and a Butterfinger bar's front and back,
+/// with boxes as fractions of the photo and the misreads seen on the device. No real photo or
+/// recognition result is used.
 enum DeviceFixture {
+    /// 0 76580 18211 5, as printed on the wafer's back.
     static let loacker = Fixture.gtin("007658018211")
+    /// The name FoodData Central gives for that barcode, brand first.
+    static let loackerName = "Loacker crispy wafers with vanilla cream filling, vanilla"
 
     private static func line(_ text: String, x: Double, y: Double, width: Double, height: Double, confidence: Double) -> RecognizedTextLine {
         RecognizedTextLine(text: text, box: NormalizedBox(x: x, y: y, width: width, height: height), confidence: confidence)!
@@ -63,6 +67,29 @@ enum DeviceFixture {
         line("INGREDIENTS: CARBONATED WATER, NATURAL LIME FLAVOR", x: 0.2, y: 0.6, width: 0.6, height: 0.02, confidence: 0.88),
     ]
 
+    /// A Butterfinger bar's front: the name in large letters and a slogan.
+    static let butterfingerFront: [RecognizedTextLine] = [
+        line("BUTTERFINGER", x: 0.15, y: 0.35, width: 0.7, height: 0.12, confidence: 0.92),
+        line("Crispety, crunchety, peanut-buttery!", x: 0.2, y: 0.55, width: 0.6, height: 0.02, confidence: 0.8),
+    ]
+
+    static let butterfinger = Fixture.gtin("002800060434")
+
+    /// The bar's back: the maker's name misread "Ferrenu" and printed larger than the rest, the
+    /// distributor's address split over lines as a reader often splits it, a phone line, a website
+    /// and a nutrition panel. Nothing on it is the product's name.
+    static let butterfingerBack: [RecognizedTextLine] = [
+        line("Ferrenu Candy Company", x: 0.3, y: 0.1, width: 0.4, height: 0.03, confidence: 0.6),
+        line("Distributed by", x: 0.3, y: 0.15, width: 0.2, height: 0.012, confidence: 0.9),
+        line("Ferrara Candy Co., Chicago, IL 60607", x: 0.3, y: 0.165, width: 0.4, height: 0.012, confidence: 0.85),
+        line("Questions? Call 1-800-328-7172", x: 0.3, y: 0.18, width: 0.35, height: 0.012, confidence: 0.85),
+        line("www.ferrarausa.com", x: 0.3, y: 0.195, width: 0.25, height: 0.012, confidence: 0.85),
+        line("Made in USA", x: 0.3, y: 0.21, width: 0.15, height: 0.012, confidence: 0.9),
+        line("Nutrition Facts", x: 0.2, y: 0.3, width: 0.4, height: 0.025, confidence: 0.9),
+        line("Serving size 1 bar (54g)", x: 0.2, y: 0.34, width: 0.4, height: 0.015, confidence: 0.9),
+        line("INGREDIENTS: CORN SYRUP, SUGAR, GROUND ROASTED PEANUTS, HYDROGENATED PALM KERNEL OIL", x: 0.2, y: 0.5, width: 0.6, height: 0.012, confidence: 0.85),
+    ]
+
     /// Two fronts of different products that look alike: the same brand and layout, a near-identical
     /// image, taken one right after the other.
     static let lookAlikes: [(String, [RecognizedTextLine], [RecognizedTextLine])] = [
@@ -77,39 +104,45 @@ enum DeviceFixture {
 
 private let fridge = StorageLocation(name: "Fridge", storageType: .refrigerated)
 
-private func review(_ photos: [PhotoObservation]) -> IntakeReview {
+private func review(_ photos: [PhotoObservation], lookupNames: [GTIN: String] = [:]) -> IntakeReview {
     IntakeReview(
-        space: SpaceID(), observations: photos, grouping: PhotoGrouper().group(photos),
+        space: SpaceID(), observations: photos, grouping: PhotoGrouper().group(photos, lookupNames: lookupNames),
         locations: [fridge], defaultLocation: fridge.id, looksUp: true
     )
 }
 
-@Suite("First device test")
+@Suite("Device tests")
 struct DeviceFindingsTests {
     let grouper = PhotoGrouper()
+    let names = [DeviceFixture.loacker: DeviceFixture.loackerName]
 
     // MARK: Loacker front and back
 
+    /// The front, then two other products, then the back: nothing but the package links them.
     private var loacker: [PhotoObservation] {
         [
-            Fixture.photo(0, seconds: 0, lines: DeviceFixture.loackerFront(), print: Fixture.print(9)),
-            Fixture.photo(1, seconds: 8, lines: DeviceFixture.loackerBack, codes: [.product(DeviceFixture.loacker)], print: Fixture.print(10)),
+            Fixture.photo(0, seconds: 0, lines: DeviceFixture.loackerFront()),
+            Fixture.photo(1, seconds: 6, lines: Fixture.front("Rolled oats", brand: "Quaker")),
+            Fixture.photo(2, seconds: 12, lines: Fixture.front("Black beans", brand: "Goya")),
+            Fixture.photo(3, seconds: 18, lines: DeviceFixture.loackerBack, codes: [.product(DeviceFixture.loacker)]),
         ]
     }
 
-    @Test("the Loacker front and back taken one after the other are one candidate, named by the lookup, with the printed date")
-    func loackerFrontThenBack() throws {
+    @Test("the Loacker front and back, with other products between them, are one candidate through the lookup's name")
+    func loackerThroughLookup() throws {
         let photos = loacker
-        #expect(grouper.group(photos).sequences(photos) == [[0, 1]])
+        let result = grouper.group(photos, lookupNames: names)
+        #expect(result.sequences(photos) == [[0, 3], [1], [2]])
+        let signals = try #require(result.groups.first?.links.first?.signals)
+        #expect(signals.contains(.lookupName))
+        #expect(!signals.contains(.takenRightAfter))
 
-        var review = review(photos)
-        let waiting = try #require(review.summaries.first)
-        #expect(waiting.name == "Toacker Minis")
-        #expect(waiting.nameOrigin == .label)
-        review.record(.found(rawName: "LOACKER CRISPY WAFERS WITH VANILLA CREAM FILLING, VANILLA", source: "USDA FoodData Central"), for: DeviceFixture.loacker)
+        var review = review(photos, lookupNames: names)
+        review.record(.found(rawName: DeviceFixture.loackerName, source: "USDA FoodData Central"), for: DeviceFixture.loacker)
         let candidate = try #require(review.summaries.first)
-        #expect(review.summaries.count == 1)
+        #expect(review.summaries.count == 3)
         #expect(candidate.name == "Loacker crispy wafers with vanilla cream filling, vanilla")
+        #expect(candidate.nameOrigin == .lookup(source: "USDA FoodData Central"))
         #expect(candidate.date == PrintedDate.onDay(.bestBy, year: 2027, month: 11, day: 30))
         #expect(candidate.dateOrigin == .label)
 
@@ -119,18 +152,54 @@ struct DeviceFindingsTests {
         #expect(draft.confirmedFields.isEmpty)
     }
 
-    @Test("the Loacker back taken first is suggested with the front, and merging keeps the lookup's name")
-    func loackerBackThenFront() throws {
+    @Test("with no lookup answer the Loacker front and back stay apart, the misread logo alone below a suggestion")
+    func loackerWithoutLookup() throws {
+        let photos = loacker
+        let result = grouper.group(photos)
+        #expect(result.sequences(photos) == [[0], [1], [2], [3]])
+        #expect(result.suggestions.isEmpty)
+        let summaries = review(photos).summaries
+        #expect(summaries[0].name == "Toacker Minis")
+        // The back's maker, address and certification lines are never its name.
+        #expect(summaries[3].name == nil)
+        #expect(summaries[3].notes.contains(.noName))
+    }
+
+    @Test("the Loacker back taken first joins the front taken later through the lookup's name")
+    func loackerBackThenFront() {
         let photos = [
             Fixture.photo(0, seconds: 0, lines: DeviceFixture.loackerBack, codes: [.product(DeviceFixture.loacker)]),
-            Fixture.photo(1, seconds: 7, lines: DeviceFixture.loackerFront()),
+            Fixture.photo(1, seconds: 7, lines: Fixture.front("Peanut butter", brand: "Jif")),
+            Fixture.photo(2, seconds: 300, lines: DeviceFixture.loackerFront()),
         ]
-        var review = review(photos)
-        try #require(review.summaries.count == 2)
-        #expect(review.summaries[0].notes.contains(.mightBeSameAs([review.summaries[1].id])))
-        review.record(.found(rawName: "LOACKER CRISPY WAFERS", source: "USDA FoodData Central"), for: DeviceFixture.loacker)
-        let merged = try review.merge(review.summaries.map(\.id))
-        #expect(review.summary(of: merged)?.name == "Loacker crispy wafers")
+        #expect(grouper.group(photos, lookupNames: names).sequences(photos) == [[0, 2], [1]])
+    }
+
+    @Test("a Loacker front without its description line is only suggested with the back, through the misread brand")
+    func loackerNameOnly() {
+        let front = Fixture.photo(0, lines: Array(DeviceFixture.loackerFront().prefix(3)))
+        let back = Fixture.photo(1, seconds: 600, lines: DeviceFixture.loackerBack, codes: [.product(DeviceFixture.loacker)])
+        let result = grouper.group([front, back], lookupNames: names)
+        #expect(result.groups.count == 2)
+        #expect(result.suggestions.count == 1)
+        #expect(result.suggestions.first?.signals.contains(.lookupName) == true)
+    }
+
+    @Test("a lookup name for another product does not pull the back to that product's front")
+    func wrongLookup() {
+        // The back says Goya; the lookup answered with a Loacker wafer.
+        let photos = [
+            Fixture.photo(0, lines: DeviceFixture.loackerFront()),
+            Fixture.photo(1, seconds: 600, lines: [Fixture.line("Goya Foods black beans", row: 0.02, size: 0.012)] + Fixture.back([]),
+                          codes: [.product(Fixture.beans)]),
+        ]
+        let wrong = [Fixture.beans: DeviceFixture.loackerName]
+        let result = grouper.group(photos, lookupNames: wrong)
+        #expect(result.groups.count == 2)
+        let evidence = grouper.evidence(between: photos[0], and: photos[1], lookupNames: wrong)
+        #expect(evidence?.signals.contains(.lookupName) == true)
+        // The back's own words disagree with the name, so the name counts toward a suggestion only.
+        #expect((evidence?.score ?? 0) < grouper.policy.mergeAt)
     }
 
     @Test("the misread logo matches the maker's name on the back one letter off")
@@ -146,15 +215,18 @@ struct DeviceFindingsTests {
 
     // MARK: Sparkling water
 
-    @Test("the sparkling water front and its nutrition side are one candidate named from the front")
+    @Test("the sparkling water front and its nutrition side are suggested as one by the name in the ingredients, never grouped by order")
     func sparklingFrontThenSide() throws {
         let photos = [
             Fixture.photo(0, seconds: 0, lines: DeviceFixture.sparklingFront()),
             Fixture.photo(1, seconds: 5, lines: DeviceFixture.sparklingSide),
         ]
-        #expect(grouper.group(photos).sequences(photos) == [[0, 1]])
-        let candidate = try #require(review(photos).summaries.first)
-        #expect(candidate.name == "Sparkling water")
+        let result = grouper.group(photos)
+        #expect(result.sequences(photos) == [[0], [1]])
+        #expect(result.suggestions.first?.signals == [.nameInIngredients])
+        var review = review(photos)
+        let merged = try review.merge(review.summaries.map(\.id))
+        #expect(review.summary(of: merged)?.name == "Sparkling water")
     }
 
     @Test("merged by hand, the sparkling water is still named from the front, never from the nutrition side")
@@ -181,6 +253,33 @@ struct DeviceFindingsTests {
         #expect(result.suggestions.count == 1)
     }
 
+    // MARK: Butterfinger
+
+    @Test("the Butterfinger back is never named by its maker's lines, and joins the front only through content")
+    func butterfinger() throws {
+        let photos = [
+            Fixture.photo(0, seconds: 0, lines: DeviceFixture.butterfingerFront),
+            Fixture.photo(1, seconds: 6, lines: DeviceFixture.butterfingerBack, codes: [.product(DeviceFixture.butterfinger)]),
+        ]
+        var apart = review(photos)
+        try #require(apart.summaries.count == 2)
+        #expect(apart.summaries[0].name == "Butterfinger")
+        #expect(apart.summaries[1].name == nil)
+        #expect(apart.summaries[1].notes.contains(.noName))
+        #expect(grouper.group(photos).suggestions.isEmpty)
+
+        // Merged by hand, the front's name wins; with the lookup's name, that wins.
+        let merged = try apart.merge(apart.summaries.map(\.id))
+        #expect(apart.summary(of: merged)?.name == "Butterfinger")
+        apart.record(.found(rawName: "BUTTERFINGER, CANDY BAR", source: "USDA FoodData Central"), for: DeviceFixture.butterfinger)
+        #expect(apart.summary(of: merged)?.name == "Butterfinger, candy bar")
+
+        // The lookup's name links the two as a suggestion: one word in common is not enough to group.
+        let lookedUp = grouper.group(photos, lookupNames: [DeviceFixture.butterfinger: "Butterfinger, candy bar"])
+        #expect(lookedUp.groups.count == 2)
+        #expect(lookedUp.suggestions.first?.signals.contains(.lookupName) == true)
+    }
+
     // MARK: Look-alike products
 
     @Test("look-alike products taken one after the other with near-identical images stay two candidates",
@@ -204,6 +303,20 @@ struct DeviceFindingsTests {
         #expect(grouper.group(photos).groups.count == 2)
     }
 
+    @Test("a look-alike's back, whose lookup names the other version, never joins the front, however much they share",
+          arguments: DeviceFixture.lookAlikes.indices)
+    func lookAlikeLookupStaysApart(index: Int) {
+        let (_, first, second) = DeviceFixture.lookAlikes[index]
+        // The back shows only a panel and the barcode, so the lookup's name is all that names it.
+        let back = Fixture.photo(1, lines: Fixture.back([]), codes: [.product(Fixture.beans)], print: Fixture.print(13, offset: 0.1))
+        let photos = [Fixture.photo(0, lines: first, print: Fixture.print(13)), back]
+        let name = [Fixture.beans: second.map(\.text).joined(separator: " ")]
+        let result = grouper.group(photos, lookupNames: name)
+        #expect(result.groups.count == 2)
+        let signals = grouper.evidence(between: photos[0], and: photos[1], lookupNames: name)?.signals ?? []
+        #expect(signals.contains(.differentLabelWords) || signals.contains(.differentAmounts))
+    }
+
     // MARK: The whole batch in any order
 
     static var batch: [PhotoObservation] {
@@ -222,17 +335,20 @@ struct DeviceFindingsTests {
         return photos
     }
 
-    @Test("the device batch groups the same after every arrival order, and look-alikes never share a group")
+    @Test("the device batch, with the Loacker lookup answer arriving at any point, groups the same after every order")
     func anyArrivalOrder() {
         let batch = Self.batch
-        let oneShot = grouper.group(batch)
+        let oneShot = grouper.group(batch, lookupNames: names)
         let groups = oneShot.sequences(batch)
-        #expect(groups.contains([0, 1]))
-        #expect(groups.contains([2, 3]))
+        // The third Loacker Vanilla front, misread like the first, is the same product and joins it.
+        #expect(groups.contains([0, 1, 15]))
+        #expect(groups.contains([2]) && groups.contains([3]))
         var generator = SeededGenerator(seed: 1_107)
         for _ in 0..<100 {
             var live = LiveGrouping(grouper: grouper)
-            for observation in batch.shuffled(using: &generator) {
+            let answerAt = Int.random(in: 0...batch.count, using: &generator)
+            for (position, observation) in batch.shuffled(using: &generator).enumerated() {
+                if position == answerAt { live.setLookupName(DeviceFixture.loackerName, for: DeviceFixture.loacker) }
                 live.add(observation)
                 let bySequence = Dictionary(uniqueKeysWithValues: live.observations.values.map { ($0.photo, $0.sequence) })
                 for group in live.result.groups {
@@ -242,6 +358,7 @@ struct DeviceFindingsTests {
                     }
                 }
             }
+            if answerAt == batch.count { live.setLookupName(DeviceFixture.loackerName, for: DeviceFixture.loacker) }
             #expect(live.result == oneShot)
         }
     }

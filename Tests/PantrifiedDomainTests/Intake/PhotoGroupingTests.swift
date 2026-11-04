@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-import PantrifiedDomain
+@testable import PantrifiedDomain
 
 @Suite("Photo grouping")
 struct PhotoGroupingTests {
@@ -59,17 +59,16 @@ struct PhotoGroupingTests {
         #expect(result.groups.first?.links.first?.signals.contains(.sharedLabelWords) == true)
     }
 
-    @Test("a barcode photo that shares only one word with the front taken next is a suggestion, not a merge")
-    func doubtfulFront() {
+    @Test("a barcode photo that shares only the brand with the front taken next is neither grouped nor suggested")
+    func brandAloneNextToFront() {
         let photos = [
             Fixture.photo(0, lines: Fixture.back(["Distributed by Chobani"]), codes: [.product(Fixture.yogurt)]),
             Fixture.photo(1, lines: Fixture.front("Greek yogurt", brand: "Chobani")),
         ]
         let result = grouper.group(photos)
         #expect(result.sequences(photos) == [[0], [1]])
-        #expect(result.suggestions.count == 1)
-        #expect(result.suggestions.first?.signals.contains(.someLabelWords) == true)
-        #expect(result.suggestions.first?.signals.contains(.takenRightAfter) == true)
+        #expect(result.suggestions.isEmpty)
+        #expect(grouper.evidence(between: photos[0], and: photos[1])?.signals == [.someLabelWords])
     }
 
     @Test("a similar image adds enough to a weak text match to group the photos")
@@ -208,23 +207,46 @@ struct PhotoGroupingTests {
         #expect(result.groups.first?.links.first?.signals.contains(.identicalPhoto) == true)
     }
 
-    @Test("a photo of only a date joins the photo before it, and is only suggested for the one after")
+    @Test("a photo of only a date, taken next to a front, stays its own candidate with no suggestion")
     func datePhotos() {
         let after = [
             Fixture.photo(0, lines: Fixture.front("Sour cream", brand: "Daisy")),
             Fixture.photo(1, lines: [Fixture.line("BEST BY 12/05/26")]),
         ]
-        let joined = grouper.group(after)
-        #expect(joined.sequences(after) == [[0, 1]])
-        #expect(joined.groups.first?.links.first?.signals.contains(.datePhotoAfter) == true)
+        let apart = grouper.group(after)
+        #expect(apart.sequences(after) == [[0], [1]])
+        #expect(apart.suggestions.isEmpty)
 
         let before = [
             Fixture.photo(0, lines: [Fixture.line("USE BY 2026-11-04")]),
             Fixture.photo(1, lines: Fixture.front("Chicken thighs")),
         ]
-        let apart = grouper.group(before)
-        #expect(apart.sequences(before) == [[0], [1]])
-        #expect(apart.suggestions.first?.signals.contains(.datePhotoBefore) == true)
+        #expect(grouper.group(before).sequences(before) == [[0], [1]])
+        #expect(grouper.group(before).suggestions.isEmpty)
+    }
+
+    @Test("a photo of a date with its lot code joins the back printing the same lot code")
+    func lotCode() {
+        let back = Fixture.photo(0, lines: Fixture.back(["BB 11.2027", ">I LFE282315113"]), codes: [.product(Fixture.yogurt)])
+        let date = Fixture.photo(1, lines: [Fixture.line("BB 11.2027"), Fixture.line(">I LFE282315113", row: 0.2)])
+        #expect(grouper.group([back, date]).sequences([back, date]) == [[0, 1]])
+        #expect(grouper.evidence(between: back, and: date)?.signals == [.sameLotCode, .takenRightAfter])
+
+        // Taken apart, the code alone is a suggestion; another code is nothing.
+        let later = Fixture.photo(5, seconds: 900, lines: date.lines)
+        #expect(grouper.group([back, later]).sequences([back, later]) == [[0], [5]])
+        #expect(grouper.group([back, later]).suggestions.count == 1)
+        let other = Fixture.photo(1, lines: [Fixture.line("BB 11.2027"), Fixture.line(">I LFE282315114", row: 0.2)])
+        #expect(grouper.evidence(between: back, and: other) == nil)
+    }
+
+    @Test("a lot code is a long run of letters and digits; amounts, barcode digits and short runs are not")
+    func lotCodeShapes() {
+        func codes(_ text: String) -> Set<String> { LabelText.lotCodes(in: [Fixture.line(text)], characters: 8, digits: 3) }
+        #expect(codes(">I LFE282315113") == ["LFE282315113"])
+        #expect(codes("lot l2823151") == ["L2823151"])
+        #expect(codes("L282315 12 FL OZ 3550000ML 2.5g 16OZ 012345678901 ABCDEFGH12").isEmpty)
+        #expect(codes("Nutrition Facts LFE282315113").isEmpty)
     }
 
     @Test("a brand on most photos in the batch does not group different products")

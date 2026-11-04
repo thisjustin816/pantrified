@@ -156,10 +156,10 @@ struct IntakeReviewTests {
 
     @Test("merging keeps the person's decisions, reads the labels again, and undoes in one step")
     func mergeAndUndo() throws {
-        // The back taken before the front: only a suggestion.
+        // The brand in common and a similar look: only a suggestion.
         let photos = [
-            Fixture.photo(0, lines: Fixture.back(["Distributed by Chobani"]), codes: [.product(Fixture.yogurt)]),
-            Fixture.photo(1, lines: Fixture.front("Greek yogurt", brand: "Chobani")),
+            Fixture.photo(0, lines: Fixture.back(["Distributed by Chobani"]), codes: [.product(Fixture.yogurt)], print: Fixture.print(2)),
+            Fixture.photo(1, seconds: 300, lines: Fixture.front("Greek yogurt", brand: "Chobani"), print: Fixture.print(2, offset: 0.4)),
         ]
         var review = review(photos)
         try #require(review.summaries.count == 2)
@@ -235,10 +235,10 @@ struct IntakeReviewTests {
 
     @Test("deleting removes a candidate and its suggestions, and undo brings it back")
     func deleteAndUndo() throws {
-        // The back taken before the front: only a suggestion.
+        // The brand in common and a similar look: only a suggestion.
         let photos = [
-            Fixture.photo(0, lines: Fixture.back(["Distributed by Chobani"]), codes: [.product(Fixture.yogurt)]),
-            Fixture.photo(1, lines: Fixture.front("Greek yogurt", brand: "Chobani")),
+            Fixture.photo(0, lines: Fixture.back(["Distributed by Chobani"]), codes: [.product(Fixture.yogurt)], print: Fixture.print(2)),
+            Fixture.photo(1, seconds: 300, lines: Fixture.front("Greek yogurt", brand: "Chobani"), print: Fixture.print(2, offset: 0.4)),
         ]
         var review = review(photos)
         try #require(review.summaries.count == 2)
@@ -254,8 +254,8 @@ struct IntakeReviewTests {
     @Test("keeping two candidates apart removes the suggestion both ways")
     func keepApart() throws {
         let photos = [
-            Fixture.photo(0, lines: Fixture.back(["Distributed by Chobani"]), codes: [.product(Fixture.yogurt)]),
-            Fixture.photo(1, lines: Fixture.front("Greek yogurt", brand: "Chobani")),
+            Fixture.photo(0, lines: Fixture.back(["Distributed by Chobani"]), codes: [.product(Fixture.yogurt)], print: Fixture.print(2)),
+            Fixture.photo(1, seconds: 300, lines: Fixture.front("Greek yogurt", brand: "Chobani"), print: Fixture.print(2, offset: 0.4)),
         ]
         var review = review(photos)
         try #require(review.summaries.count == 2)
