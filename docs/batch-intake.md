@@ -239,8 +239,10 @@ not used for any name or date, since it cannot say which product it belongs to.
 **Alternatives not taken.** Clustering by time gaps alone (fast, but one slow shot splits a package and
 two quick packages merge); a single text similarity score with one threshold (merges near-identical
 products, the failure the owner's research names); average or complete linkage (more cautious than
-needed once barcodes and differing names already block merges, and harder to explain); and an on-device
-model to judge pairs (not explainable, not testable on Linux, and model confidence is not calibrated).
+needed once barcodes and differing names already block merges, and harder to explain); and a model to
+judge pairs as the first or only step (not explainable, not testable on Linux, and model confidence is not
+calibrated). A model used for suggestions and name proposals after the rules, on doubtful items only, is
+planned (`ai-runtime.md`, Reading labels with a model).
 
 ## Candidates and proposals
 
@@ -264,7 +266,8 @@ Each candidate proposes, and says where each proposal came from:
   gives one storage for the unopened food ("From FoodKeeper"); otherwise no place ("Choose where").
   Details under "Places" below.
 - **Barcode** and **how many**: one package, unless the person says more. A barcode seen in photos taken
-  apart asks "More than one?".
+  apart asks "More than one?". Decided on 2026-11-03: two different printed dates read for the same
+  product make separate packages automatically. Not built: today the person sets the count.
 
 What the person sets wins: a name, date or place they set is never replaced by a lookup or a re-read,
 and a name or date left as proposed is saved as a proposal, not as a confirmed field, as Add food does
@@ -400,14 +403,128 @@ to whichever candidate shows that barcode. When the device is offline or the ser
 limited", including the decorator's own pause, the rest of the pass is deferred, not failed: cards say
 "Barcode lookups are paused for now", and the next pass asks again. Other failures are tried again on
 later passes up to three times. Discarding or closing the camera cancels lookups in flight. None of
-this blocks taking photos, review or adding. Photos, recognized text and feature prints never leave the device, and nothing about a batch
-syncs.
+this blocks taking photos, review or adding. Photos and feature prints never leave the device, and nothing about a batch
+syncs. The app never sends recognized text. In a TestFlight install the person can share it themselves
+with "Copy What the App Read", below.
+
+## Copy what the app read (TestFlight installs only)
+
+A way for the owner, testing a TestFlight build, to share what the app read from one batch and what it
+did with it, so a real failure can become a text-level test case and a later model can be measured on
+the same input. It holds no photos.
+
+**Where.** A batch review whose photos are all read (`IntakeModel.Stage.reviewing`, including "Everything
+is added") gets **Copy What the App Read** in the navigation bar's overflow menu. It opens a preview;
+**Share** writes the file and opens the system share sheet. Code: `App/Intake/ReadExportEntry.swift`
+(the menu item and the TestFlight check), `App/Intake/ReadExportView.swift` (the preview and the share),
+`Sources/PantrifiedApplication/Intake/ReadExport/` (the file's contents, the check, the gate and the
+temporary file) and `PhotoGrouper.trace` (`Sources/PantrifiedDomain/Intake/GroupingTrace.swift`). The
+review screen calls `.readExportMenu(intake)` once; nothing else about the review changes.
+
+**What the file holds.** One JSON file, `pantrified-what-the-app-read.json`, format
+`pantrified.read-export` version 1 (`ReadExport`), pretty printed with keys in sorted order:
+
+| Key | Contents |
+|---|---|
+| `app` | Marketing version, build number, system version ("iOS 27.0") and model identifier ("iPhone17,1") |
+| `batchDay` | The UTC calendar day of the first photo, so dates read the same in a replay. No time of day |
+| `photos` | Per photo: sequence, seconds after the first photo (tenths), kind, role (`front`, `back`, `dateOnly`, `other`, as grouping's shot order reads it), whether it shows a panel, whether it had a feature print, the earlier photo with the same bytes, whether the person left it out, its lines (text, box rounded to a thousandth, confidence rounded to a thousandth) and its codes (a product number, a refusal reason, or only that a link or other QR code was seen) |
+| `pairs` | Each pair of photos grouping weighed, by sequence: feature print distance (four decimals, the number only), each signal with the points it added, points from words one letter off and from shot order, and the score. A pair with no signal is listed when its distance is at most twice `similarDistance` (`distanceKeptUpTo`), so a looser image threshold can be tried |
+| `groups` | The groups grouping made, by sequence, with barcode, shared photos, links, and the proposals each first showed: the label's name, whether the card showed the lookup's name or the label's, the date (one day, or both readings), dates disagreeing, the place by kind and position with its source, refused codes, a link seen, a barcode seen apart |
+| `suggestions` | "Might be the same" pairs of groups, with signals and score |
+| `lookups` | Each barcode's answer: found with the name as returned and the service, not found, failed with attempts, or deferred |
+| `corrections` | The person's ground truth: each candidate as they left it (photos, the groups they came from, merged by the person, added or still in review, a name or date they set, its place by kind and position with its source, count, and the candidates still suggested with it), the photos whose candidates they deleted, and the groups they split |
+| `withheld` | The photos left out, and how many lines, names and barcodes were left out |
+
+Groups and pairs are worked out again when the preview opens, from the stored observations and this
+build's rules, which give what the review was made from unless the app was updated in between. Never in
+the file: images, crops, thumbnails, feature print vectors, photo digests, file names or paths, photo or
+candidate identities, absolute times, location, place names, the household's name or anything else in
+the pantry.
+
+**Privacy.** Nothing is sent, stored or logged by the feature, and there are no analytics. The preview
+lists every line, grouped by photo, and every name (read from a label, given by the lookup, or typed by
+the person), each with a switch, and a switch per photo. It warns not to post the file anywhere public,
+because the repository is public. The file is written to a folder of its own under the system's
+temporary folder only when the person taps Share, and is deleted when the share sheet closes, when the
+preview goes away, and at every launch. The person picks where it goes in the share sheet each time.
+
+Leaving out a photo removes its lines and codes and keeps its number, so groups and pairs still line up.
+A barcode shown only on photos left out is left out everywhere, with its lookup. A label name or date
+that would change if the lines and photos left out were not there is left out too, because it comes
+from that text.
+
+**The automatic check (`SensitiveText`).** Lines and names start out left out when they look like:
+
+- an email address;
+- a phone number: North American with or without a country code, international with a plus, a
+  seven-digit local number, or digits after "Tel", "Phone", "Call", "Mobile", "Cell" or "Fax";
+- a street address: a house number followed within five words by a street word ("Street", "Ave", "Rd",
+  "Dr", "Apt" and the like), "PO Box", or a two-letter state and ZIP code;
+- nine or more digits in a row, spaces or dashes allowed, which could be a card or account number;
+- a person's name after a title ("Mr", "Mrs", "Ms", "Mx", "Miss", "Dr", in any letter case) or after a field label such as
+  "Name:", "Patient:", "Customer:", "Ship to:".
+
+It goes by the shape of the text and is not reliable. It misses a name on its own ("Jane Doe"), an
+address with no house number or street word, a number written in words or with fewer than nine digits,
+an email address written with "at", and anything handwritten or in another language, and it knows
+nothing about what a product says about the person, such as a prescription. It also flags text that is
+not personal: a barcode's printed digits, a maker's address, "Dr Pepper", "MISS VICKIE'S". The preview says this, and the
+person reads every line. Tests pin both the catches and the misses.
+
+**TestFlight only.** The menu item shows only when `Bundle.main.appStoreReceiptURL`'s last path component
+is `sandboxReceipt` (`ReadExportGate`). An app installed from TestFlight, or run from Xcode, has a receipt
+by that name; an app installed from the App Store has one named `receipt`, and any other name, or no
+receipt URL, hides the item. The check is made on the device, reads no file and uses no network.
+A compile-time condition cannot do this: the automatic TestFlight uploads are the `release` variant
+(`docs/testflight.md`), and the App Store build is that same binary promoted from TestFlight, so a
+condition would either leave the feature out of the builds the owner installs or put it in the App Store
+build. `EVALUATION` builds are a manual, internal-only variant, so it would miss the usual uploads.
+Debug screenshot runs hide the item so App Store screenshots do not show it. `ReadExportSourceTests`
+reads the app sources and checks that the item sits behind the receipt check and is reachable only from
+the review, and the gate's tests check that only `sandboxReceipt` passes. Known limits:
+`appStoreReceiptURL` is deprecated since iOS 18 and still answers; an app under App Review is installed
+in the sandbox, so a reviewer would see the item, which shares nothing unless they tap Share.
+
+**Retention of files the owner receives.** Keep a shared export outside the repository, on the owner's
+own devices or private storage, for at most 30 days. Within that time either turn the failure into a
+fixture with synthetic or scrubbed text, or decide it is not needed; then delete the file and every copy,
+such as the message or mail it came in. Never commit a shared export or paste its text into an issue,
+pull request or any other public place.
+
+**Turning an export into a test case.** `ReadExportReplay` (`Sources/PantrifiedTestSupport`) loads an
+export, rebuilds the `PhotoObservation`s (photo identities from sequences, times from `batchDay` at noon
+UTC plus each photo's seconds, a stand-in feature print per photo whose distance to another is the
+recorded one, and a shared stand-in digest for photos with the same bytes), runs `PhotoGrouper` and the
+proposer with any `GroupingPolicy`, and reports groups, suggestions, signals and label names
+(`ReplayReport.summary` prints them). To add a fixture:
+
+1. Copy the export and replace every line of real text with synthetic text of the same kind and
+   similar length: another product's name for a name, another number for a lot code, made-up words for
+   small print. Keep the boxes, confidences, codes, times and pairs. Product barcodes may stay, or be
+   replaced with another valid barcode in every place it appears. Remove the person's typed names, or
+   make them synthetic.
+2. Save it as `Tests/ReadExportFixtures/<what-it-shows>.json`. Use only synthetic or scrubbed text: the
+   repository is public.
+3. `ReadExportReplayTests` replays every file there and expects the person's own grouping
+   (`corrections`). A failure the app still makes goes into `knownFailures` in that test, which marks it
+   as a known issue; when a change fixes it, the test reports that the known issue is gone and the entry is
+   removed. Every fixture must also hold no text the automatic check flags.
+
+Two synthetic fixtures are committed: `sample-batch.json`, which the app groups as the person did, and
+`front-then-unrelated-back.json`, a front photographed alone followed by another product's back with no
+words in common, which the app still groups together (owner decision 2), so it is a known failure.
+
+Tests prove that a replay gives the recorded groups, suggestions, signals and label names. Boxes and
+confidences are rounded to a thousandth and times to a tenth of a second, so a value that close to a
+threshold could replay differently, and a photo or line left out before sharing changes what a replay
+reads.
 
 ## Verified where
 
 | Level | What runs |
 |---|---|
-| Linux `swift test` | Place proposals in order (barcode, name, label, FoodKeeper, none), the newest and moved packages, places the household no longer has, a remembered FoodKeeper choice, the unopened storage rule, the sections, moves and their undo, what a drop carries, Add all leaving candidates with no place, places read from used up packages and their barcodes, and a place chosen in one batch proposed in the next; bounds and hostile text; code classification and Digital Links; label words, names, amounts and stated storage; grouping: same product twice, similar products with different barcodes, front without barcode then barcode, a photo of several products, no text, duplicates, date photos, near-identical products (baking soda and powder, whole and skim milk, 2% and 1%, sizes, flavours), chaining, a common brand, order independence, a 140-photo batch; panel lines with misread words; words one letter off and their bound on hostile text; a back taken right after or before a front, and all fronts before all backs; synthetic readings modeled on the first device test (Loacker front and back, a sparkling water front and nutrition side, two Loacker flavors and other look-alikes) in 100 arrival orders; the review's proposals, provenance, merge, split, delete, bulk location, counts, undo and coding; the staging lifecycle and its deletion rules; reading while photos are taken, one at a time, and two at a time after Done; pausing for heat and Low Power Mode; never reading a photo twice; unreadable and crashing photos; incremental grouping equal to one-shot grouping over many arrival orders, and its cost for 120 photos; the list held until the last reads end, with edits kept; lookups started early, once per barcode, at most 2 at once, within the pass budget, deferred and retried; cancelling reads and lookups on discard and on closing the camera; Add all, Undo and partial adds; and kill and resume while capturing, during a read while capturing, during a lookup, reading, reviewing, adding, and undoing, including the undo of Add all, which runs in a finished batch |
+| Linux `swift test` | Place proposals in order (barcode, name, label, FoodKeeper, none), the newest and moved packages, places the household no longer has, a remembered FoodKeeper choice, the unopened storage rule, the sections, moves and their undo, what a drop carries, Add all leaving candidates with no place, places read from used up packages and their barcodes, and a place chosen in one batch proposed in the next; bounds and hostile text; code classification and Digital Links; label words, names, amounts and stated storage; grouping: same product twice, similar products with different barcodes, front without barcode then barcode, a photo of several products, no text, duplicates, date photos, near-identical products (baking soda and powder, whole and skim milk, 2% and 1%, sizes, flavours), chaining, a common brand, order independence, a 140-photo batch; panel lines with misread words; words one letter off and their bound on hostile text; a back taken right after or before a front, and all fronts before all backs; synthetic readings modeled on the first device test (Loacker front and back, a sparkling water front and nutrition side, two Loacker flavors and other look-alikes) in 100 arrival orders; the review's proposals, provenance, merge, split, delete, bulk location, counts, undo and coding; the staging lifecycle and its deletion rules; reading while photos are taken, one at a time, and two at a time after Done; pausing for heat and Low Power Mode; never reading a photo twice; unreadable and crashing photos; incremental grouping equal to one-shot grouping over many arrival orders, and its cost for 120 photos; the list held until the last reads end, with edits kept; lookups started early, once per barcode, at most 2 at once, within the pass budget, deferred and retried; cancelling reads and lookups on discard and on closing the camera; Add all, Undo and partial adds; and kill and resume while capturing, during a read while capturing, during a lookup, reading, reviewing, adding, and undoing, including the undo of Add all, which runs in a finished batch; the read export's contents, rounding and absence of identities, what leaving out a photo, line or name removes, the automatic check's catches and misses, the TestFlight gate, the temporary file, the app sources' gate and single entry, and the replay round trip and fixtures |
 | macOS `make test-package` | The same against Apple's Foundation |
 | Hosted app tests | The usage description; the review sample on the real local store, with places remembered from the sample food and from the bundled FoodKeeper snapshot, its sections, and Add all and Undo; staged files' protection class and backup exclusion; Vision reading drawn text from a still. Vision's barcode and QR detection found nothing in the CI simulator, which logged a model load failure, so those tests only check that nothing wrong is read and mark the rest as a known simulator issue |
 | Screenshots | The review screen by place, on synthetic readings with placeholder photos, with candidates in "Needs a place", Fridge, Freezer and Pantry, light and dark, default and largest text |
@@ -422,7 +539,9 @@ Reduce Motion, and the sections at the largest text sizes on a phone; the camera
 picker with real libraries; how long reading takes on a phone, whether one read at a time keeps up
 with real shooting, whether reading while the camera runs slows the shutter or preview, how warm the
 phone gets, and memory with two reads at once. All of the timing and thermal numbers above are
-reasoned, not measured on a device.
+reasoned, not measured on a device. For the read export: the share sheet, the receipt name on a real
+TestFlight install and on an App Store install, the preview's layout at large text sizes and with
+VoiceOver, and how long the preview takes to open for a full batch.
 
 ## Owner decisions
 
@@ -430,11 +549,12 @@ reasoned, not measured on a device.
    text weights makes grouping more cautious. Lowering `detailPhotoAfter` to 15 or less makes a back
    taken after a front a suggestion instead of a merge; raising `nearWordLetters` makes fewer words
    match one letter off.
-2. **Shot order is evidence.** In effect, for the owner to confirm: a back (a barcode, date or panel,
-   and a name smaller than its biggest text) taken within 20 seconds straight after a front is grouped
-   with it on the order alone, and one taken straight before is suggested, because the back of a
-   package often shares no word with its front. A front photographed alone and followed by another
-   product's unrelated back is then grouped wrongly; splitting is one tap.
+2. **Shot order is not evidence.** Decided on 2026-11-03, reversing the earlier rule. Photos are taken
+   item by item, so the last photo of one item sits next to the first of the next, and an adjacent back
+   must not merge with a front on order alone. Matching comes from the recognized package (the barcode
+   lookup's name and brand, label words, image similarity); order may only break a tie where content
+   already links photos. Not built: the code and the weights table above still contain the order rule
+   (a back taken within 20 seconds after a front merges), which is to be removed.
 3. **One letter off.** In effect, for the owner to confirm: a name word of 7 letters or more one letter
    off a word on the other photo counts toward a suggestion, never a merge, and two fronts are compared
    on exact words only.

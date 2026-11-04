@@ -44,6 +44,7 @@ struct IntakeReviewView: View {
             .navigationTitle("Review")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbar }
+            .readExportMenu(intake)
             .safeAreaInset(edge: .bottom) { bottomBar }
             .sheet(item: $editing) { target in
                 CandidateEditor(intake: intake, id: target.id)
