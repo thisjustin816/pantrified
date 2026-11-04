@@ -94,6 +94,14 @@ struct ShotOrderTests {
         #expect(grouper.evidence(between: front, and: later)?.score == 50)
         #expect(grouper.group([front, later]).groups.count == 2)
 
+        // Where the order only ranks pairs, the same front and back stay a suggestion.
+        var tieBreakOnly = GroupingPolicy()
+        tieBreakOnly.orderCountsTowardGroup = false
+        let ranking = PhotoGrouper(policy: tieBreakOnly)
+        #expect(ranking.evidence(between: front, and: next)?.score == 65)
+        #expect(ranking.group([front, next]).groups.count == 2)
+        #expect(ranking.group([front, next]).suggestions.count == 1)
+
         // A brand alone, taken in turn: no points for the order, and no suggestion.
         let brandOnly = Fixture.photo(1, lines: Fixture.back(["Chobani"]), codes: [.product(Fixture.yogurt)])
         #expect(grouper.evidence(between: front, and: brandOnly)?.signals == [.someLabelWords])

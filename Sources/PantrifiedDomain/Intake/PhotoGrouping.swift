@@ -93,10 +93,13 @@ public struct GroupingPolicy: Sendable, Hashable {
     public var lotCodeCharacters = 8
     public var lotCodeDigits = 3
     /// Points when the photos were taken one straight after the other, within `adjacentSeconds`.
-    /// Given only when what the photos show already reaches `suggestAt` without words one letter
-    /// off or points that count toward a suggestion only, so the order of shots never makes a
-    /// suggestion or a group by itself.
+    /// Given only when what the photos show already reaches `suggestAt` without points that count
+    /// toward a suggestion only, so the order of shots never makes a suggestion or a group by
+    /// itself. With `orderCountsTowardGroup` they can turn a suggestion of 45 or more into a group,
+    /// such as a front and its back that repeat three of the same words; without it they only rank
+    /// a pair above another with the same evidence.
     public var takenRightAfter = 15
+    public var orderCountsTowardGroup = true
 
     /// A pair at or above this is grouped as one package.
     public var mergeAt = 60
@@ -234,7 +237,7 @@ public struct GroupingCost: Sendable, Hashable {
 ///
 /// 1. Every pair of photos gets a score from the signals in `GroupingPolicy`, all from what the
 ///    photos show: barcodes, label words, the lookup name of a barcode a photo shows, ingredients,
-///    lot codes and looks. The order of shots only adds to a pair those already link. Two photos
+///    lot codes and looks. The order of shots only supports pairs those already link. Two photos
 ///    with different barcodes are different products and can never be grouped. Two photos whose
 ///    labels, or a label and a lookup name, differ in a distinguishing word or amount are never
 ///    grouped automatically either.
@@ -270,7 +273,8 @@ public struct PhotoGrouper: Sendable {
         /// Points from a name word one letter off a word on the other photo.
         let nearPoints: Int
         /// Points that count toward a suggestion only, never toward `mergeAt`: `nearPoints`, a name
-        /// in the other photo's ingredients, and lookup words not to be relied on.
+        /// in the other photo's ingredients, lookup words not to be relied on, and the order of shots
+        /// unless `orderCountsTowardGroup`.
         let suggestOnly: Int
         var separated: Bool { signals.contains(where: \.separates) }
         var mergeScore: Int { score - suggestOnly }
@@ -705,11 +709,13 @@ public struct PhotoGrouper: Sendable {
         }
         if !a.lotCodes.intersection(b.lotCodes).subtracting(common).isEmpty { add(.sameLotCode, policy.sameLotCode) }
 
-        // The order of shots supports what the photos show and never stands in for it.
+        // The order of shots supports a pair the photos already link, and never stands in for what
+        // they show.
         let gap = abs(b.observation.capturedAt.timeIntervalSince(a.observation.capturedAt))
         if b.observation.sequence - a.observation.sequence == 1, gap <= policy.adjacentSeconds,
            score - suggestOnly >= policy.suggestAt {
             add(.takenRightAfter, policy.takenRightAfter)
+            if !policy.orderCountsTowardGroup { suggestOnly += policy.takenRightAfter }
         }
 
         // A barcode or identical bytes settle it; otherwise a differing label counts against.
