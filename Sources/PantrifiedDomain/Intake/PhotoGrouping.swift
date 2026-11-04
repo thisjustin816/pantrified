@@ -88,7 +88,8 @@ public struct GroupingPolicy: Sendable, Hashable {
     public var ingredientWordsForLink = 2
     /// Points when both photos print the same lot code: a run of letters and digits at least
     /// `lotCodeCharacters` long with at least `lotCodeDigits` digits, such as "LFE282315113". A
-    /// suggestion alone, a group with any other evidence.
+    /// suggestion alone, and a group beside 10 more points that count toward one, such as a similar
+    /// image or the order of shots.
     public var sameLotCode = 50
     public var lotCodeCharacters = 8
     public var lotCodeDigits = 3
@@ -111,7 +112,8 @@ public struct GroupingPolicy: Sendable, Hashable {
     public var similarDistance = 0.5
 
     public var sharedWordsForStrongText = 3
-    /// The share of the shorter photo's words that must be shared for strong text.
+    /// The share of the shorter photo's words, or of the lookup name's words, that must be shared
+    /// for strong text.
     public var overlapForStrongText = 0.5
     /// One shared word counts as some text only when it has at least this many letters.
     public var longWordLetters = 5

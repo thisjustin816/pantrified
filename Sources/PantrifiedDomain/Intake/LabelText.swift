@@ -365,11 +365,11 @@ public enum LabelText {
     /// "Distributed by Ferrara Candy Company", "Made in Italy", "Product of Austria", a company's
     /// legal form ("Inc", "LLC", "Co", "Company", "S.p.A.", "GmbH"), a street with its number, a
     /// town with its postal code, "Questions? Call 1-800-...", a website or a certification seal
-    /// ("Non GMO Project Verified"). Such a line is never a
-    /// name and never tells two products apart; its words still count as label words, where a
-    /// back's brand often is. Read like a panel line: only the first `IntakeLimits.charactersPerLine`
-    /// characters, folded, and a keyword of `panelWordTolerantLetters` letters or more also matches
-    /// a word one letter off ("Distrlbuted", "Compary").
+    /// ("Non GMO Project Verified"). Such a line is never a name and never tells two products apart;
+    /// its words still count as label words, where a back's brand often is. Read like a panel line:
+    /// only the first `IntakeLimits.charactersPerLine` characters, folded, and a keyword of
+    /// `panelWordTolerantLetters` letters or more also matches a word one letter off ("Distrlbuted",
+    /// "Compary").
     public static func isMakerLine(_ text: String) -> Bool {
         let folded = String(text.prefix(IntakeLimits.charactersPerLine))
             .folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil).lowercased()
