@@ -156,3 +156,10 @@ public struct GuidanceMatcher: Sendable {
         return IngredientName(folded).words.filter { !connectives.contains($0) && seen.insert($0).inserted }
     }
 }
+
+extension GuidanceMatcher: UnopenedStorageGuide {
+    public func unopenedStorage(of name: String, choice: GuidanceChoice?) -> Set<StorageType> {
+        guard case .matched(let record, _) = match(IngredientName(name), choice: choice) else { return [] }
+        return Set(record.windows.filter { $0.anchor == .added }.map(\.storageType))
+    }
+}

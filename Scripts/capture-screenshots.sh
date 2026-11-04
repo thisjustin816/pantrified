@@ -3,7 +3,8 @@
 # Store Connect asks for: each screen in light and dark mode, at the default text size and at the
 # largest accessibility size, on sample food and without the Debug-only Evaluate tab. A simulator
 # has no camera, so the scan screen shows its "Camera not available" state, and the batch review
-# shows synthetic readings over placeholder photos.
+# shows synthetic readings over placeholder photos, in its sections by place: "Needs a place", then
+# Fridge, Freezer and Pantry.
 #
 # Usage: capture-screenshots.sh APP_BUNDLE OUTPUT_DIR
 #

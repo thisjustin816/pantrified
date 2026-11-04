@@ -107,7 +107,7 @@ private let fridge = StorageLocation(name: "Fridge", storageType: .refrigerated)
 private func review(_ photos: [PhotoObservation], lookupNames: [GTIN: String] = [:]) -> IntakeReview {
     IntakeReview(
         space: SpaceID(), observations: photos, grouping: PhotoGrouper().group(photos, lookupNames: lookupNames),
-        locations: [fridge], defaultLocation: fridge.id, looksUp: true
+        places: PlaceContext(locations: [fridge]), looksUp: true
     )
 }
 
@@ -145,7 +145,9 @@ struct DeviceFindingsTests {
         #expect(candidate.nameOrigin == .lookup(source: "USDA FoodData Central"))
         #expect(candidate.date == PrintedDate.onDay(.bestBy, year: 2027, month: 11, day: 30))
         #expect(candidate.dateOrigin == .label)
+        #expect(review.drafts(for: [candidate.id]).isEmpty)
 
+        review.assignLocation(fridge.id, to: [candidate.id])
         let draft = try #require(review.drafts(for: [candidate.id]).first)
         #expect(draft.printedDate.value == PrintedDate.onDay(.bestBy, year: 2027, month: 11, day: 30))
         #expect(draft.printedDate.source == .recognized)

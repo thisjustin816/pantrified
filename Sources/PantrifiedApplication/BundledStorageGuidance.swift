@@ -30,6 +30,10 @@ public struct BundledStorageGuidance: StorageGuidanceRepository {
         return GuidanceRecordQuestion(status: status, candidates: matcher.candidates(for: package.name), source: source)
     }
 
+    public func unopenedStorage(of name: String, choice: GuidanceChoice?) -> Set<StorageType> {
+        matcher.unopenedStorage(of: name, choice: choice)
+    }
+
     private func match(_ package: Package) -> GuidanceMatch {
         matcher.match(IngredientName(package.name), choice: package.guidanceChoice)
     }

@@ -37,10 +37,10 @@ struct LookupGroupingTests {
         await pipeline.settle()
 
         // The list shown while the last photos are read already holds the answer.
-        let preview = try #require(await pipeline.preview(locations: world.locations, defaultLocation: nil))
+        let preview = try #require(await pipeline.preview(places: world.unguided))
         #expect(preview.summaries.count == 2)
 
-        let review = try await pipeline.finish(batch, locations: world.locations, defaultLocation: nil)
+        let review = try await pipeline.finish(batch, places: world.unguided)
         #expect(review.summaries.count == 2)
         #expect(review.summaries[0].photos.count == 2)
         #expect(review.summaries[0].name == "Loacker crispy wafers with vanilla cream filling, vanilla")
@@ -54,7 +54,7 @@ struct LookupGroupingTests {
         let batch = try await world.stage(["wafer-front", "oats", "wafer-back"], in: store)
         let lookup = GatedLookup([wafer: .found(ProductSuggestion(name: waferName, source: "USDA FoodData Central"))])
         let pipeline = pipeline(world, store, lookup: lookup)
-        let review = try await pipeline.finish(batch, locations: world.locations, defaultLocation: nil)
+        let review = try await pipeline.finish(batch, places: world.unguided)
         #expect(await waitUntil { await lookup.inFlight == 1 })
         #expect(review.summaries.count == 3)
         #expect(review.summaries.allSatisfy { !$0.notes.contains { if case .mightBeSameAs = $0 { true } else { false } } })
@@ -84,7 +84,7 @@ struct LookupGroupingTests {
             let pipeline = world.pipeline(store, recognizer: FakeRecognizer(files: world.files, readings: readings), lookup: lookup)
             await pipeline.open(batch, capturing: true)
             await pipeline.settle()
-            let review = try await pipeline.finish(batch, locations: world.locations, defaultLocation: nil)
+            let review = try await pipeline.finish(batch, places: world.unguided)
             await pipeline.settle()
             let kept = try #require(await store.batch(batch)?.review)
             #expect(review.summaries.count == 3)

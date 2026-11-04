@@ -271,6 +271,11 @@ public struct Package: Sendable, Identifiable {
         }
     }
 
+    /// When the package was put where it is now: its last move still in effect, or when it was added.
+    public var placedAt: Date {
+        effectiveChanges.last { if case .moved = $0.change { true } else { false } }?.at ?? addedAt
+    }
+
     /// The first opening wins; opening again does not restart the clock.
     public var openedAt: Date? {
         effectiveChanges.first { $0.change == .opened }?.at

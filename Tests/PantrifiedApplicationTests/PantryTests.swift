@@ -470,4 +470,38 @@ struct PantryTests {
         let barcode = try await LocalStore(backend: backend).productEvidence.barcode(of: milk, in: world.space)
         #expect(barcode == GTIN("036000291452"))
     }
+
+    @Test("a batch's places come from every package the household had, with its barcode, and without them when they cannot be read")
+    func placeContext() async throws {
+        let world = World()
+        let inventory = InMemoryInventory()
+        let evidence = InMemoryProductEvidence()
+        let locations = [world.fridge, world.freezer, world.pantry]
+        let pantry = Pantry(
+            space: world.space, inventory: inventory, locations: MutableLocations([world.space: locations]), evidence: evidence,
+            guidance: FakeGuidance(unopened: [.roomTemperature]), time: FixedTime(syncEpoch)
+        )
+        let peasCode = try #require(GTIN("036000291452"))
+        let peas = try await pantry.add(NewFood(name: "Peas", location: world.freezer.id, barcode: peasCode))
+        _ = try await pantry.perform(.usedUp, on: peas)
+        _ = try await pantry.add(NewFood(name: "Rice", location: world.fridge.id))
+
+        var places = await pantry.placeContext(locations: locations)
+        #expect(places.locations == locations)
+        #expect(places.proposal(barcode: peasCode, name: "Sweet garden peas", labelStorage: nil) == PlaceProposal(location: world.freezer.id, origin: .remembered))
+        #expect(places.proposal(barcode: nil, name: "rice", labelStorage: nil) == PlaceProposal(location: world.fridge.id, origin: .remembered))
+        #expect(places.proposal(barcode: nil, name: "Oats", labelStorage: nil) == PlaceProposal(location: world.pantry.id, origin: .foodKeeper))
+
+        await evidence.setFailReads(true)
+        places = await pantry.placeContext(locations: locations)
+        #expect(places.proposal(barcode: peasCode, name: "Sweet garden peas", labelStorage: nil).origin == .foodKeeper)
+        #expect(places.proposal(barcode: peasCode, name: "Peas", labelStorage: nil).location == world.freezer.id)
+        #expect(places.proposal(barcode: nil, name: "rice", labelStorage: nil).origin == .remembered)
+
+        await evidence.setFailReads(false)
+        await inventory.setFailOnRead(true)
+        places = await pantry.placeContext(locations: locations)
+        #expect(places.proposal(barcode: peasCode, name: "Peas", labelStorage: nil).origin == .foodKeeper)
+        #expect(places.proposal(barcode: nil, name: "rice", labelStorage: nil).origin == .foodKeeper)
+    }
 }

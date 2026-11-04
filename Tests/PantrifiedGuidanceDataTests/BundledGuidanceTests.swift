@@ -43,6 +43,27 @@ struct BundledGuidanceTests {
         #expect(!days.isEmpty)
         #expect(days.allSatisfy { $0 > 0 })
     }
+
+    @Test("a food's unopened storage comes from its one record, and a place is proposed from it")
+    func unopenedStorage() throws {
+        let guidance = BundledStorageGuidance(dataset: try BundledGuidance.dataset())
+        #expect(guidance.unopenedStorage(of: "Cottage cheese", choice: nil) == [.refrigerated])
+        #expect(guidance.unopenedStorage(of: "Butter", choice: nil) == [.frozen, .refrigerated])
+        // Five records are called milk, so none is picked.
+        #expect(guidance.unopenedStorage(of: "Milk", choice: nil).isEmpty)
+
+        let locations = [
+            StorageLocation(name: "Fridge", storageType: .refrigerated),
+            StorageLocation(name: "Freezer", storageType: .frozen),
+            StorageLocation(name: "Pantry", storageType: .roomTemperature),
+        ]
+        let places = PlaceContext(locations: locations, guide: guidance)
+        #expect(places.proposal(barcode: nil, name: "Cottage cheese", labelStorage: nil) == PlaceProposal(location: locations[0].id, origin: .foodKeeper))
+        #expect(places.proposal(barcode: nil, name: "Butter", labelStorage: nil).location == locations[0].id)
+        #expect(places.proposal(barcode: nil, name: "Baking soda", labelStorage: nil).location == locations[2].id)
+        #expect(places.proposal(barcode: nil, name: "Ice cream", labelStorage: nil).location == locations[1].id)
+        #expect(places.proposal(barcode: nil, name: "Milk", labelStorage: nil).origin == .unplaced)
+    }
 }
 
 @Suite("Storage guidance from the snapshot")
@@ -188,6 +209,7 @@ private actor FixedInventory: InventoryRepository {
     func activePackages(in space: SpaceID) async throws -> [Package] {
         packages.values.filter { $0.spaceID == space && $0.status == .active }
     }
+    func allPackages(in space: SpaceID) async throws -> [Package] { packages.values.filter { $0.spaceID == space } }
     func save(_ package: Package) async throws { packages[package.id] = package }
     func saveAll(_ batch: [Package]) async throws { for package in batch { packages[package.id] = package } }
 }

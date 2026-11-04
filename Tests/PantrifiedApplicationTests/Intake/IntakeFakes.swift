@@ -280,3 +280,8 @@ actor GatedLookup: ProductLookupService {
         return answers[barcode] ?? .notFound
     }
 }
+
+/// Sourced guidance that keeps every food in the fridge.
+struct KeepsCold: UnopenedStorageGuide {
+    func unopenedStorage(of name: String, choice: GuidanceChoice?) -> Set<StorageType> { [.refrigerated] }
+}

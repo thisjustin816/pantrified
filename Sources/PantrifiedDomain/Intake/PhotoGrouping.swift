@@ -246,7 +246,7 @@ public struct GroupingCost: Sendable, Hashable {
 /// A doubtful pair stays as two groups with a suggestion rather than one silent merge.
 public struct PhotoGrouper: Sendable {
     public let policy: GroupingPolicy
-    private let distance: any ImageDistance
+    let distance: any ImageDistance
     private let dates: any PrintedDateReader
 
     public init(
@@ -263,9 +263,14 @@ public struct PhotoGrouper: Sendable {
         let a: Int
         let b: Int
         let signals: [MatchSignal]
+        /// The points each signal added, in the order of `signals`. A signal that counts against
+        /// adds 0, and so do label words found only one letter off, whose points are `nearPoints`.
+        let signalPoints: [Int]
         let score: Int
-        /// Points that count toward a suggestion only, never toward `mergeAt`: words one letter
-        /// off, a name in the other photo's ingredients, and lookup words not to be relied on.
+        /// Points from a name word one letter off a word on the other photo.
+        let nearPoints: Int
+        /// Points that count toward a suggestion only, never toward `mergeAt`: `nearPoints`, a name
+        /// in the other photo's ingredients, and lookup words not to be relied on.
         let suggestOnly: Int
         var separated: Bool { signals.contains(where: \.separates) }
         var mergeScore: Int { score - suggestOnly }
@@ -309,19 +314,8 @@ public struct PhotoGrouper: Sendable {
     ) -> (result: GroupingResult, cost: GroupingCost) {
         let photos = batch(prepared, sequence: \.observation.sequence, photo: \.id)
         let single = photos.indices.filter { photos[$0].products.count < 2 }
-        let common = commonWords(photos)
-        let bridges = self.bridges(photos, lookups)
-
-        var pairs: [Pair] = []
         var cost = GroupingCost(photos: photos.count)
-        for (position, i) in single.enumerated() {
-            for j in single[(position + 1)...] {
-                cost.pairsScored += 1
-                if let pair = score(photos, i, j, ignoring: common, bridges: bridges, lookups: &cost.nearWordLookups) {
-                    pairs.append(pair)
-                }
-            }
-        }
+        var pairs = scoredPairs(photos, lookups: lookups, cost: &cost)
         pairs.sort { x, y in
             if x.mergeScore != y.mergeScore { return x.mergeScore > y.mergeScore }
             if x.score != y.score { return x.score > y.score }
@@ -396,6 +390,24 @@ public struct PhotoGrouper: Sendable {
         return (result, cost)
     }
 
+    /// Every pair of photos showing at most one product that any signal links or separates.
+    /// `photos` are in sequence order, as `batch` gives them.
+    func scoredPairs(_ photos: [PreparedPhoto], lookups: [GTIN: PreparedLookup], cost: inout GroupingCost) -> [Pair] {
+        let single = photos.indices.filter { photos[$0].products.count < 2 }
+        let common = commonWords(photos)
+        let bridges = self.bridges(photos, lookups)
+        var pairs: [Pair] = []
+        for (position, i) in single.enumerated() {
+            for j in single[(position + 1)...] {
+                cost.pairsScored += 1
+                if let pair = score(photos, i, j, ignoring: common, bridges: bridges, lookups: &cost.nearWordLookups) {
+                    pairs.append(pair)
+                }
+            }
+        }
+        return pairs
+    }
+
     private func suggestions(
         _ pairs: [Pair],
         _ photos: [PreparedPhoto],
@@ -426,7 +438,7 @@ public struct PhotoGrouper: Sendable {
     }
 
     /// One item per photo, in sequence order, at most a batch's worth.
-    private func batch<Item>(_ items: [Item], sequence: (Item) -> Int, photo: (Item) -> IntakePhotoID) -> [Item] {
+    func batch<Item>(_ items: [Item], sequence: (Item) -> Int, photo: (Item) -> IntakePhotoID) -> [Item] {
         var seen: Set<IntakePhotoID> = []
         return Array(items
             .sorted { a, b in
@@ -608,14 +620,16 @@ public struct PhotoGrouper: Sendable {
         let (a, b) = (photos[i], photos[j])
         if let x = a.barcode, let y = b.barcode, x != y { return nil }
         var signals: [MatchSignal] = []
+        var points: [Int] = []
         var score = 0
         var suggestOnly = 0
-        func add(_ signal: MatchSignal, _ points: Int) {
+        func add(_ signal: MatchSignal, _ added: Int) {
             signals.append(signal)
-            score += points
+            points.append(added)
+            score += added
         }
         func mark(_ signal: MatchSignal) {
-            if !signals.contains(signal) { signals.append(signal) }
+            if !signals.contains(signal) { add(signal, 0) }
         }
 
         if let x = a.barcode, x == b.barcode { add(.sameBarcode, policy.sameBarcode) }
@@ -636,10 +650,10 @@ public struct PhotoGrouper: Sendable {
         let smaller = min(a.tokens.subtracting(common).count, b.tokens.subtracting(common).count)
         if shared.count >= policy.sharedWordsForStrongText, smaller > 0,
            Double(shared.count) / Double(smaller) >= policy.overlapForStrongText {
-            mark(.sharedLabelWords)
+            add(.sharedLabelWords, policy.sharedLabelWords)
             words = policy.sharedLabelWords
         } else if shared.count >= 2 || shared.contains(where: { $0.count >= policy.longWordLetters }) {
-            mark(.someLabelWords)
+            add(.someLabelWords, policy.someLabelWords)
             words = policy.someLabelWords
         }
 
@@ -653,9 +667,12 @@ public struct PhotoGrouper: Sendable {
         for query in b.near.queries where !a.tokens.contains(query.word) && a.near.hasNear(query, ignoring: common, lookups: &lookups) {
             nearB.insert(query.word)
         }
+        var nearPoints = 0
         if !nearA.isEmpty || !nearB.isEmpty {
             if !signals.contains(.sharedLabelWords) { mark(.someLabelWords) }
-            suggestOnly += policy.nearlySameWord
+            nearPoints = policy.nearlySameWord
+            score += nearPoints
+            suggestOnly += nearPoints
         }
 
         // The lookup name stands in for the words a back shares with its front: a front has no
@@ -672,22 +689,21 @@ public struct PhotoGrouper: Sendable {
                 && Double(bridge.exact.count) / Double(named.count) >= policy.overlapForStrongText
             let some = bridge.exact.count >= 2 || bridge.exact.contains { $0.count >= policy.longWordLetters }
             if strong || some || !bridge.nearName.isEmpty {
-                mark(.lookupName)
                 if bridge.doubtful || !(strong || some) {
+                    add(.lookupName, policy.someLookupNameWords)
                     suggestOnly += policy.someLookupNameWords
                 } else {
-                    words = max(words, strong ? policy.lookupNameWords : policy.someLookupNameWords)
+                    // Only what the lookup adds beyond the label words.
+                    add(.lookupName, max(0, (strong ? policy.lookupNameWords : policy.someLookupNameWords) - words))
                 }
             }
         }
-        score += words
 
         if nameIsIn(a, b.panelWords, ignoring: common) || nameIsIn(b, a.panelWords, ignoring: common) {
-            mark(.nameInIngredients)
+            add(.nameInIngredients, policy.nameInIngredients)
             suggestOnly += policy.nameInIngredients
         }
         if !a.lotCodes.intersection(b.lotCodes).subtracting(common).isEmpty { add(.sameLotCode, policy.sameLotCode) }
-        score += suggestOnly
 
         // The order of shots supports what the photos show and never stands in for it.
         let gap = abs(b.observation.capturedAt.timeIntervalSince(a.observation.capturedAt))
@@ -736,7 +752,9 @@ public struct PhotoGrouper: Sendable {
                 }
             }
         }
-        return signals.isEmpty ? nil : Pair(a: i, b: j, signals: signals, score: score, suggestOnly: suggestOnly)
+        return signals.isEmpty ? nil : Pair(
+            a: i, b: j, signals: signals, signalPoints: points, score: score, nearPoints: nearPoints, suggestOnly: suggestOnly
+        )
     }
 }
 

@@ -13,6 +13,7 @@ struct IntakeServices: Sendable {
     let pipeline: IntakePipeline
     let adding: IntakeAdding
     let looksUp: Bool
+    private let pantry: Pantry
     #if DEBUG
     /// Times each photo read, for the batch screen's timing line in Debug builds.
     let readTimer: ReadTimer
@@ -37,6 +38,12 @@ struct IntakeServices: Sendable {
         pipeline = IntakePipeline(store: store, recognizer: reader, lookup: lookup, time: time)
         adding = IntakeAdding(pantry: pantry, store: store)
         looksUp = lookup != nil
+        self.pantry = pantry
+    }
+
+    /// What proposing places for a batch reads, in `locations`.
+    func places(in locations: [StorageLocation]) async -> PlaceContext {
+        await pantry.placeContext(locations: locations)
     }
 
     /// At launch: deletes what is due, finishes every add or undo a crash cut off, in finished
@@ -50,7 +57,7 @@ struct IntakeServices: Sendable {
         guard let batch = await store.unfinished(in: space) else { return }
         switch batch.phase {
         case .processing:
-            _ = try? await pipeline.process(batch.id, locations: locations, defaultLocation: locations.first?.id)
+            _ = try? await pipeline.process(batch.id, places: await places(in: locations))
             await pipeline.lookUpNames(batch.id)
         case .reviewing:
             await pipeline.lookUpNames(batch.id)

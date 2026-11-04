@@ -5,7 +5,7 @@ import Testing
 private let fridge = StorageLocation(name: "Fridge", storageType: .refrigerated)
 
 private func review(_ photos: [PhotoObservation], grouping: GroupingResult) -> IntakeReview {
-    IntakeReview(space: SpaceID(), observations: photos, grouping: grouping, locations: [fridge], defaultLocation: fridge.id, looksUp: true)
+    IntakeReview(space: SpaceID(), observations: photos, grouping: grouping, places: PlaceContext(locations: [fridge]), looksUp: true)
 }
 
 @Suite("What a package shows")
