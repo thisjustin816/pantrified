@@ -223,6 +223,8 @@ private actor ReadRecordingInventory: InventoryRepository {
         return try await inner.activePackages(in: space)
     }
 
+    func allPackages(in space: SpaceID) async throws -> [Package] { try await inner.allPackages(in: space) }
+
     func save(_ package: Package) async throws { try await inner.save(package) }
     func saveAll(_ packages: [Package]) async throws { try await inner.saveAll(packages) }
 }

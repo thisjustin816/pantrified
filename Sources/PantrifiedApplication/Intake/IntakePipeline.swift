@@ -214,21 +214,21 @@ public actor IntakePipeline {
     /// Done: reads what is left two at a time, then groups the batch once and keeps the review. A
     /// batch that already has a review keeps it, with the person's edits. Returns once the review
     /// exists; closing the screen does not stop it.
-    public func finish(_ id: IntakeBatchID, locations: [StorageLocation], defaultLocation: LocationID?) async throws -> IntakeReview {
+    public func finish(_ id: IntakeBatchID, places: PlaceContext) async throws -> IntakeReview {
         if batch != id { await open(id, capturing: false) }
         if let finishing { return try await finishing.value }
-        let run = Task { try await self.runFinish(id, locations: locations, defaultLocation: defaultLocation) }
+        let run = Task { try await self.runFinish(id, places: places) }
         finishing = run
         defer { if finishing == run { finishing = nil } }
         return try await run.value
     }
 
     /// Reads every photo not read yet, then groups the batch, unless it already has a review.
-    public func process(_ id: IntakeBatchID, locations: [StorageLocation], defaultLocation: LocationID?) async throws -> IntakeReview {
-        try await finish(id, locations: locations, defaultLocation: defaultLocation)
+    public func process(_ id: IntakeBatchID, places: PlaceContext) async throws -> IntakeReview {
+        try await finish(id, places: places)
     }
 
-    private func runFinish(_ id: IntakeBatchID, locations: [StorageLocation], defaultLocation: LocationID?) async throws -> IntakeReview {
+    private func runFinish(_ id: IntakeBatchID, places: PlaceContext) async throws -> IntakeReview {
         let started = generation
         stalled = []
         interrupted = false
@@ -257,7 +257,7 @@ public actor IntakePipeline {
         let observations = record.photos.compactMap(\.observation)
         let review = IntakeReview(
             space: record.space, observations: observations, grouping: grouper.group(observations),
-            proposer: proposer, locations: locations, defaultLocation: defaultLocation, looksUp: lookup != nil
+            proposer: proposer, places: places, looksUp: lookup != nil
         )
         let kept = try await store.finishRecognition(id, review: review)
         await pump()
@@ -266,13 +266,13 @@ public actor IntakePipeline {
 
     /// A review of what has been read so far, for the screen to show, unchangeable, while the last
     /// few photos are read. Never stored.
-    public func preview(locations: [StorageLocation], defaultLocation: LocationID?) async -> IntakeReview? {
+    public func preview(places: PlaceContext) async -> IntakeReview? {
         guard let id = batch, let record = await store.batch(id) else { return nil }
         if let review = record.review { return review }
         live.sync(with: record.photos.compactMap(\.observation))
         var review = IntakeReview(
             space: record.space, observations: Array(live.observations.values), grouping: live.result,
-            proposer: proposer, locations: locations, defaultLocation: defaultLocation, looksUp: lookup != nil
+            proposer: proposer, places: places, looksUp: lookup != nil
         )
         review.useLookups(record.lookups)
         return review

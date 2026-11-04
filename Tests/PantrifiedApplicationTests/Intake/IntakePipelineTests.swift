@@ -57,7 +57,7 @@ struct IntakePipelineTests {
         let batch = try await world.stage(Array(repeating: "rice", count: 6), in: store)
         let recognizer = GatedRecognizer(files: world.files)
         let pipeline = world.pipeline(store, recognizer: recognizer)
-        let done = Task { try await pipeline.finish(batch, locations: world.locations, defaultLocation: nil) }
+        let done = Task { try await pipeline.finish(batch, places: world.unguided) }
 
         #expect(await waitUntil { await recognizer.inFlight == 2 })
         for _ in 0..<200 { await Task.yield() }
@@ -96,7 +96,7 @@ struct IntakePipelineTests {
             let recognizer = GatedRecognizer(files: world.files)
             let pipeline = world.pipeline(store, recognizer: recognizer)
             await pipeline.setConditions(conditions)
-            let done = Task { try await pipeline.finish(batch, locations: world.locations, defaultLocation: nil) }
+            let done = Task { try await pipeline.finish(batch, places: world.unguided) }
             #expect(await waitUntil { await recognizer.inFlight == most })
             for _ in 0..<200 { await Task.yield() }
             await recognizer.gate.releaseAll()
@@ -121,7 +121,7 @@ struct IntakePipelineTests {
 
         let relaunched = world.launch()
         let again = FakeRecognizer(files: world.files, readings: IntakeFixture.readings)
-        _ = try await world.pipeline(relaunched, recognizer: again).finish(batch, locations: world.locations, defaultLocation: nil)
+        _ = try await world.pipeline(relaunched, recognizer: again).finish(batch, places: world.unguided)
         #expect(await again.reads == 0)
     }
 
@@ -149,7 +149,7 @@ struct IntakePipelineTests {
         await pipeline.open(batch, capturing: true)
         await pipeline.settle()
         #expect(await recognizer.reads == 2)
-        let review = try await pipeline.finish(batch, locations: world.locations, defaultLocation: nil)
+        let review = try await pipeline.finish(batch, places: world.unguided)
         let observations = await relaunched.observations(in: batch)
         #expect(review.candidates.map(\.photos) == PhotoGrouper().group(observations).groups.map(\.photos))
     }
@@ -176,7 +176,7 @@ struct IntakePipelineTests {
         await pipeline.settle()
         #expect(await recognizer.reads == 0)
         #expect(await lookup.calls == [IntakeFixture.yogurt])
-        let review = try await pipeline.finish(batch, locations: world.locations, defaultLocation: nil)
+        let review = try await pipeline.finish(batch, places: world.unguided)
         let kept = await relaunched.batch(batch)?.lookups ?? [:]
         #expect(review.summaries[0].name == "Greek yogurt", "\(kept) \(review.lookups)")
     }
@@ -255,7 +255,7 @@ struct IntakePipelineTests {
         #expect(await lookup.calls == [IntakeFixture.yogurt, IntakeFixture.beans])
         #expect(await store.batch(batch)?.lookups[IntakeFixture.beans] == .found(name: "Black beans", source: "USDA FoodData Central"))
 
-        let review = try await pipeline.finish(batch, locations: world.locations, defaultLocation: nil)
+        let review = try await pipeline.finish(batch, places: world.unguided)
         await pipeline.lookUpNames(batch)
         await world.pipeline(world.launch(), lookup: lookup).lookUpNames(batch)
         #expect(await lookup.calls == [IntakeFixture.yogurt, IntakeFixture.beans])
@@ -306,7 +306,7 @@ struct IntakePipelineTests {
             #expect(await store.batch(batch)?.lookups == [IntakeFixture.yogurt: .deferred, IntakeFixture.beans: .deferred])
 
             await lookup.set(found("GREEK YOGURT"), for: IntakeFixture.yogurt)
-            let review = try await pipeline.finish(batch, locations: world.locations, defaultLocation: world.locations[0].id)
+            let review = try await pipeline.finish(batch, places: world.places)
             #expect(review.readyToAdd.count == 3)
             await pipeline.settle()
             #expect(await lookup.calls == [IntakeFixture.yogurt, IntakeFixture.yogurt, IntakeFixture.beans])
@@ -323,7 +323,7 @@ struct IntakePipelineTests {
         let batch = try await world.stage(["yogurt-back", "beans"], in: store)
         let lookup = FakeLookup([IntakeFixture.yogurt: .notFound, IntakeFixture.beans: .failed(.timedOut)])
         let pipeline = world.pipeline(store, lookup: lookup)
-        _ = try await pipeline.finish(batch, locations: world.locations, defaultLocation: nil)
+        _ = try await pipeline.finish(batch, places: world.unguided)
         for _ in 0..<5 { await pipeline.lookUpNames(batch) }
         let calls = await lookup.calls
         #expect(calls.filter { $0 == IntakeFixture.yogurt }.count == 1)
@@ -340,7 +340,7 @@ struct IntakePipelineTests {
         let batch = try await world.stage(["beans"], in: store)
         let lookup = GatedLookup([IntakeFixture.beans: found("BEANS")])
         let pipeline = world.pipeline(store, lookup: lookup)
-        let review = try await pipeline.finish(batch, locations: world.locations, defaultLocation: nil)
+        let review = try await pipeline.finish(batch, places: world.unguided)
         #expect(await waitUntil { await lookup.inFlight == 1 })
         try await store.updateReview(batch) { try $0.setName("Frijoles", for: review.summaries[0].id) }
         await lookup.gate.releaseAll()
@@ -364,12 +364,12 @@ struct IntakePipelineTests {
         await recognizer.gate.release("yogurt-back")
         #expect(await waitUntil { await world.observed(store, batch) == 2 })
 
-        let done = Task { try await pipeline.finish(batch, locations: world.locations, defaultLocation: nil) }
+        let done = Task { try await pipeline.finish(batch, places: world.unguided) }
         #expect(await waitUntil { await recognizer.inFlight == 2 })
         for _ in 0..<200 { await Task.yield() }
         #expect(await store.batch(batch)?.review == nil)
         await #expect(throws: StagingError.notRecognized) { try await store.updateReview(batch) { $0.delete([]) } }
-        let preview = try #require(await pipeline.preview(locations: world.locations, defaultLocation: nil))
+        let preview = try #require(await pipeline.preview(places: world.unguided))
         #expect(preview.summaries.count == 1)
 
         await recognizer.gate.releaseAll()
@@ -380,8 +380,8 @@ struct IntakePipelineTests {
 
         try await store.updateReview(batch) { try $0.setName("Skyr", for: review.summaries[0].id) }
         await pipeline.settle()
-        _ = try await pipeline.finish(batch, locations: world.locations, defaultLocation: nil)
-        let relaunched = try await world.pipeline(world.launch()).process(batch, locations: world.locations, defaultLocation: nil)
+        _ = try await pipeline.finish(batch, places: world.unguided)
+        let relaunched = try await world.pipeline(world.launch()).process(batch, places: world.unguided)
         #expect(relaunched.summaries.map(\.name) == ["Skyr", "Basmati rice", "Black beans"])
     }
 
@@ -392,7 +392,7 @@ struct IntakePipelineTests {
         let batch = try await world.stage(["rice", "beans"], in: store)
         let recognizer = GatedRecognizer(files: world.files)
         let pipeline = world.pipeline(store, recognizer: recognizer)
-        let done = Task { try await pipeline.finish(batch, locations: world.locations, defaultLocation: nil) }
+        let done = Task { try await pipeline.finish(batch, places: world.unguided) }
         #expect(await waitUntil { await recognizer.inFlight == 2 })
         await pipeline.leave(batch)
         await recognizer.gate.releaseAll()
@@ -435,14 +435,14 @@ struct IntakePipelineTests {
             for (index, key) in order.enumerated() {
                 await recognizer.gate.release(key)
                 #expect(await waitUntil { await world.observed(store, batch) == index + 1 })
-                let preview = try #require(await pipeline.preview(locations: world.locations, defaultLocation: nil))
+                let preview = try #require(await pipeline.preview(places: world.unguided))
                 for candidate in preview.candidates {
                     let own = candidate.photos.filter { !candidate.sharedPhotos.contains($0) }
                     let barcodes = Set(own.compactMap { preview.observations[$0] }.flatMap(\.products))
                     #expect(barcodes.count <= 1)
                 }
             }
-            let review = try await pipeline.finish(batch, locations: world.locations, defaultLocation: nil)
+            let review = try await pipeline.finish(batch, places: world.unguided)
             let observations = await store.observations(in: batch)
             let oneShot = PhotoGrouper().group(observations)
             #expect(review.candidates.map(\.photos) == oneShot.groups.map(\.photos))

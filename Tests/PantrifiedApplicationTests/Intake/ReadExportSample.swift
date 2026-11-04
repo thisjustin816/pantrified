@@ -65,8 +65,8 @@ enum ReadExportSample {
 
     static func review(_ photos: [PhotoObservation] = photos) -> IntakeReview {
         var review = IntakeReview(
-            space: space, observations: photos, grouping: PhotoGrouper().group(photos), locations: locations,
-            defaultLocation: fridge.id, looksUp: true
+            space: space, observations: photos, grouping: PhotoGrouper().group(photos),
+            places: PlaceContext(locations: locations), looksUp: true
         )
         review.record(.found(rawName: "Black beans", source: "USDA FoodData Central"), for: IntakeFixture.beans)
         review.record(.notFound, for: IntakeFixture.yogurt)

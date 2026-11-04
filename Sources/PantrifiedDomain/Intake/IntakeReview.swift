@@ -110,13 +110,15 @@ public struct IntakeReview: Sendable, Hashable, Codable {
         }
     }
 
+    /// Makes one candidate for each group. Each candidate's place is proposed here, once, from its
+    /// barcode, the name read from its label and the storage the label states; a lookup's name or a
+    /// name the person sets later does not change it.
     public init(
         space: SpaceID,
         observations: [PhotoObservation],
         grouping: GroupingResult,
         proposer: IntakeProposer = IntakeProposer(),
-        locations: [StorageLocation],
-        defaultLocation: LocationID?,
+        places: PlaceContext,
         looksUp: Bool
     ) {
         self.space = space
@@ -130,10 +132,10 @@ public struct IntakeReview: Sendable, Hashable, Codable {
             let label = proposer.proposals(
                 photos: group.photos, shared: Set(group.sharedPhotos), barcode: group.barcode, observations: byPhoto
             )
-            let stated = label.storage.flatMap { type in locations.first { $0.storageType == type }?.id }
+            let place = places.proposal(barcode: group.barcode, name: label.name, labelStorage: label.storage)
             made.append(IntakeCandidate(
                 photos: group.photos, links: group.links, sharedPhotos: group.sharedPhotos, barcode: group.barcode,
-                label: label, location: stated ?? defaultLocation, locationOrigin: stated == nil ? .standard : .label
+                label: label, location: place.location, locationOrigin: place.origin
             ))
         }
         for suggestion in grouping.suggestions where suggestion.first < made.count && suggestion.second < made.count {
@@ -238,6 +240,42 @@ public struct IntakeReview: Sendable, Hashable, Codable {
         reviewing.filter { !pendingAdd.contains($0.id) }.map(summary).filter(\.isReady).map(\.id)
     }
 
+    /// Candidates ready to add whose place is one of `locations`, as Add all adds them. A candidate
+    /// in a place the household no longer has waits with those that have no place.
+    public func readyToAdd(in locations: [StorageLocation]) -> [IntakeCandidateID] {
+        let known = Set(locations.map(\.id))
+        let ready = Set(readyToAdd)
+        return reviewing.filter { ready.contains($0.id) && $0.location.map(known.contains) == true }.map(\.id)
+    }
+
+    /// The candidates under review that a drop names, each once, in the order named, at most a
+    /// batch's worth. Anything else a drop carries is ignored.
+    public func underReview(_ ids: [IntakeCandidateID]) -> [IntakeCandidateID] {
+        let reviewing = Set(reviewing.map(\.id))
+        var seen: Set<IntakeCandidateID> = []
+        return ids.prefix(IntakeLimits.candidatesPerBatch).filter { reviewing.contains($0) && seen.insert($0).inserted }
+    }
+
+    /// Candidates under review with no place among `locations`.
+    public func unplaced(in locations: [StorageLocation]) -> [IntakeCandidateID] {
+        let known = Set(locations.map(\.id))
+        return reviewing.filter { $0.location.map(known.contains) != true }.map(\.id)
+    }
+
+    /// The candidates under review by place: first those with no place among `locations`, when there
+    /// are any, then one section for each location in the household's order, empty or not. Each
+    /// section keeps the review's order.
+    public func sections(in locations: [StorageLocation]) -> [PlaceSection] {
+        let shown = summaries
+        let known = Set(locations.map(\.id))
+        let unplaced = shown.filter { $0.location.map(known.contains) != true }
+        var sections = unplaced.isEmpty ? [] : [PlaceSection(place: nil, candidates: unplaced)]
+        for location in locations {
+            sections.append(PlaceSection(place: location.id, candidates: shown.filter { $0.location == location.id }))
+        }
+        return sections
+    }
+
     /// The drafts that adding these candidates puts away: one per package, with the name and date
     /// as proposals unless the person set them. Candidates that are not ready are left out.
     public func drafts(for ids: [IntakeCandidateID]) -> [PackageDraft] {
@@ -322,14 +360,21 @@ public struct IntakeReview: Sendable, Hashable, Codable {
         }
     }
 
-    /// Puts every listed candidate in one place, as one change to undo.
-    public mutating func assignLocation(_ location: LocationID, to ids: Set<IntakeCandidateID>) {
-        guard candidates.contains(where: { ids.contains($0.id) && $0.status == .reviewing }) else { return }
+    /// Puts every listed candidate in one place, as one change to undo, and returns those it moved.
+    /// Identities that are not candidates under review are ignored, and a candidate already there
+    /// keeps its place and where it came from. When nothing moves, nothing is recorded to undo.
+    @discardableResult
+    public mutating func assignLocation(_ location: LocationID, to ids: Set<IntakeCandidateID>) -> Set<IntakeCandidateID> {
+        let moving = candidates.indices.filter {
+            ids.contains(candidates[$0].id) && candidates[$0].status == .reviewing && candidates[$0].location != location
+        }
+        guard !moving.isEmpty else { return [] }
         remember()
-        for index in candidates.indices where ids.contains(candidates[index].id) && candidates[index].status == .reviewing {
+        for index in moving {
             candidates[index].location = location
             candidates[index].locationOrigin = .person
         }
+        return Set(moving.map { candidates[$0].id })
     }
 
     public mutating func delete(_ ids: Set<IntakeCandidateID>) {
@@ -350,7 +395,8 @@ public struct IntakeReview: Sendable, Hashable, Codable {
 
     /// Merges candidates into the first of them in review order. The person's own decisions on any
     /// of them are kept, the first candidate's winning; label proposals are read again from all the
-    /// photos. Candidates with two different barcodes are two products and are refused.
+    /// photos. Without a place the person chose, the first proposed place is kept. Candidates with
+    /// two different barcodes are two products and are refused.
     @discardableResult
     public mutating func merge(_ ids: [IntakeCandidateID], proposer: IntakeProposer = IntakeProposer()) throws(IntakeReviewError) -> IntakeCandidateID {
         let wanted = Set(ids)
@@ -375,9 +421,9 @@ public struct IntakeReview: Sendable, Hashable, Codable {
                 merged.dateDecided = true
                 merged.personDate = other.personDate
             }
-            if merged.locationOrigin != .person, other.locationOrigin == .person {
+            if merged.locationOrigin != .person, other.locationOrigin == .person || (merged.location == nil && other.location != nil) {
                 merged.location = other.location
-                merged.locationOrigin = .person
+                merged.locationOrigin = other.locationOrigin
             }
             merged.count = max(merged.count, other.count)
             merged.packageIDs += other.packageIDs

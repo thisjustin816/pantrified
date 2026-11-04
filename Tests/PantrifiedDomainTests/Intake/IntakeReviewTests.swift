@@ -7,14 +7,22 @@ private let freezer = StorageLocation(name: "Freezer", storageType: .frozen)
 private let pantryShelf = StorageLocation(name: "Pantry", storageType: .roomTemperature)
 private let space = SpaceID()
 
-private func review(_ photos: [PhotoObservation], looksUp: Bool = true) -> IntakeReview {
+private func review(
+    _ photos: [PhotoObservation], looksUp: Bool = true, places: PlaceContext = PlaceContext(locations: [fridge, freezer, pantryShelf])
+) -> IntakeReview {
     IntakeReview(
-        space: space, observations: photos, grouping: PhotoGrouper().group(photos),
-        locations: [fridge, freezer, pantryShelf], defaultLocation: fridge.id, looksUp: looksUp
+        space: space, observations: photos, grouping: PhotoGrouper().group(photos), places: places, looksUp: looksUp
     )
 }
 
-/// Yogurt front and back (one candidate with a barcode), then rice on its own.
+/// A household that kept the yogurt's barcode in the fridge and basmati rice in the pantry before.
+private let stocked = PlaceContext(locations: [fridge, freezer, pantryShelf], placements: [
+    PastPlacement(package: PackageID(), name: "Yogurt", barcode: Fixture.yogurt, location: fridge.id, at: Fixture.start),
+    PastPlacement(package: PackageID(), name: "Basmati rice", barcode: nil, location: pantryShelf.id, at: Fixture.start),
+])
+
+/// Yogurt front and back (one candidate with a barcode), then rice on its own, each with the place
+/// the household used before.
 private func yogurtAndRice() -> (IntakeReview, [PhotoObservation]) {
     let photos = [
         Fixture.photo(0, lines: Fixture.front("GREEK YOGURT", brand: "CHOBANI")),
@@ -22,7 +30,7 @@ private func yogurtAndRice() -> (IntakeReview, [PhotoObservation]) {
                       codes: [.product(Fixture.yogurt)]),
         Fixture.photo(2, seconds: 300, lines: Fixture.front("Basmati rice", small: ["Best before 05/06/27"])),
     ]
-    return (review(photos), photos)
+    return (review(photos, places: stocked), photos)
 }
 
 @Suite("Intake review")
@@ -39,7 +47,7 @@ struct IntakeReviewTests {
         #expect(yogurt.dateOrigin == .label)
         #expect(yogurt.barcode == Fixture.yogurt)
         #expect(yogurt.location == fridge.id)
-        #expect(yogurt.locationOrigin == .standard)
+        #expect(yogurt.locationOrigin == .remembered)
         #expect(yogurt.notes == [.lookingUp])
         #expect(yogurt.isReady)
     }
@@ -224,11 +232,12 @@ struct IntakeReviewTests {
     func bulkLocation() throws {
         var (review, _) = yogurtAndRice()
         let ids = Set(review.summaries.map(\.id))
-        review.assignLocation(pantryShelf.id, to: ids)
-        #expect(review.summaries.allSatisfy { $0.location == pantryShelf.id && $0.locationOrigin == .person })
+        let before = review.candidates
+        review.assignLocation(freezer.id, to: ids)
+        #expect(review.summaries.allSatisfy { $0.location == freezer.id && $0.locationOrigin == .person })
         let undone = review.undo()
         #expect(undone)
-        #expect(review.summaries.allSatisfy { $0.location == fridge.id })
+        #expect(review.candidates == before)
         let undoneAgain = review.undo()
         #expect(!undoneAgain)
     }

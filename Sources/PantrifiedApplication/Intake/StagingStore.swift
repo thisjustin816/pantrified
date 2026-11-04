@@ -207,8 +207,9 @@ public actor StagingStore {
 
     /// The batch list's format. A file with a higher version is opened read only. Version 2 keeps each
     /// observation in its own file; version 1 lists, which held them inline, still load, and their
-    /// observations move to their own files as they load.
-    public static let manifestVersion = 2
+    /// observations move to their own files as they load. Version 3 reviews may hold place origins
+    /// (`LocationOrigin`) a version 2 reader cannot decode; version 2 lists load as they are.
+    public static let manifestVersion = 3
     /// A batch list that could not be understood is kept under this name for a recovery window,
     /// then deleted.
     public static let setAsideName = "batches.unreadable.json"

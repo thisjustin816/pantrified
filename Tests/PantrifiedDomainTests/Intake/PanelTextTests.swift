@@ -7,7 +7,7 @@ private let fridge = StorageLocation(name: "Fridge", storageType: .refrigerated)
 private func review(_ photos: [PhotoObservation], grouping: GroupingResult? = nil) -> IntakeReview {
     IntakeReview(
         space: SpaceID(), observations: photos, grouping: grouping ?? PhotoGrouper().group(photos),
-        locations: [fridge], defaultLocation: fridge.id, looksUp: true
+        places: PlaceContext(locations: [fridge]), looksUp: true
     )
 }
 

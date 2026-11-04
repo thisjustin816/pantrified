@@ -7,6 +7,7 @@ import Testing
 import UIKit
 import PantrifiedApplication
 import PantrifiedDomain
+import PantrifiedGuidanceData
 import PantrifiedPersistence
 @testable import Pantrified
 
@@ -28,7 +29,7 @@ private struct Harness {
         let replica = try store.replica(for: space, transport: OfflineTransport(), time: SystemTime())
         pantry = Pantry(
             space: space, inventory: replica, locations: store.locations, evidence: store.productEvidence,
-            guidance: NoGuidance(), time: SystemTime()
+            guidance: BundledStorageGuidance(dataset: try BundledGuidance.dataset()), time: SystemTime()
         )
         try await pantry.prepare()
         intake = IntakeServices(
@@ -72,27 +73,34 @@ struct BatchIntakeAppTests {
         #expect(StartScreen().batchIntake == false)
     }
 
-    @Test("the review sample makes each kind of candidate, and adding and undoing work on the real store")
+    @Test("the review sample makes each kind of candidate in each kind of place, and adding and undoing work on the real store")
     func reviewSample() async throws {
         let harness = try await Harness()
         defer { harness.remove() }
         let scenario = try #require(ScreenshotScenario(arguments: ["Pantrified", "-pantrified-scenario", "sample", "-pantrified-screen", "review"]))
+        try await scenario.seed(harness.pantry)
+        let seeded = try await harness.pantry.snapshot().entries.count
         let locations = try await harness.pantry.snapshot().locations
+        try #require(locations.count == 3)
+        let (fridge, freezer, pantryShelf) = (locations[0].id, locations[1].id, locations[2].id)
         try await scenario.seedBatch(harness.intake, locations: locations)
 
         let batch = try #require(await harness.intake.store.unfinished(in: harness.space))
         let review = try #require(batch.review)
         let summaries = review.summaries
-        #expect(summaries.count == 7)
+        try #require(summaries.count == 8)
         #expect(summaries[0].name == "Chobani greek yogurt")
         #expect(summaries[0].photos.count == 2)
         #expect(summaries[0].date?.label == .useBy)
         #expect(summaries[1].notes.contains(.mightBeSameAs([summaries[2].id])))
         #expect(summaries[3].pendingDate != nil)
-        let freezer = locations.first(where: { $0.storageType == .frozen })?.id
-        #expect(summaries[4].location == freezer)
         #expect(summaries[5].nameOrigin == .lookup(source: "USDA FoodData Central"))
-        #expect(summaries[6].notes.contains(.noName))
+        #expect(summaries[7].notes.contains(.noName))
+        #expect(summaries.map(\.locationOrigin) == [.remembered, .foodKeeper, .foodKeeper, .remembered, .label, .unplaced, .foodKeeper, .unplaced])
+        let ids = summaries.map(\.id)
+        let sections = review.sections(in: locations)
+        #expect(sections.map(\.place) == [nil, fridge, freezer, pantryShelf])
+        #expect(sections.map { $0.candidates.map(\.id) } == [[ids[5], ids[7]], [ids[0], ids[6]], [ids[4]], [ids[1], ids[2], ids[3]]])
 
         // Staged files are protected and kept out of backups.
         let photo = try #require(batch.photos.first)
@@ -101,11 +109,12 @@ struct BatchIntakeAppTests {
         #expect(values.fileProtection == .completeUntilFirstUserAuthentication)
         #expect(values.isExcludedFromBackup == true)
 
-        let addition = try await harness.intake.adding.add(review.readyToAdd, in: batch.id)
+        let addition = try await harness.intake.adding.add(review.readyToAdd(in: locations), in: batch.id)
         #expect(addition.packages.count == 6)
-        #expect(try await harness.pantry.snapshot().entries.count == 6)
+        #expect(try await harness.pantry.snapshot().entries.count == seeded + 6)
+        #expect(await harness.intake.store.batch(batch.id)?.review?.summaries.map(\.id) == [ids[5], ids[7]])
         try await harness.intake.adding.undo(addition)
-        #expect(try await harness.pantry.snapshot().entries.isEmpty)
+        #expect(try await harness.pantry.snapshot().entries.count == seeded)
     }
 
     @Test("the Vision recognizer reads a label's text and a QR code's GS1 Digital Link from a still")
@@ -186,6 +195,15 @@ struct BatchIntakeAppTests {
         #expect(IntakeText.nameOrigin(.label) == "Read from the label. Check it.")
         #expect(IntakeText.nameOrigin(.lookup(source: "USDA FoodData Central")) == "From USDA FoodData Central")
         #expect(IntakeText.nameOrigin(.person) == nil)
+        #expect(IntakeText.locationOrigin(.remembered) == "You put it here last time")
+        #expect(IntakeText.locationOrigin(.label) == "From the label")
+        #expect(IntakeText.locationOrigin(.foodKeeper) == "From FoodKeeper")
+        #expect(IntakeText.locationOrigin(.person) == nil)
+        #expect(IntakeText.locationOrigin(.unplaced) == nil)
+        #expect(IntakeText.needPlace(1) == "1 item needs a place before it can be added.")
+        #expect(IntakeText.needPlace(3) == "3 items need a place before they can be added.")
+        #expect(IntakeText.moved(1, name: "Peas", to: "Freezer") == "Moved Peas to Freezer")
+        #expect(IntakeText.moved(3, name: "Peas", to: "Freezer") == "Moved 3 items to Freezer")
         #expect(IntakeText.addAll(1) == "Add 1 food")
         #expect(IntakeText.addAll(4) == "Add all 4")
         #expect(IntakeText.note(.linkSeen, name: { _ in nil }) == "A QR code with a link was seen. It wasn't opened.")
